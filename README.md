@@ -17,18 +17,25 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 ### 🎯 Hauptfunktionen
 
-- **📋 Personalisierter Vertretungsplan**: Automatische Formatierung des Vertretungsplans von der Schulwebseite
-- **📝 Hausaufgaben-Verwaltung**: Organisiere deine Hausaufgaben übersichtlich
-- **📊 Klausuren-Planer**: Scanne Klausurpläne ein und behalte wichtige Termine im Blick
-- **📅 Integrierter Kalender**: Übersicht über Stundenplan, Vertretungsplan, Hausaufgaben, Klausuren, Feiertage und Ferien
-- **📈 Noten-Rechner**: Behalte deine Noten im Überblick (ungefähre Berechnung)
+- **📋 Personalisierter Vertretungsplan**
+- **📝 Hausaufgaben-Verwaltung**
+- **📊 Klausuren-Planer**
+- **📅 Integrierter Kalender**
+- **📈 Noten-Rechner**
+- **🔔 Benachrichtigungen**
+
+### ⚡ Performance
+
+- **Klein**: Geringer Speicherbedarf auf dem Gerät  
+- **Schnell**: Optimiert für flüssige Nutzung  
+- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Vertretungsplan und ggf. Feriendaten)  
 
 ## 🔧 Technische Details
 
-- **Entwickelt mit**: Android Studio & Kotlin
-- **Plattform**: Android (.apk)
-- **Lizenz**: MIT License
-- **Entwickler**: Nikodem Karol Jastrzab (Schüler der HKS)
+- **Entwickelt mit**: Android Studio & Kotlin  
+- **Plattform**: Android (.apk)  
+- **Lizenz**: MIT License  
+- **Entwickler**: Nikodem Karol Jastrzab (Schüler der HKS)  
 
 ## 📥 Installation
 
@@ -44,7 +51,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 ## ⚠️ Wichtige Hinweise
 
 ### Bildungsgänge
-- **Vollständig getestet**: BG (Berufliches Gymnasium)
+- **Ausführlich getestet**: BG (Berufliches Gymnasium)
 - **Teilweise getestet**: Andere Bildungsgänge können Funktionsprobleme aufweisen
 - **Fehlende Bildungsgänge**: Kontaktiere mich, falls dein Bildungsgang nicht auswählbar ist
 
@@ -53,6 +60,9 @@ Die Scanner-Algorithmen für Stunden- und Klausurpläne sind speziell auf das BG
 
 ### Noten-Berechnung
 Die Noten-Funktion bietet nur eine **ungefähre Berechnung** und entspricht **nicht** der offiziellen Zeugnis-Berechnung. Verwende sie nur als groben Richtwert.
+
+### Benachrichtigungen
+Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschränkt sein, wenn **Hintergrundaktivitäten** deaktiviert wurden.
 
 ## 📬 Kontakt & Support
 
