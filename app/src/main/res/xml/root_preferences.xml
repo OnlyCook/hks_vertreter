@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Your existing preferences go here -->
+
+    <ListPreference
+        android:key="colorblind_mode"
+        android:title="Barrierefreiheit"
+        android:summary="Farbblindheit-Unterstützung"
+        android:entries="@array/colorblind_modes"
+        android:entryValues="@array/colorblind_values"
+        android:defaultValue="none" />
+
+</androidx.preference.PreferenceScreen>

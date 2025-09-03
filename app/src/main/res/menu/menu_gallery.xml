@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_today"
+        android:title="Heute"
+        android:icon="@android:drawable/ic_menu_today" />
+    <item
+        android:id="@+id/action_edit_timetable"
+        android:title="Stundenplan bearbeiten"
+        android:icon="@android:drawable/ic_menu_edit" />
+    <item
+        android:id="@+id/action_vacation"
+        android:title="Ferien markieren"
+        android:icon="@android:drawable/ic_menu_agenda" />
+    <item
+        android:id="@+id/action_statistics"
+        android:title="Statistiken"
+        android:icon="@android:drawable/ic_menu_info_details" />
+    <item
+        android:id="@+id/action_export"
+        android:title="Exportieren"
+        android:icon="@android:drawable/ic_menu_upload" />
+    <item
+        android:id="@+id/action_import"
+        android:title="Importieren"
+        android:icon="@android:drawable/ic_menu_save" />
+</menu>

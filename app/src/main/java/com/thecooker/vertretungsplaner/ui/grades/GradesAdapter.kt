@@ -1,0 +1,115 @@
+package com.thecooker.vertretungsplaner.ui.grades
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.TextView
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.RecyclerView
+import com.thecooker.vertretungsplaner.R
+import java.text.DecimalFormat
+
+class GradesAdapter(
+    private val gradeList: List<GradesFragment.SubjectGradeInfo>,
+    private val currentHalfyear: Int,
+    private val getSubjectRequirements: (String) -> GradesFragment.SubjectRequirements,
+    private val onSubjectClicked: (GradesFragment.SubjectGradeInfo) -> Unit,
+    private val onSubjectEdited: (GradesFragment.SubjectGradeInfo) -> Unit
+) : RecyclerView.Adapter<GradesAdapter.GradeViewHolder>() {
+
+    class GradeViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val textSubjectInfo: TextView = itemView.findViewById(R.id.textSubjectInfo)
+        val textOralGrade: TextView = itemView.findViewById(R.id.textOralGrade)
+        val textWrittenGrade: TextView = itemView.findViewById(R.id.textWrittenGrade)
+        val textFinalGrade: TextView = itemView.findViewById(R.id.textFinalGrade)
+        val btnEditSubject: Button = itemView.findViewById(R.id.btnEditSubject)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): GradeViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_grade, parent, false)
+        return GradeViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: GradeViewHolder, position: Int) {
+        val grade = gradeList[position]
+        val context = holder.itemView.context
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
+        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
+        val useComplexGrading = bildungsgang == "BG" && sharedPreferences.getBoolean("use_simple_grading", false).not()
+
+        holder.textSubjectInfo.text = "${grade.subject} | Lehrer: ${grade.teacher}"
+
+        holder.textOralGrade.text = "MN: ${grade.getFormattedOralGrade(currentHalfyear)}"
+        holder.textWrittenGrade.text = "SN: ${grade.getFormattedWrittenAverage(currentHalfyear)}"
+
+        val finalGradeText = if (useComplexGrading) {
+            val requirements = getSubjectRequirements(grade.subject)
+            grade.getFormattedFinalGrade(requirements, currentHalfyear)
+        } else {
+            val simpleFinalGrade = grade.getSimpleFinalGrade(currentHalfyear)
+            if (simpleFinalGrade != null) DecimalFormat("0.0").format(simpleFinalGrade) else "-"
+        }
+        holder.textFinalGrade.text = "Endgültig: $finalGradeText"
+
+        val goalGrade = sharedPreferences.getFloat("goal_grade", 0f)
+        val actualFinalGrade = if (useComplexGrading) {
+            val requirements = getSubjectRequirements(grade.subject)
+            grade.getFinalGrade(requirements, currentHalfyear)
+        } else {
+            grade.getSimpleFinalGrade(currentHalfyear)
+        }
+
+        if (goalGrade > 0 && actualFinalGrade != null) {
+            val color = if (actualFinalGrade <= goalGrade) {
+                ContextCompat.getColor(context, android.R.color.holo_green_dark)
+            } else {
+                ContextCompat.getColor(context, android.R.color.holo_red_dark)
+            }
+            holder.textFinalGrade.setTextColor(color)
+        } else {
+            holder.textFinalGrade.setTextColor(ContextCompat.getColor(context, android.R.color.black))
+        }
+
+        holder.itemView.setOnClickListener {
+            onSubjectClicked(grade)
+        }
+
+        holder.btnEditSubject.setOnClickListener {
+            onSubjectEdited(grade)
+        }
+    }
+
+    override fun getItemCount(): Int = gradeList.size
+}
+
+class ExamGradesAdapter(
+    private val examList: List<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>
+) : RecyclerView.Adapter<ExamGradesAdapter.ExamGradeViewHolder>() {
+
+    class ExamGradeViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val textExamInfo: TextView = itemView.findViewById(R.id.textExamInfo)
+        val textExamGrade: TextView = itemView.findViewById(R.id.textExamGrade)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExamGradeViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_exam_grade, parent, false)
+        return ExamGradeViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ExamGradeViewHolder, position: Int) {
+        val exam = examList[position]
+
+        val dateFormat = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.GERMANY)
+        holder.textExamInfo.text = "${exam.subject} | ${dateFormat.format(exam.date)}"
+
+        val gradeText = if (exam.mark != null) {
+            "${exam.mark} Pkt (${exam.getGradeFromMark()})"
+        } else {
+            "Nicht benotet"
+        }
+        holder.textExamGrade.text = gradeText
+    }
+
+    override fun getItemCount(): Int = examList.size
+}

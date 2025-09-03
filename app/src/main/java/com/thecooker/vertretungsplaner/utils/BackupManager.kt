@@ -1,0 +1,1242 @@
+package com.thecooker.vertretungsplaner.utils
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.thecooker.vertretungsplaner.L
+import java.text.SimpleDateFormat
+import java.util.*
+
+//settings
+//import com.thecooker.vertretungsplaner.SettingsActivity
+
+// calendar
+import com.thecooker.vertretungsplaner.ui.gallery.GalleryFragment
+
+// exams
+import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.thecooker.vertretungsplaner.data.CalendarDataManager
+import com.thecooker.vertretungsplaner.data.ExamManager
+import java.util.*
+
+// homework
+import com.thecooker.vertretungsplaner.ui.slideshow.SlideshowFragment
+import java.util.concurrent.TimeUnit
+
+// grades
+import com.thecooker.vertretungsplaner.ui.grades.GradesFragment
+import java.text.DecimalFormat
+
+
+class BackupManager(private val context: Context) {
+
+    private val sharedPreferences: SharedPreferences =
+        context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+
+    companion object {
+        private const val TAG = "BackupManager"
+        private const val BACKUP_VERSION = "1.0"
+        const val HKS_BACKUP_FILE_EXTENSION = ".hks"
+    }
+
+    fun createFullBackup(): String {
+        L.d(TAG, "Creating full backup...")
+
+        val content = StringBuilder()
+
+        // header information
+        content.appendLine("# Heinrich-Kleyer-Schule App Backup")
+        content.appendLine("# Version: $BACKUP_VERSION")
+        content.appendLine("# Created: ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMAN).format(Date())}")
+        content.appendLine()
+
+        try {
+            // export timetable data (from settings/scanner)
+            content.appendLine("[TIMETABLE_DATA]")
+            val timetableData = exportTimetableData()
+            content.appendLine(timetableData)
+            content.appendLine("[/TIMETABLE_DATA]")
+            content.appendLine()
+
+            // export calendar data
+            content.appendLine("[CALENDAR_DATA]")
+            val calendarData = exportCalendarData()
+            content.appendLine(calendarData)
+            content.appendLine("[/CALENDAR_DATA]")
+            content.appendLine()
+
+            // export homework data
+            content.appendLine("[HOMEWORK_DATA]")
+            val homeworkData = exportHomeworkData()
+            content.appendLine(homeworkData)
+            content.appendLine("[/HOMEWORK_DATA]")
+            content.appendLine()
+
+            // export exam data
+            content.appendLine("[EXAM_DATA]")
+            val examData = exportExamData()
+            content.appendLine(examData)
+            content.appendLine("[/EXAM_DATA]")
+            content.appendLine()
+
+            // export grade data
+            content.appendLine("[GRADE_DATA]")
+            val gradeData = exportGradeData()
+            content.appendLine(gradeData)
+            content.appendLine("[/GRADE_DATA]")
+            content.appendLine()
+
+            // export app settings
+            content.appendLine("[APP_SETTINGS]")
+            val appSettings = exportAppSettings()
+            content.appendLine(appSettings)
+            content.appendLine("[/APP_SETTINGS]")
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error creating backup", e)
+            throw e
+        }
+
+        L.d(TAG, "Full backup created successfully")
+        return content.toString()
+    }
+
+    fun restoreFromBackup(backupContent: String): RestoreResult {
+        L.d(TAG, "Starting backup restore...")
+
+        try {
+            val sections = parseBackupSections(backupContent)
+
+            var successCount = 0
+            val errors = mutableListOf<String>()
+
+            sections.forEach { (sectionName, sectionContent) ->
+                try {
+                    when (sectionName) {
+                        "TIMETABLE_DATA" -> {
+                            importTimetableData(sectionContent)
+                            successCount++
+                        }
+                        "CALENDAR_DATA" -> {
+                            importCalendarData(sectionContent)
+                            successCount++
+                        }
+                        "HOMEWORK_DATA" -> {
+                            importHomeworkData(sectionContent)
+                            successCount++
+                        }
+                        "EXAM_DATA" -> {
+                            importExamData(sectionContent)
+                            successCount++
+                        }
+                        "GRADE_DATA" -> {
+                            importGradeData(sectionContent)
+                            successCount++
+                        }
+                        "APP_SETTINGS" -> {
+                            importAppSettings(sectionContent)
+                            successCount++
+                        }
+                        else -> {
+                            L.w(TAG, "Unknown section: $sectionName")
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.e(TAG, "Error restoring section $sectionName", e)
+                    errors.add("$sectionName: ${e.message}")
+                }
+            }
+
+            return RestoreResult(
+                success = errors.isEmpty(),
+                restoredSections = successCount,
+                totalSections = 6,
+                errors = errors
+            )
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error parsing backup", e)
+            return RestoreResult(
+                success = false,
+                restoredSections = 0,
+                totalSections = 6,
+                errors = listOf("Backup parsing failed: ${e.message}")
+            )
+        }
+    }
+
+    private fun parseBackupSections(content: String): Map<String, String> {
+        val sections = mutableMapOf<String, String>()
+        val lines = content.lines()
+
+        var currentSection: String? = null
+        var currentContent = StringBuilder()
+
+        for (line in lines) {
+            when {
+                line.startsWith("[") && line.endsWith("]") && !line.startsWith("[/") -> {
+                    currentSection?.let { sections[it] = currentContent.toString().trim() }
+                    currentSection = line.substring(1, line.length - 1)
+                    currentContent = StringBuilder()
+                }
+                line.startsWith("[/") && line.endsWith("]") -> {
+                    currentSection?.let { sections[it] = currentContent.toString().trim() }
+                    currentSection = null
+                    currentContent = StringBuilder()
+                }
+                currentSection != null && !line.startsWith("#") -> {
+                    currentContent.appendLine(line)
+                }
+            }
+        }
+
+        return sections
+    }
+
+    private fun exportTimetableData(): String {
+        val subjects = sharedPreferences.getString("student_subjects", "") ?: ""
+        val teachers = sharedPreferences.getString("student_teachers", "") ?: ""
+        val rooms = sharedPreferences.getString("student_rooms", "") ?: ""
+        val allSubjects = sharedPreferences.getString("all_extracted_subjects", "") ?: ""
+        val allTeachers = sharedPreferences.getString("all_extracted_teachers", "") ?: ""
+        val allRooms = sharedPreferences.getString("all_extracted_rooms", "") ?: ""
+        val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
+        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "") ?: ""
+        val hasScanned = sharedPreferences.getBoolean("has_scanned_document", false)
+        val docInfo = sharedPreferences.getString("scanned_document_info", "") ?: ""
+        val filterSubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+
+        return buildString {
+            appendLine("KLASSE=$klasse")
+            appendLine("BILDUNGSGANG=$bildungsgang")
+            appendLine("HAS_SCANNED=$hasScanned")
+            appendLine("DOCUMENT_INFO=$docInfo")
+            appendLine("STUDENT_SUBJECTS=$subjects")
+            appendLine("STUDENT_TEACHERS=$teachers")
+            appendLine("STUDENT_ROOMS=$rooms")
+            appendLine("ALL_SUBJECTS=$allSubjects")
+            appendLine("ALL_TEACHERS=$allTeachers")
+            appendLine("ALL_ROOMS=$allRooms")
+            appendLine("FILTER_SUBJECTS=$filterSubjects")
+        }
+    }
+
+    private fun importTimetableData(content: String) {
+        val lines = content.lines()
+        val editor = sharedPreferences.edit()
+
+        lines.forEach { line ->
+            when {
+                line.startsWith("KLASSE=") -> editor.putString("selected_klasse", line.substringAfter("="))
+                line.startsWith("BILDUNGSGANG=") -> editor.putString("selected_bildungsgang", line.substringAfter("="))
+                line.startsWith("HAS_SCANNED=") -> editor.putBoolean("has_scanned_document", line.substringAfter("=").toBoolean())
+                line.startsWith("DOCUMENT_INFO=") -> editor.putString("scanned_document_info", line.substringAfter("="))
+                line.startsWith("STUDENT_SUBJECTS=") -> editor.putString("student_subjects", line.substringAfter("="))
+                line.startsWith("STUDENT_TEACHERS=") -> editor.putString("student_teachers", line.substringAfter("="))
+                line.startsWith("STUDENT_ROOMS=") -> editor.putString("student_rooms", line.substringAfter("="))
+                line.startsWith("ALL_SUBJECTS=") -> editor.putString("all_extracted_subjects", line.substringAfter("="))
+                line.startsWith("ALL_TEACHERS=") -> editor.putString("all_extracted_teachers", line.substringAfter("="))
+                line.startsWith("ALL_ROOMS=") -> editor.putString("all_extracted_rooms", line.substringAfter("="))
+                line.startsWith("FILTER_SUBJECTS=") -> editor.putBoolean("filter_only_my_subjects", line.substringAfter("=").toBoolean())
+            }
+        }
+
+        editor.apply()
+    }
+
+    private fun exportAppSettings(): String {
+        val startupPage = sharedPreferences.getInt("startup_page_index", 0)
+        val autoUpdate = sharedPreferences.getBoolean("auto_update_enabled", false)
+        val updateTime = sharedPreferences.getString("auto_update_time", "06:00") ?: ""
+        val wifiOnly = sharedPreferences.getBoolean("update_wifi_only", false)
+        val showNotifications = sharedPreferences.getBoolean("show_update_notifications", true)
+        val changeNotification = sharedPreferences.getBoolean("change_notification_enabled", false)
+        val changeInterval = sharedPreferences.getInt("change_notification_interval", 15)
+        val changeType = sharedPreferences.getString("change_notification_type", "all_class_subjects") ?: ""
+        val darkMode = sharedPreferences.getBoolean("dark_mode_enabled", false)
+        val landscape = sharedPreferences.getBoolean("landscape_mode_enabled", true)
+        val colorblindMode = sharedPreferences.getString("colorblind_mode", "none") ?: ""
+        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
+
+        return buildString {
+            appendLine("STARTUP_PAGE=$startupPage")
+            appendLine("AUTO_UPDATE=$autoUpdate")
+            appendLine("UPDATE_TIME=$updateTime")
+            appendLine("WIFI_ONLY=$wifiOnly")
+            appendLine("SHOW_NOTIFICATIONS=$showNotifications")
+            appendLine("CHANGE_NOTIFICATION=$changeNotification")
+            appendLine("CHANGE_INTERVAL=$changeInterval")
+            appendLine("CHANGE_TYPE=$changeType")
+            appendLine("DARK_MODE=$darkMode")
+            appendLine("LANDSCAPE_MODE=$landscape")
+            appendLine("COLORBLIND_MODE=$colorblindMode")
+            appendLine("REMOVE_COOLDOWN=$removeCooldown")
+        }
+    }
+
+    private fun importAppSettings(content: String) {
+        val lines = content.lines()
+        val editor = sharedPreferences.edit()
+
+        lines.forEach { line ->
+            when {
+                line.startsWith("STARTUP_PAGE=") -> editor.putInt("startup_page_index", line.substringAfter("=").toIntOrNull() ?: 0)
+                line.startsWith("AUTO_UPDATE=") -> editor.putBoolean("auto_update_enabled", line.substringAfter("=").toBoolean())
+                line.startsWith("UPDATE_TIME=") -> editor.putString("auto_update_time", line.substringAfter("="))
+                line.startsWith("WIFI_ONLY=") -> editor.putBoolean("update_wifi_only", line.substringAfter("=").toBoolean())
+                line.startsWith("SHOW_NOTIFICATIONS=") -> editor.putBoolean("show_update_notifications", line.substringAfter("=").toBoolean())
+                line.startsWith("CHANGE_NOTIFICATION=") -> editor.putBoolean("change_notification_enabled", line.substringAfter("=").toBoolean())
+                line.startsWith("CHANGE_INTERVAL=") -> editor.putInt("change_notification_interval", line.substringAfter("=").toIntOrNull() ?: 15)
+                line.startsWith("CHANGE_TYPE=") -> editor.putString("change_notification_type", line.substringAfter("="))
+                line.startsWith("DARK_MODE=") -> editor.putBoolean("dark_mode_enabled", line.substringAfter("=").toBoolean())
+                line.startsWith("LANDSCAPE_MODE=") -> editor.putBoolean("landscape_mode_enabled", line.substringAfter("=").toBoolean())
+                line.startsWith("COLORBLIND_MODE=") -> editor.putString("colorblind_mode", line.substringAfter("="))
+                line.startsWith("REMOVE_COOLDOWN=") -> editor.putBoolean("remove_update_cooldown", line.substringAfter("=").toBoolean())
+            }
+        }
+
+        editor.apply()
+    }
+
+    data class ExamEntry(
+        val id: String = UUID.randomUUID().toString(),
+        var subject: String,
+        var date: Date,
+        var note: String = "",
+        var isCompleted: Boolean = false,
+        var examNumber: Int? = null,
+        var isFromSchedule: Boolean = false,
+        var mark: Int? = null
+    )
+
+    data class ExamScheduleInfo(
+        val semester: String,
+        val year: String,
+        val className: String,
+        val isValid: Boolean
+    )
+
+    fun exportExamData(): String {
+        return try {
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
+            val exportDate = dateFormat.format(Date())
+
+            val sb = StringBuilder()
+            sb.appendLine("# Heinrich-Kleyer-Schule Klausuren Export")
+            sb.appendLine("# Exportiert am: $exportDate")
+
+            val scheduleInfoJson = sharedPreferences.getString("exam_schedule_info", null)
+            if (scheduleInfoJson != null) {
+                try {
+                    val scheduleInfo = Gson().fromJson(scheduleInfoJson, ExamScheduleInfo::class.java)
+                    sb.appendLine("# Semester: ${scheduleInfo.semester}")
+                    sb.appendLine("# Schuljahr: ${scheduleInfo.year}")
+                    sb.appendLine("# Klasse: ${scheduleInfo.className}")
+                } catch (e: Exception) {
+                    L.w(TAG, "Error parsing schedule info", e)
+                }
+            }
+
+            sb.appendLine("# Format: Fach|Datum|Notiz|Erledigt|Klausurnummer|AusStundenplan|Punkte")
+            sb.appendLine()
+
+            val examListJson = sharedPreferences.getString("exam_list", "[]")
+            val type = object : TypeToken<MutableList<ExamEntry>>() {}.type
+            val examList: MutableList<ExamEntry> = Gson().fromJson(examListJson, type) ?: mutableListOf()
+
+            for (exam in examList) {
+                val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(exam.date)
+                val noteStr = exam.note.replace("\n", "\\n")
+                val completedStr = if (exam.isCompleted) "1" else "0"
+                val examNumberStr = exam.examNumber?.toString() ?: ""
+                val fromScheduleStr = if (exam.isFromSchedule) "1" else "0"
+                val markStr = exam.mark?.toString() ?: ""
+
+                sb.appendLine("${exam.subject}|$dateStr|$noteStr|$completedStr|$examNumberStr|$fromScheduleStr|$markStr")
+            }
+
+            sb.appendLine()
+            sb.append(getFilteredCalendarExportForBackup())
+
+            sb.toString()
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting exam data", e)
+            "# Error exporting exam data: ${e.message}"
+        }
+    }
+
+    /**
+     * Import exam data by directly manipulating SharedPreferences and CalendarDataManager
+     */
+    fun importExamData(content: String) {
+        try {
+            val lines = content.split("\n")
+            val examList = mutableListOf<ExamEntry>()
+
+            val calendarManager = CalendarDataManager.getInstance(context)
+            calendarManager.clearCalendarData()
+
+            var importedExamCount = 0
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+
+            var inCalendarSection = false
+            val calendarLines = mutableListOf<String>()
+
+            for (line in lines) {
+                if (line.trim().startsWith("# Calendar Data")) {
+                    inCalendarSection = true
+                    continue
+                }
+
+                if (inCalendarSection) {
+                    calendarLines.add(line)
+                } else if (!line.startsWith("#") && line.trim().isNotEmpty() && line.contains("|")) {
+                    val parts = line.split("|")
+                    if (parts.size >= 6) {
+                        try {
+                            val subject = parts[0].trim()
+                            val date = dateFormat.parse(parts[1].trim()) ?: continue
+                            val note = parts[2].trim().replace("\\n", "\n")
+                            val isCompleted = parts[3].trim() == "1"
+                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
+                            val mark = parts.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+
+                            val exam = ExamEntry(
+                                subject = subject,
+                                date = date,
+                                note = note,
+                                isCompleted = isCompleted,
+                                examNumber = examNumber,
+                                isFromSchedule = isFromSchedule,
+                                mark = mark
+                            )
+
+                            examList.add(exam)
+                            importedExamCount++
+                        } catch (e: Exception) {
+                            L.w(TAG, "Error parsing exam line: $line", e)
+                        }
+                    }
+                }
+            }
+
+            if (calendarLines.isNotEmpty()) {
+                val calendarContent = calendarLines.joinToString("\n")
+                calendarManager.importCalendarData(calendarContent)
+            }
+
+            val json = Gson().toJson(examList)
+            sharedPreferences.edit()
+                .putString("exam_list", json)
+                .apply()
+
+            L.d(TAG, "Imported $importedExamCount exams successfully")
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing exam data", e)
+            throw Exception("Failed to import exam data: ${e.message}")
+        }
+    }
+
+    private fun getFilteredCalendarExportForBackup(): String {
+        val sb = StringBuilder()
+        sb.appendLine("# Calendar Data Export")
+        sb.appendLine("# Format: Date|DayOfWeek|Month|Year|Content|IsSpecialDay|SpecialNote")
+
+        try {
+            val calendarManager = CalendarDataManager.getInstance(context)
+            val allDays = calendarManager.getAllCalendarDays()
+
+            val specialDaysOnly = allDays.filter { dayInfo ->
+                dayInfo.isSpecialDay && dayInfo.specialNote.isNotEmpty()
+            }
+
+            L.d(TAG, "Exporting ${specialDaysOnly.size} special days out of ${allDays.size} total days")
+
+            for (dayInfo in specialDaysOnly.sortedBy { it.date }) {
+                val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(dayInfo.date)
+                val dayOfWeek = dayInfo.dayOfWeek
+                val month = dayInfo.month
+                val year = dayInfo.year
+                val content = dayInfo.content
+                val isSpecialDay = "1" // always 1 since filtered for special days
+                val specialNote = dayInfo.specialNote
+
+                sb.appendLine("$dateStr|$dayOfWeek|$month|$year|$content|$isSpecialDay|$specialNote")
+            }
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting calendar data for backup", e)
+            sb.appendLine("# Error exporting calendar data: ${e.message}")
+        }
+
+        return sb.toString()
+    }
+
+    fun exportCalendarData(): String {
+        return try {
+            val sb = StringBuilder()
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
+
+            sb.appendLine("# Heinrich-Kleyer-Schule Kalender Stundenplan Export")
+            sb.appendLine("# Exportiert am: ${dateFormat.format(Date())}")
+            sb.appendLine("SCHULJAHR=2025/2026")
+            sb.appendLine("")
+
+            sb.appendLine("# Feriendaten mit Namen:")
+            val vacationData = loadVacationDataFromPrefs()
+            vacationData.forEach { (weekKey, vacation) ->
+                sb.appendLine("$weekKey: ${vacation.name} (${vacation.source})")
+            }
+            sb.appendLine("")
+
+            sb.appendLine("# Benutzer Notizen und besondere Ereignisse:")
+            exportUserDayData(sb)
+            sb.appendLine("")
+
+            sb.appendLine("# Stundenplan Daten:")
+            val timetableData = loadTimetableDataFromPrefs()
+
+            for ((dayKey, daySchedule) in timetableData) {
+                val dayName = when (dayKey) {
+                    "weekday_0" -> "Montag"
+                    "weekday_1" -> "Dienstag"
+                    "weekday_2" -> "Mittwoch"
+                    "weekday_3" -> "Donnerstag"
+                    "weekday_4" -> "Freitag"
+                    else -> dayKey
+                }
+                sb.appendLine("$dayName:")
+
+                val groupedLessons = mutableListOf<Pair<IntRange, TimetableEntry>>()
+                var currentRange: IntRange? = null
+                var currentSubject: String? = null
+
+                for ((lesson, entry) in daySchedule.toSortedMap()) {
+                    if (entry.subject == currentSubject && currentRange != null) {
+                        currentRange = currentRange.first..lesson
+                    } else {
+                        if (currentRange != null && currentSubject != null) {
+                            val previousEntry = daySchedule[currentRange.first]
+                            if (previousEntry != null) {
+                                groupedLessons.add(Pair(currentRange, previousEntry))
+                            }
+                        }
+                        currentRange = lesson..lesson
+                        currentSubject = entry.subject
+                    }
+                }
+
+                if (currentRange != null && currentSubject != null) {
+                    val lastEntry = daySchedule[currentRange.first]
+                    if (lastEntry != null) {
+                        groupedLessons.add(Pair(currentRange, lastEntry))
+                    }
+                }
+
+                for ((range, entry) in groupedLessons) {
+                    val lessonCount = range.count()
+                    val lessonText = if (lessonCount == 1) "Stunde" else "Stunden"
+                    val rangeText = if (range.first == range.last) {
+                        "Stunde ${range.first}"
+                    } else {
+                        "Stunden ${range.first}-${range.last}"
+                    }
+                    sb.appendLine("  $rangeText: ${entry.subject} ($lessonCount $lessonText)")
+                    if (entry.teacher.isNotBlank()) sb.appendLine("    Lehrer: ${entry.teacher}")
+                    if (entry.room.isNotBlank()) sb.appendLine("    Raum: ${entry.room}")
+                }
+                sb.appendLine("")
+            }
+
+            sb.appendLine("# Raw JSON Data:")
+            val json = Gson().toJson(timetableData)
+            sb.appendLine("TIMETABLE_DATA=$json")
+
+            sb.appendLine("# Vacation Data:")
+            val vacationJson = Gson().toJson(vacationData)
+            sb.appendLine("VACATION_DATA=$vacationJson")
+
+            sb.appendLine("# User Day Data:")
+            val userDayDataJson = exportUserDayDataAsJson()
+            sb.appendLine("USER_DAY_DATA=$userDayDataJson")
+
+            sb.toString()
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting calendar data", e)
+            "# Error exporting calendar data: ${e.message}"
+        }
+    }
+
+    private fun exportUserDayData(sb: StringBuilder) {
+        val allKeys = sharedPreferences.all.keys
+        val noteKeys = allKeys.filter { it.startsWith("user_notes_") }
+        val occasionKeys = allKeys.filter { it.startsWith("user_special_occasions_") }
+
+        val processedDates = mutableSetOf<String>()
+
+        noteKeys.forEach { key ->
+            val dateStr = key.substringAfter("user_notes_")
+            if (!processedDates.contains(dateStr)) {
+                processedDates.add(dateStr)
+
+                val notes = sharedPreferences.getString(key, "") ?: ""
+                val occasionsJson = sharedPreferences.getString("user_special_occasions_$dateStr", "[]") ?: "[]"
+                val occasions = try {
+                    val type = object : TypeToken<List<String>>() {}.type
+                    Gson().fromJson<List<String>>(occasionsJson, type) ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList<String>()
+                }
+
+                if (notes.isNotBlank() || occasions.isNotEmpty()) {
+                    sb.appendLine("$dateStr:")
+                    if (notes.isNotBlank()) {
+                        sb.appendLine("  Notizen: $notes")
+                    }
+                    if (occasions.isNotEmpty()) {
+                        sb.appendLine("  Ereignisse: ${occasions.joinToString(", ")}")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun exportUserDayDataAsJson(): String {
+        val userDayData = mutableMapOf<String, UserDayData>()
+        val allKeys = sharedPreferences.all.keys
+        val noteKeys = allKeys.filter { it.startsWith("user_notes_") }
+
+        noteKeys.forEach { key ->
+            val dateStr = key.substringAfter("user_notes_")
+            val notes = sharedPreferences.getString(key, "") ?: ""
+            val occasionsJson = sharedPreferences.getString("user_special_occasions_$dateStr", "[]") ?: "[]"
+            val occasions = try {
+                val type = object : TypeToken<List<String>>() {}.type
+                Gson().fromJson<List<String>>(occasionsJson, type) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList<String>()
+            }
+
+            if (notes.isNotBlank() || occasions.isNotEmpty()) {
+                userDayData[dateStr] = UserDayData(notes, occasions)
+            }
+        }
+
+        return Gson().toJson(userDayData)
+    }
+
+    fun importCalendarData(content: String) {
+        try {
+            val lines = content.split("\n")
+            var timetableImported = false
+            var vacationImported = false
+            var userDayDataImported = false
+
+            for (line in lines) {
+                when {
+                    line.startsWith("TIMETABLE_DATA=") -> {
+                        val jsonData = line.substringAfter("TIMETABLE_DATA=")
+                        val type = object : TypeToken<MutableMap<String, MutableMap<Int, TimetableEntry>>>() {}.type
+                        val importedData: MutableMap<String, MutableMap<Int, TimetableEntry>> = Gson().fromJson(jsonData, type)
+
+                        val processedData = mutableMapOf<String, MutableMap<Int, TimetableEntry>>()
+                        for ((dayKey, daySchedule) in importedData) {
+                            val processedSchedule = mutableMapOf<Int, TimetableEntry>()
+                            for ((lesson, entry) in daySchedule) {
+                                val (matchedTeacher, matchedRoom) = getTeacherAndRoomForSubject(entry.subject)
+                                val updatedEntry = TimetableEntry(
+                                    subject = entry.subject,
+                                    duration = entry.duration,
+                                    isBreak = entry.isBreak,
+                                    breakDuration = entry.breakDuration,
+                                    teacher = matchedTeacher.ifBlank { entry.teacher },
+                                    room = matchedRoom.ifBlank { entry.room }
+                                )
+                                processedSchedule[lesson] = updatedEntry
+                            }
+                            processedData[dayKey] = processedSchedule
+                        }
+
+                        saveTimetableDataToPrefs(processedData)
+                        timetableImported = true
+                    }
+                    line.startsWith("VACATION_DATA=") -> {
+                        val jsonData = line.substringAfter("VACATION_DATA=")
+
+                        try {
+                            val newType = object : TypeToken<MutableMap<String, VacationWeek>>() {}.type
+                            val importedVacations: MutableMap<String, VacationWeek> = Gson().fromJson(jsonData, newType)
+                            saveVacationDataToPrefs(importedVacations)
+                            vacationImported = true
+                        } catch (e: Exception) {
+                            try {
+                                val oldType = object : TypeToken<MutableSet<String>>() {}.type
+                                val importedVacationsOld: MutableSet<String> = Gson().fromJson(jsonData, oldType)
+
+                                val convertedVacations = mutableMapOf<String, VacationWeek>()
+                                importedVacationsOld.forEach { weekKey ->
+                                    val vacationName = "Ferien"
+                                    convertedVacations[weekKey] = VacationWeek(weekKey, vacationName, VacationSource.MANUAL)
+                                }
+                                saveVacationDataToPrefs(convertedVacations)
+                                vacationImported = true
+                            } catch (migrateException: Exception) {
+                                L.e(TAG, "Error migrating vacation data", migrateException)
+                            }
+                        }
+                    }
+                    line.startsWith("USER_DAY_DATA=") -> {
+                        val jsonData = line.substringAfter("USER_DAY_DATA=")
+                        try {
+                            val type = object : TypeToken<MutableMap<String, UserDayData>>() {}.type
+                            val importedUserData: MutableMap<String, UserDayData> = Gson().fromJson(jsonData, type)
+
+                            clearAllUserDayData()
+
+                            importedUserData.forEach { (dateStr, userData) ->
+                                if (userData.notes.isNotBlank()) {
+                                    sharedPreferences.edit()
+                                        .putString("user_notes_$dateStr", userData.notes)
+                                        .apply()
+                                }
+                                if (userData.specialOccasions.isNotEmpty()) {
+                                    val occasionsJson = Gson().toJson(userData.specialOccasions)
+                                    sharedPreferences.edit()
+                                        .putString("user_special_occasions_$dateStr", occasionsJson)
+                                        .apply()
+                                }
+                            }
+                            userDayDataImported = true
+                        } catch (e: Exception) {
+                            L.e(TAG, "Error importing user day data", e)
+                        }
+                    }
+                }
+            }
+
+            if (!timetableImported && !vacationImported && !userDayDataImported) {
+                throw Exception("No valid calendar data found in backup")
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing calendar data", e)
+            throw Exception("Failed to import calendar data: ${e.message}")
+        }
+    }
+
+    private fun clearAllUserDayData() {
+        val allKeys = sharedPreferences.all.keys.toList()
+        val editor = sharedPreferences.edit()
+
+        allKeys.forEach { key ->
+            if (key.startsWith("user_notes_") || key.startsWith("user_special_occasions_")) {
+                editor.remove(key)
+            }
+        }
+
+        editor.apply()
+    }
+
+    data class UserDayData(
+        val notes: String,
+        val specialOccasions: List<String>
+    )
+
+    private fun loadTimetableDataFromPrefs(): MutableMap<String, MutableMap<Int, TimetableEntry>> {
+        return try {
+            val json = sharedPreferences.getString("timetable_data", "{}")
+            val type = object : TypeToken<MutableMap<String, MutableMap<Int, TimetableEntry>>>() {}.type
+            Gson().fromJson(json, type) ?: mutableMapOf()
+        } catch (e: Exception) {
+            L.e(TAG, "Error loading timetable data from preferences", e)
+            mutableMapOf()
+        }
+    }
+
+    private fun saveTimetableDataToPrefs(data: MutableMap<String, MutableMap<Int, TimetableEntry>>) {
+        try {
+            val json = Gson().toJson(data)
+            sharedPreferences.edit()
+                .putString("timetable_data", json)
+                .apply()
+        } catch (e: Exception) {
+            L.e(TAG, "Error saving timetable data to preferences", e)
+        }
+    }
+
+    private fun loadVacationDataFromPrefs(): MutableMap<String, VacationWeek> {
+        return try {
+            val json = sharedPreferences.getString("vacation_data", "{}")
+            if (json == "[]" || json == "{}") {
+                return mutableMapOf()
+            }
+
+            try {
+                val type = object : TypeToken<MutableMap<String, VacationWeek>>() {}.type
+                Gson().fromJson(json, type) ?: mutableMapOf()
+            } catch (e: Exception) {
+                val oldType = object : TypeToken<MutableSet<String>>() {}.type
+                val oldData: MutableSet<String> = Gson().fromJson(json, oldType) ?: mutableSetOf()
+                val convertedData = mutableMapOf<String, VacationWeek>()
+                oldData.forEach { weekKey ->
+                    convertedData[weekKey] = VacationWeek(weekKey, "Ferien", VacationSource.MANUAL)
+                }
+                convertedData
+            }
+        } catch (e: Exception) {
+            L.e(TAG, "Error loading vacation data from preferences", e)
+            mutableMapOf()
+        }
+    }
+
+    private fun saveVacationDataToPrefs(data: MutableMap<String, VacationWeek>) {
+        try {
+            val json = Gson().toJson(data)
+            sharedPreferences.edit()
+                .putString("vacation_data", json)
+                .apply()
+        } catch (e: Exception) {
+            L.e(TAG, "Error saving vacation data to preferences", e)
+        }
+    }
+
+    private fun getTeacherAndRoomForSubject(subject: String): Pair<String, String> {
+        val subjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        val teachers = sharedPreferences.getString("student_teachers", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        val rooms = sharedPreferences.getString("student_rooms", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
+        var subjectIndex = subjects.indexOf(subject)
+
+        if (subjectIndex == -1 && subject.contains("-")) {
+            val baseSubject = subject.split("-")[0]
+            subjectIndex = subjects.indexOfFirst { it.startsWith(baseSubject) }
+        }
+
+        if (subjectIndex == -1) {
+            subjectIndex = subjects.indexOfFirst { storedSubject ->
+                val storedBase = storedSubject.split("-")[0]
+                val lookupBase = subject.split("-")[0]
+                storedBase.equals(lookupBase, ignoreCase = true)
+            }
+        }
+
+        val teacher = if (subjectIndex >= 0 && subjectIndex < teachers.size) {
+            teachers[subjectIndex].takeIf { it.isNotBlank() } ?: ""
+        } else ""
+
+        val room = if (subjectIndex >= 0 && subjectIndex < rooms.size) {
+            rooms[subjectIndex].takeIf { it.isNotBlank() } ?: ""
+        } else ""
+
+        return Pair(teacher, room)
+    }
+
+    data class TimetableEntry(
+        val subject: String,
+        val duration: Int = 1,
+        val isBreak: Boolean = false,
+        val breakDuration: Int = 0,
+        val teacher: String = "",
+        val room: String = ""
+    )
+
+    data class VacationWeek(
+        val weekKey: String,
+        val name: String,
+        val source: VacationSource = VacationSource.MANUAL
+    )
+
+    enum class VacationSource {
+        MANUAL,
+        AUTO_KULTUS
+    }
+
+    fun exportHomeworkData(): String {
+        return try {
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
+            val exportDate = dateFormat.format(Date())
+
+            val sb = StringBuilder()
+            sb.appendLine("# Heinrich-Kleyer-Schule Hausaufgaben Export")
+            sb.appendLine("# Exportiert am: $exportDate")
+            sb.appendLine("# Format: Fach|Fälligkeitsdatum|Fälligkeitszeit|Stunde|Inhalt|Erledigt")
+            sb.appendLine()
+
+            val json = sharedPreferences.getString("homework_list", "[]")
+            val type = object : TypeToken<List<HomeworkEntry>>() {}.type
+            val homeworkList: List<HomeworkEntry> = Gson().fromJson(json, type) ?: emptyList()
+
+            for (homework in homeworkList) {
+                val dueDateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(homework.dueDate)
+                val dueTimeStr = homework.dueTime?.let {
+                    SimpleDateFormat("HH:mm", Locale.GERMANY).format(it)
+                } ?: ""
+                val lessonStr = homework.lessonNumber?.toString() ?: ""
+                val contentStr = homework.content.replace("\n", "\\n")
+                val completedStr = if (homework.isCompleted) "1" else "0"
+
+                sb.appendLine("${homework.subject}|$dueDateStr|$dueTimeStr|$lessonStr|$contentStr|$completedStr")
+            }
+
+            sb.toString()
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting homework data", e)
+            "# Error exporting homework data: ${e.message}"
+        }
+    }
+
+    fun importHomeworkData(content: String) {
+        try {
+            val lines = content.split("\n").filter { line ->
+                !line.startsWith("#") && line.trim().isNotEmpty()
+            }
+
+            val homeworkList = mutableListOf<HomeworkEntry>()
+            var importedCount = 0
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+            val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
+
+            for (line in lines) {
+                val parts = line.split("|")
+                if (parts.size >= 5) {
+                    try {
+                        val subject = parts[0].trim()
+                        val dueDate = dateFormat.parse(parts[1].trim()) ?: continue
+                        val dueTime = if (parts[2].trim().isNotEmpty()) {
+                            timeFormat.parse(parts[2].trim())
+                        } else null
+                        val lessonNumber = if (parts[3].trim().isNotEmpty()) {
+                            parts[3].trim().toIntOrNull()
+                        } else null
+                        val homeworkContent = parts[4].trim().replace("\\n", "\n")
+                        val isCompleted = parts.getOrNull(5)?.trim() == "1"
+
+                        val (checklistItems, hasTextContent) = parseContentWithChecklistItems(homeworkContent)
+                        val homework = HomeworkEntry(
+                            subject = subject,
+                            dueDate = dueDate,
+                            dueTime = dueTime,
+                            lessonNumber = lessonNumber,
+                            content = homeworkContent,
+                            isCompleted = isCompleted,
+                            checklistItems = checklistItems,
+                            hasTextContent = hasTextContent,
+                            completedDate = if (isCompleted) Date() else null
+                        )
+
+                        homeworkList.add(homework)
+                        importedCount++
+                    } catch (e: Exception) {
+                        L.w(TAG, "Error parsing homework line: $line", e)
+                    }
+                }
+            }
+
+            if (importedCount > 0) {
+                val json = Gson().toJson(homeworkList)
+                sharedPreferences.edit()
+                    .putString("homework_list", json)
+                    .apply()
+
+                L.d(TAG, "Imported $importedCount homework entries successfully")
+            } else {
+                throw Exception("No valid homework entries found in backup")
+            }
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing homework data", e)
+            throw Exception("Failed to import homework data: ${e.message}")
+        }
+    }
+
+    private fun parseContentWithChecklistItems(content: String): Pair<MutableList<ChecklistItem>, Boolean> {
+        val checklistItems = mutableListOf<ChecklistItem>()
+        val lines = content.split("\n")
+        var hasTextContent = false
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("-") && trimmed.length > 1) {
+                checklistItems.add(ChecklistItem(trimmed.substring(1).trim()))
+            } else if (trimmed.isNotEmpty()) {
+                hasTextContent = true
+            }
+        }
+
+        return Pair(checklistItems, hasTextContent)
+    }
+
+    data class HomeworkEntry(
+        val id: String = UUID.randomUUID().toString(),
+        var subject: String,
+        var dueDate: Date,
+        var dueTime: Date? = null,
+        var lessonNumber: Int? = null,
+        var content: String,
+        var isCompleted: Boolean = false,
+        var completedDate: Date? = null,
+        var checklistItems: MutableList<ChecklistItem> = mutableListOf(),
+        var hasTextContent: Boolean = false
+    )
+
+    data class ChecklistItem(
+        var text: String,
+        var isCompleted: Boolean = false
+    )
+
+    fun exportGradeData(): String {
+        return try {
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
+            val exportDate = dateFormat.format(Date())
+            val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
+            val useComplexGrading = bildungsgang == "BG" && sharedPreferences.getBoolean("use_simple_grading", false).not()
+
+            val sb = StringBuilder()
+            sb.appendLine("# Heinrich-Kleyer-Schule Noten Export")
+            sb.appendLine("# Exportiert am: $exportDate")
+            sb.appendLine("# Grading System: ${if (useComplexGrading) "Complex (Abitur)" else "Simple"}")
+            sb.appendLine("# Format: Fach|Lehrer|HalbjahrX_Mündlich|HalbjahrX_Verhältnis")
+            sb.appendLine()
+
+            val subjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+            val teachers = sharedPreferences.getString("student_teachers", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
+            val oralGradesHistoryJson = sharedPreferences.getString("oral_grades_history", "{}")
+            val oralGradesHistoryType = object : TypeToken<Map<String, Map<Int, Double>>>() {}.type
+            val oralGradesHistory: Map<String, Map<Int, Double>> = try {
+                Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val ratiosJson = sharedPreferences.getString("grade_ratios", "{}")
+            val ratiosType = object : TypeToken<Map<String, Pair<Int, Int>>>() {}.type
+            val ratios: Map<String, Pair<Int, Int>> = try {
+                Gson().fromJson(ratiosJson, ratiosType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val pruefungsfaecherJson = sharedPreferences.getString("pruefungsfaecher", "{}")
+            val pruefungsfaecherType = object : TypeToken<Map<String, Boolean>>() {}.type
+            val pruefungsfaecher: Map<String, Boolean> = try {
+                Gson().fromJson(pruefungsfaecherJson, pruefungsfaecherType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val pruefungsergebnisseJson = sharedPreferences.getString("pruefungsergebnisse", "{}")
+            val pruefungsergebnisseType = object : TypeToken<Map<String, Double>>() {}.type
+            val pruefungsergebnisse: Map<String, Double> = try {
+                Gson().fromJson(pruefungsergebnisseJson, pruefungsergebnisseType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val selectedHalfYearsJson = sharedPreferences.getString("selected_half_years", "{}")
+            val selectedHalfYearsType = object : TypeToken<Map<String, Int>>() {}.type
+            val selectedHalfYears: Map<String, Int> = try {
+                Gson().fromJson(selectedHalfYearsJson, selectedHalfYearsType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            for (halfyear in 1..4) {
+                sb.appendLine("## Halbjahr $halfyear")
+
+                for (i in subjects.indices) {
+                    val subject = subjects[i].trim()
+                    if (subject.isEmpty() || subject.startsWith("tu", ignoreCase = true)) continue
+
+                    val teacher = if (i < teachers.size) teachers[i].trim() else ""
+                    val oralGrade = oralGradesHistory[subject]?.get(halfyear)?.let { DecimalFormat("0.0").format(it) } ?: ""
+                    val ratio = ratios[subject]?.let { "${it.first}:${it.second}" } ?: "50:50"
+                    val isPruefungsfach = if (useComplexGrading && pruefungsfaecher[subject] == true) "P" else ""
+                    val pruefungsergebnis = if (useComplexGrading && pruefungsergebnisse[subject] != null)
+                        DecimalFormat("0.0").format(pruefungsergebnisse[subject]!!) else ""
+                    val selectedHalfYearsCount = if (useComplexGrading) selectedHalfYears[subject]?.toString() ?: "1" else "1"
+
+                    sb.appendLine("$subject|$teacher|$oralGrade|$ratio|$isPruefungsfach|$pruefungsergebnis|$selectedHalfYearsCount")
+                }
+                sb.appendLine()
+            }
+
+            val goalGrade = sharedPreferences.getFloat("goal_grade", 0f)
+            if (goalGrade > 0) {
+                sb.appendLine("# Ziel-Note")
+                sb.appendLine("GOAL|${DecimalFormat("0.0").format(goalGrade)}")
+                sb.appendLine()
+            }
+
+            // export graph
+            val historyJson = sharedPreferences.getString("grade_history", "[]")
+            val historyType = object : TypeToken<List<GradeHistoryEntry>>() {}.type
+            val history: List<GradeHistoryEntry> = try {
+                Gson().fromJson(historyJson, historyType) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+
+            if (history.isNotEmpty()) {
+                sb.appendLine("# Notenverlauf (Graph)")
+                sb.appendLine("# Format: Monat|Jahr|Note")
+                for (entry in history) {
+                    sb.appendLine("GRAPH|${entry.month}|${entry.year}|${DecimalFormat("0.0").format(entry.grade)}")
+                }
+                sb.appendLine()
+            }
+
+            sb.appendLine("# System Settings")
+            sb.appendLine("COMPLEX_GRADING|${if (useComplexGrading) "true" else "false"}")
+            sb.appendLine("CURRENT_HALFYEAR|${sharedPreferences.getInt("current_halfyear", 1)}")
+
+            sb.toString()
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting grade data", e)
+            "# Error exporting grade data: ${e.message}"
+        }
+    }
+
+    fun importGradeData(content: String) {
+        try {
+            val lines = content.split("\n")
+            val oralGradesAllHalfYears = mutableMapOf<String, MutableMap<Int, Double>>()
+            val ratios = mutableMapOf<String, Pair<Int, Int>>()
+            val pruefungsfaecher = mutableMapOf<String, Boolean>()
+            val pruefungsergebnisse = mutableMapOf<String, Double>()
+            val selectedHalfYears = mutableMapOf<String, Int>()
+            var goalGrade: Float? = null
+            val history = mutableListOf<GradeHistoryEntry>()
+            var currentHalfyear = 1
+            var importedComplexGrading = false
+            var importedCurrentHalfyear = 1
+
+            for (line in lines) {
+                if (line.startsWith("#") || line.trim().isEmpty()) {
+                    if (line.contains("Halbjahr")) {
+                        val halfyearMatch = Regex("Halbjahr (\\d+)").find(line)
+                        if (halfyearMatch != null) {
+                            currentHalfyear = halfyearMatch.groupValues[1].toInt()
+                        }
+                    }
+                    continue
+                }
+
+                val parts = line.split("|")
+                when {
+                    parts[0] == "GOAL" && parts.size >= 2 -> {
+                        goalGrade = parts[1].replace(",", ".").toFloatOrNull()
+                    }
+                    parts[0] == "GRAPH" && parts.size >= 4 -> {
+                        val month = parts[1].toIntOrNull()
+                        val year = parts[2].toIntOrNull()
+                        val grade = parts[3].replace(",", ".").toDoubleOrNull()
+                        if (month != null && year != null && grade != null) {
+                            history.add(GradeHistoryEntry(month, year, grade))
+                        }
+                    }
+                    parts[0] == "COMPLEX_GRADING" && parts.size >= 2 -> {
+                        importedComplexGrading = parts[1] == "true"
+                    }
+                    parts[0] == "CURRENT_HALFYEAR" && parts.size >= 2 -> {
+                        importedCurrentHalfyear = parts[1].toIntOrNull() ?: 1
+                    }
+                    parts.size >= 7 -> {
+                        val subject = parts[0].trim()
+                        val oralGradeStr = parts[2].trim()
+                        val ratioStr = parts[3].trim()
+                        val isPruefungsfachStr = parts[4].trim()
+                        val pruefungsergebnisStr = parts[5].trim()
+                        val selectedHalfYearsStr = parts[6].trim()
+
+                        if (!oralGradesAllHalfYears.containsKey(subject)) {
+                            oralGradesAllHalfYears[subject] = mutableMapOf()
+                        }
+
+                        if (oralGradeStr.isNotEmpty()) {
+                            oralGradesAllHalfYears[subject]!![currentHalfyear] = oralGradeStr.replace(",", ".").toDouble()
+                        }
+
+                        if (ratioStr.contains(":")) {
+                            val ratioParts = ratioStr.split(":")
+                            if (ratioParts.size == 2) {
+                                val oral = ratioParts[0].toIntOrNull() ?: 50
+                                val written = ratioParts[1].toIntOrNull() ?: 50
+                                ratios[subject] = Pair(oral, written)
+                            }
+                        }
+
+                        if (isPruefungsfachStr == "P") {
+                            pruefungsfaecher[subject] = true
+                        }
+
+                        if (pruefungsergebnisStr.isNotEmpty()) {
+                            pruefungsergebnisse[subject] = pruefungsergebnisStr.replace(",", ".").toDouble()
+                        }
+
+                        if (selectedHalfYearsStr.isNotEmpty()) {
+                            selectedHalfYears[subject] = selectedHalfYearsStr.toIntOrNull() ?: 1
+                        }
+                    }
+                    parts.size >= 4 -> {
+                        val subject = parts[0].trim()
+                        val oralGradeStr = parts[2].trim()
+                        val ratioStr = parts[3].trim()
+
+                        if (!oralGradesAllHalfYears.containsKey(subject)) {
+                            oralGradesAllHalfYears[subject] = mutableMapOf()
+                        }
+
+                        if (oralGradeStr.isNotEmpty()) {
+                            oralGradesAllHalfYears[subject]!![1] = oralGradeStr.replace(",", ".").toDouble()
+                        }
+
+                        if (ratioStr.contains(":")) {
+                            val ratioParts = ratioStr.split(":")
+                            if (ratioParts.size == 2) {
+                                val oral = ratioParts[0].toIntOrNull() ?: 50
+                                val written = ratioParts[1].toIntOrNull() ?: 50
+                                ratios[subject] = Pair(oral, written)
+                            }
+                        }
+                    }
+                }
+            }
+            val editor = sharedPreferences.edit()
+            editor.putString("oral_grades_history", Gson().toJson(oralGradesAllHalfYears))
+            editor.putString("grade_ratios", Gson().toJson(ratios))
+            editor.putString("grade_history", Gson().toJson(history))
+            editor.putString("pruefungsfaecher", Gson().toJson(pruefungsfaecher))
+            editor.putString("pruefungsergebnisse", Gson().toJson(pruefungsergebnisse))
+            editor.putString("selected_half_years", Gson().toJson(selectedHalfYears))
+            editor.putBoolean("use_simple_grading", !importedComplexGrading)
+            editor.putInt("current_halfyear", importedCurrentHalfyear)
+
+            if (goalGrade != null) {
+                editor.putFloat("goal_grade", goalGrade)
+            }
+
+            editor.apply()
+
+            L.d(TAG, "Grade data imported successfully")
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing grade data", e)
+            throw Exception("Failed to import grade data: ${e.message}")
+        }
+    }
+
+    data class GradeHistoryEntry(
+        val month: Int,
+        val year: Int,
+        var grade: Double
+    )
+
+    data class RestoreResult(
+        val success: Boolean,
+        val restoredSections: Int,
+        val totalSections: Int,
+        val errors: List<String>
+    )
+}

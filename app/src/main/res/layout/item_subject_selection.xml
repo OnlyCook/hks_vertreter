@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:minHeight="48dp">
+
+    <CheckBox
+        android:id="@+id/checkBoxSubject"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:focusable="false"
+        android:clickable="false" />
+
+    <TextView
+        android:id="@+id/textSubject"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Subject Name"
+        android:textSize="16sp"
+        android:textColor="@android:color/black"
+        android:paddingVertical="8dp" />
+
+    <!-- buttons -->
+    <Button
+        android:id="@+id/btnEdit"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginEnd="4dp"
+        android:text="✎"
+        android:textSize="16sp"
+        android:backgroundTint="@android:color/holo_blue_light"
+        android:padding="4dp"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        style="@style/Widget.AppCompat.Button" />
+
+    <Button
+        android:id="@+id/btnDelete"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:text="✖"
+        android:textSize="16sp"
+        android:backgroundTint="@android:color/holo_red_light"
+        android:padding="4dp"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        style="@style/Widget.AppCompat.Button" />
+
+</LinearLayout>

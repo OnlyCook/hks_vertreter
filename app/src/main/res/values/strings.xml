@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">HKS Vertreter</string>
+    <string name="navigation_drawer_open">Navigationsleiste öffnen</string>
+    <string name="navigation_drawer_close">Navigationsleiste schließen</string>
+    <string name="nav_header_title">HKS Vertreter</string>
+    <string name="nav_header_subtitle">Heinrich-Kleyer-Schule</string>
+    <string name="nav_header_desc">Navigationsleiste</string>
+    <string name="action_settings">Einstellungen</string>
+
+    <string name="menu_home">Vertretungsplan</string>
+    <string name="menu_gallery">Kalender</string>
+    <string name="menu_slideshow">Hausaufgaben</string>
+    <string name="menu_klausuren">Klausuren</string>
+    <string name="menu_noten">Noten</string>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="colorblind_modes">
+        <item>Normal</item>
+        <item>Protanopie (Rot-Grün)</item>
+        <item>Deuteranopie (Rot-Grün)</item>
+        <item>Tritanopie (Blau-Gelb)</item>
+    </string-array>
+
+    <string-array name="colorblind_values">
+    <item>none</item>
+    <item>protanopia</item>
+    <item>deuteranopia</item>
+    <item>tritanopia</item>
+    </string-array>
+</resources>
