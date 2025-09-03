@@ -46,13 +46,10 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 🎨 Screenshots
 <div align="center">
-  <img src="git/image_1.png" width="200" alt="Screenshot 1">
-  <img src="git/image_2.png" width="200" alt="Screenshot 2">
-  <img src="git/image_3.png" width="200" alt="Screenshot 3">
-</div>
-<div align="center">
-  <img src="git/image_4.png" width="200" alt="Screenshot 4">
-  <img src="git/image_5.png" width="200" alt="Screenshot 5">
+   <img src="git/image_1.jpeg" width="200" alt="Screenshot 1">
+   <img src="git/image_2.jpeg" width="200" alt="Screenshot 2">
+   <img src="git/image_3.png" width="200" alt="Screenshot 2">
+   <img src="git/image_5.png" width="200" alt="Screenshot 3">
 </div>
 
 ## ⚠️ Wichtige Hinweise
