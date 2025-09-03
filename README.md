@@ -1,6 +1,6 @@
 # HKS Vertreter
 
-Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag vereinfacht und organisiert.
+Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
 ## 🔒 Meine Garantien
 
