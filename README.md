@@ -44,7 +44,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 3. Installiere die App auf deinem Android-Gerät
    - *Hinweis: Du musst möglicherweise "Installation aus unbekannten Quellen" aktivieren*
 
-🎨 Screenshots
+## 🎨 Screenshots
 <div align="center">
    <img src="git/image_1.jpeg" width="200" alt="Screenshot 1">
    <img src="git/image_2.jpeg" width="200" alt="Screenshot 2">
