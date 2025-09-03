@@ -26,16 +26,16 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 ### ⚡ Performance
 
-- **Klein**: Geringer Speicherbedarf auf dem Gerät  
-- **Schnell**: Optimiert für flüssige Nutzung  
-- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Vertretungsplan und ggf. Feriendaten)  
+- **Klein**: Geringer Speicherbedarf auf dem Gerät
+- **Schnell**: Optimiert für flüssige Nutzung
+- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Vertretungsplan und ggf. Feriendaten)
 
 ## 🔧 Technische Details
 
-- **Entwickelt mit**: Android Studio & Kotlin  
-- **Plattform**: Android (.apk)  
-- **Lizenz**: MIT License  
-- **Entwickler**: Nikodem Karol Jastrzab (Schüler der HKS)  
+- **Entwickelt mit**: Android Studio & Kotlin
+- **Plattform**: Android (.apk)
+- **Lizenz**: MIT License
+- **Entwickler**: Nikodem Karol Jastrzab (Schüler der HKS)
 
 ## 📥 Installation
 
@@ -44,9 +44,16 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 3. Installiere die App auf deinem Android-Gerät
    - *Hinweis: Du musst möglicherweise "Installation aus unbekannten Quellen" aktivieren*
 
-## 🎨 Screenshots
-
-*[Screenshots werden hier eingefügt, sobald verfügbar]*
+🎨 Screenshots
+<div align="center">
+  <img src="git/image_1.png" width="200" alt="Screenshot 1">
+  <img src="git/image_2.png" width="200" alt="Screenshot 2">
+  <img src="git/image_3.png" width="200" alt="Screenshot 3">
+</div>
+<div align="center">
+  <img src="git/image_4.png" width="200" alt="Screenshot 4">
+  <img src="git/image_5.png" width="200" alt="Screenshot 5">
+</div>
 
 ## ⚠️ Wichtige Hinweise
 
@@ -66,20 +73,20 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 📬 Kontakt & Support
 
-**Entwickler**: Nikodem Karol Jastrzab  
+**Entwickler**: Nikodem Karol Jastrzab
 **E-Mail**: theactualcooker@gmail.com
 
 ### Wann kontaktieren?
 - 🐛 Fehlerberichte
-- 💡 Verbesserungsvorschläge  
+- 💡 Verbesserungsvorschläge
 - ❓ Fehlende Klassen oder Bildungsgänge
 - 🔧 Probleme mit deinem Bildungsgang
 - 📄 Anpassung der Scanner-Algorithmen (sende gerne deinen Stundenplan/Klausurplan mit)
 
 ## 🏫 Schul-Information
 
-**Heinrich-Kleyer-Schule**  
-Kühhornshofweg 27  
+**Heinrich-Kleyer-Schule**
+Kühhornshofweg 27
 60320 Frankfurt am Main
 
 ## ⚖️ Rechtliches & Disclaimer
@@ -100,7 +107,7 @@ Diese App verarbeitet **keine personenbezogenen Daten**. Alle von dir eingegeben
 - **Pflicht**: Bildungsgang und Klasse (erforderlich für die Grundfunktion)
 - **Optional**: Alle anderen Daten, die du freiwillig eingibst:
   - Hausaufgaben und Termine
-  - Klausuren und Klausurpläne  
+  - Klausuren und Klausurpläne
   - Stundenplan und Fächer
   - Noten und Bewertungen
   - App-Einstellungen und Personalisierung
