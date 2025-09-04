@@ -543,7 +543,12 @@
                         android:id="@+id/spinnerChangeNotificationType"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:layout_marginBottom="8dp" />
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/subtle_spinner_background"
+                        android:padding="12dp"
+                        android:paddingTop="14dp"
+                        android:paddingBottom="14dp"
+                        android:popupBackground="@drawable/spinner_popup_background" />
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -704,7 +709,12 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:layout_marginBottom="8dp"
-                        android:entries="@array/colorblind_modes"/>
+                        android:entries="@array/colorblind_modes"
+                        android:background="@drawable/subtle_spinner_background"
+                        android:padding="12dp"
+                        android:paddingTop="14dp"
+                        android:paddingBottom="14dp"
+                        android:popupBackground="@drawable/spinner_popup_background"/>
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

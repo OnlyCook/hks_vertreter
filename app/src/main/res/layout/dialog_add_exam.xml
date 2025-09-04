@@ -30,20 +30,25 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:background="@android:drawable/btn_dropdown"
+            android:background="@drawable/subtle_spinner_background"
             android:padding="12dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:popupBackground="@drawable/spinner_popup_background"
             android:visibility="gone" />
 
         <EditText
             android:id="@+id/editTextExamSubject"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_height="48dp"
             android:hint="Fach eingeben"
+            android:padding="12dp"
+            android:background="@drawable/subtle_search_background"
             android:inputType="text"
             android:maxLines="1"
-            android:padding="12dp"
-            android:background="@android:drawable/edit_text" />
+            android:textSize="14sp"
+            android:textColorHint="#757575"
+            android:layout_marginBottom="12dp"/>
 
         <!-- Date Selection -->
         <TextView
@@ -93,7 +98,9 @@
                     android:inputType="number"
                     android:maxLines="1"
                     android:padding="12dp"
-                    android:background="@android:drawable/edit_text" />
+                    android:background="@drawable/subtle_search_background"
+                    android:textColorHint="#757575"
+                    android:textSize="14sp"/>
 
                 <TextView
                     android:id="@+id/textGradeDisplay"
@@ -127,9 +134,11 @@
             android:inputType="textMultiLine"
             android:gravity="top|start"
             android:padding="12dp"
-            android:background="@android:drawable/edit_text"
+            android:background="@drawable/subtle_search_background"
             android:scrollbars="vertical"
-            android:maxLines="5" />
+            android:maxLines="5"
+            android:textColorHint="#757575"
+            android:textSize="14sp"/>
 
     </LinearLayout>
 

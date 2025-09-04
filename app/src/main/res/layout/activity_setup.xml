@@ -147,7 +147,11 @@
                         android:id="@+id/spinnerBildungsgang"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:background="@drawable/spinner_background" />
+                        android:background="@drawable/subtle_spinner_background"
+                        android:padding="12dp"
+                        android:paddingTop="14dp"
+                        android:paddingBottom="14dp"
+                        android:popupBackground="@drawable/spinner_popup_background" />
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -217,7 +221,11 @@
                         android:id="@+id/spinnerKlasse"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:background="@drawable/spinner_background" />
+                        android:background="@drawable/subtle_spinner_background"
+                        android:padding="12dp"
+                        android:paddingTop="14dp"
+                        android:paddingBottom="14dp"
+                        android:popupBackground="@drawable/spinner_popup_background" />
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

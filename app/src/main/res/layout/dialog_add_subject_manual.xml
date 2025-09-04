@@ -21,7 +21,9 @@
         android:inputType="text"
         android:maxLines="1"
         android:padding="12dp"
-        android:background="@android:drawable/edit_text" />
+        android:background="@drawable/subtle_search_background"
+        android:textSize="14sp"
+        android:textColorHint="#757575"/>
 
     <EditText
         android:id="@+id/editTextTeacher"
@@ -32,7 +34,9 @@
         android:inputType="textPersonName"
         android:maxLines="1"
         android:padding="12dp"
-        android:background="@android:drawable/edit_text" />
+        android:background="@drawable/subtle_search_background"
+        android:textSize="14sp"
+        android:textColorHint="#757575"/>
 
     <EditText
         android:id="@+id/editTextRoom"
@@ -42,6 +46,8 @@
         android:inputType="text"
         android:maxLines="1"
         android:padding="12dp"
-        android:background="@android:drawable/edit_text" />
+        android:background="@drawable/subtle_search_background"
+        android:textSize="14sp"
+        android:textColorHint="#757575"/>
 
 </LinearLayout>

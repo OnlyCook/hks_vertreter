@@ -26,16 +26,19 @@
         <EditText
             android:id="@+id/searchEditText"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:hint="Fächer suchen..."
             android:drawableStart="@android:drawable/ic_menu_search"
             android:drawablePadding="8dp"
             android:padding="12dp"
-            android:background="@android:drawable/edit_text"
+            android:paddingStart="40dp"
+            android:background="@drawable/subtle_search_background"
             android:layout_marginEnd="8dp"
             android:inputType="text"
-            android:maxLines="1" />
+            android:maxLines="1"
+            android:textSize="14sp"
+            android:textColorHint="#757575" />
 
         <Button
             android:id="@+id/btnAddManual"

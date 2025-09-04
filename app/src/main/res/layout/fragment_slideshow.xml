@@ -17,11 +17,14 @@
         <Spinner
             android:id="@+id/spinnerSort"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:background="@android:drawable/btn_dropdown"
-            android:padding="12dp" />
+            android:background="@drawable/subtle_spinner_background"
+            android:padding="12dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:popupBackground="@drawable/spinner_popup_background" />
 
         <Button
             android:id="@+id/btnAddHomework"

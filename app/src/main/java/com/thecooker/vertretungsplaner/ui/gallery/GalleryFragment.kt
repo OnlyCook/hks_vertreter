@@ -94,6 +94,11 @@ class GalleryFragment : Fragment() {
         AUTO_KULTUS
     }
 
+    companion object {
+        private var instance: GalleryFragment? = null
+        fun getCurrentInstance(): GalleryFragment? = instance
+    }
+
     private val cellWidth = 150
     private val cellHeight = 80
     private val dayCellWidth = 400
@@ -139,6 +144,17 @@ class GalleryFragment : Fragment() {
         val room: String = ""
     )
 
+    data class EnhancedTimetableEntry( // kinda unnecessary but only for the homework page
+        val subject: String,
+        val duration: Int = 1,
+        val isBreak: Boolean = false,
+        val breakDuration: Int = 0,
+        val teacher: String = "",
+        val room: String = "",
+        val hasSchool: Boolean = true,
+        val isFreePeriod: Boolean = false
+    )
+
     data class CalendarEntry(
         val type: EntryType,
         val content: String,
@@ -162,6 +178,7 @@ class GalleryFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        instance = this
         _binding = FragmentGalleryBinding.inflate(inflater, container, false)
 
         calendarDataManager = CalendarDataManager.getInstance(requireContext())
@@ -184,6 +201,7 @@ class GalleryFragment : Fragment() {
                 withContext(Dispatchers.IO) {
                     loadTimetableData()
                     loadVacationData()
+                    identifyFreePeriods()
                 }
 
                 // update ui on main thread (for ux)
@@ -233,54 +251,6 @@ class GalleryFragment : Fragment() {
 
         loadingRow.addView(loadingMessage)
         calendarGrid.addView(loadingRow)
-    }
-
-    private fun createSkeletonCell(
-        text: String,
-        isHeader: Boolean = false,
-        isLessonColumn: Boolean = false,
-        isLoading: Boolean = false
-    ): TextView {
-        return TextView(requireContext()).apply {
-            this.text = text
-            textSize = if (isHeader) 14f else 10f
-            gravity = Gravity.CENTER
-            setPadding(8, 16, 8, 16)
-
-            if (isLoading) {
-                setTextColor(Color.TRANSPARENT)
-                background = createSkeletonDrawable()
-            } else {
-                setTextColor(if (isHeader) Color.BLACK else Color.GRAY)
-                background = createRoundedDrawable(
-                    if (isHeader) ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright)
-                    else Color.LTGRAY
-                )
-            }
-
-            if (isLessonColumn) {
-                width = 60
-                height = cellHeight
-            } else {
-                width = cellWidth
-                height = if (isHeader) 80 else cellHeight
-            }
-
-            layoutParams = TableRow.LayoutParams().apply {
-                setMargins(3, 3, 3, 3)
-                if (!isLessonColumn) weight = 1f
-            }
-        }
-    }
-
-    private fun createSkeletonDrawable(): GradientDrawable { // placeholder
-        return GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(Color.LTGRAY)
-            cornerRadius = 12f
-            setStroke(1, Color.GRAY)
-            alpha = 150
-        }
     }
 
     private fun showErrorState() {
@@ -1530,17 +1500,19 @@ class GalleryFragment : Fragment() {
         }
 
         if (timetableEntry != null && !timetableEntry.isBreak) {
-            val teacherToShow = timetableEntry.teacher?.takeIf { it.isNotBlank() }
+            val teacherToShow = timetableEntry.teacher.takeIf { it.isNotBlank() }
                 ?: getTeacherAndRoomForSubject(timetableEntry.subject).first
 
-            val roomToShow = timetableEntry.room?.takeIf { it.isNotBlank() }
+            val roomToShow = timetableEntry.room.takeIf { it.isNotBlank() }
                 ?: getTeacherAndRoomForSubject(timetableEntry.subject).second
 
-            val mainInfo = buildList {
-                add(timetableEntry.subject)
-                if (teacherToShow.isNotBlank()) add(teacherToShow)
-                if (roomToShow.isNotBlank()) add(roomToShow)
-            }.joinToString(" | ")
+            val teacherRoomDisplay = formatTeacherRoomDisplay(teacherToShow, roomToShow)
+
+            val mainInfo = if (teacherRoomDisplay.isNotBlank()) {
+                "${timetableEntry.subject} | $teacherRoomDisplay"
+            } else {
+                timetableEntry.subject
+            }
 
             cellText = mainInfo
 
@@ -1710,10 +1682,10 @@ class GalleryFragment : Fragment() {
             appendLine("Zeit: $startTime - $endTime (${lesson}. Stunde)")
             appendLine("Fach: ${timetableEntry.subject}")
 
-            if (!timetableEntry.teacher.isNullOrBlank()) {
+            if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
                 appendLine("Lehrer: ${timetableEntry.teacher}")
             }
-            if (!timetableEntry.room.isNullOrBlank()) {
+            if (timetableEntry.room.isNotBlank() && timetableEntry.room != "UNKNOWN") {
                 appendLine("Raum: ${timetableEntry.room}")
             }
 
@@ -3500,6 +3472,154 @@ class GalleryFragment : Fragment() {
         }
     }
 
+    private fun identifyFreePeriods() {
+        for ((dayKey, dayTimetable) in timetableData) {
+            val lessons = dayTimetable.toSortedMap()
+
+            if (lessons.isEmpty()) continue
+
+            val firstLesson = lessons.firstKey()
+            val lastNonEmptyLesson = lessons.keys.filter { lesson ->
+                lessons[lesson]?.subject?.isNotBlank() == true
+            }.maxOrNull() ?: continue
+
+            // Mark free periods between first and last lesson
+            for (lessonNum in firstLesson..lastNonEmptyLesson) {
+                val entry = lessons[lessonNum]
+                if (entry == null || entry.subject.isBlank()) {
+                    // freistunde
+                    val enhancedEntry = EnhancedTimetableEntry(
+                        subject = "Freistunde",
+                        duration = 1,
+                        hasSchool = true,
+                        isFreePeriod = true
+                    )
+                    dayTimetable[lessonNum] = TimetableEntry(
+                        subject = "Freistunde",
+                        duration = 1,
+                        isBreak = false,
+                        teacher = "",
+                        room = ""
+                    )
+                }
+            }
+        }
+    }
+
+    private fun getEnhancedTimetableForDate(date: Date, lesson: Int, subject: String): EnhancedTimetableEntry? {
+        val dayIndex = getDayOfWeekIndex(date)
+        val dayKey = getWeekdayKey(dayIndex)
+        val baseEntry = timetableData[dayKey]?.get(lesson) ?: return null
+
+        // Check if user has school (considering substitutes, holidays, vacations)
+        val hasSchool = determineIfUserHasSchool(date, lesson, subject)
+
+        return EnhancedTimetableEntry(
+            subject = baseEntry.subject,
+            duration = baseEntry.duration,
+            isBreak = baseEntry.isBreak,
+            breakDuration = baseEntry.breakDuration,
+            teacher = baseEntry.teacher,
+            room = baseEntry.room,
+            hasSchool = hasSchool,
+            isFreePeriod = baseEntry.subject == "Freistunde"
+        )
+    }
+
+    private fun determineIfUserHasSchool(date: Date, lesson: Int, subject: String): Boolean {
+        // vacation
+        if (isDateInVacation(date)) return false
+
+        val userOccasions = getUserSpecialOccasionsForDate(date)
+        val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
+
+        // holidays
+        val isHoliday = userOccasions.any {
+            it.contains("Feiertag", ignoreCase = true) ||
+                    it.contains("Ferientag", ignoreCase = true)
+        } || (calendarInfo?.isSpecialDay == true && calendarInfo.specialNote.contains("Feiertag", ignoreCase = true))
+
+        if (isHoliday) return false
+
+        // early dismissal (3. Std.)
+        val isEarlyDismissal = userOccasions.any {
+            it.contains("3. Std", ignoreCase = true)
+        } || (calendarInfo?.specialNote?.contains("3. Std.", ignoreCase = true) == true)
+
+        if (isEarlyDismissal && lesson >= 4) return false
+
+        try {
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+            val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+
+            for (substitute in substituteEntries) {
+                val startLesson = substitute.stunde
+                val endLesson = substitute.stundeBis ?: substitute.stunde
+
+                if (lesson >= startLesson && lesson <= endLesson && substitute.fach == subject) {
+                    // check if lesson is cancelled
+                    if (substitute.art.contains("Entfällt", ignoreCase = true) ||
+                        substitute.art == "Auf einen anderen Termin verlegt") {
+                        return false
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error checking substitute plan for school status", e)
+        }
+
+        return true
+    }
+
+    fun getCurrentEnhancedTimetableData(): Map<String, Map<Int, EnhancedTimetableEntry>> {
+        val enhancedData = mutableMapOf<String, Map<Int, EnhancedTimetableEntry>>()
+
+        for ((dayKey, dayTimetable) in timetableData) {
+            val enhancedDayData = mutableMapOf<Int, EnhancedTimetableEntry>()
+
+            for ((lesson, entry) in dayTimetable) {
+                val dayIndex = dayKey.removePrefix("weekday_").toIntOrNull() ?: continue
+                val currentDay = Calendar.getInstance().apply {
+                    time = currentWeekStart.time
+                    add(Calendar.DAY_OF_WEEK, dayIndex)
+                }
+
+                val hasSchool = determineIfUserHasSchool(currentDay.time, lesson, entry.subject)
+
+                enhancedDayData[lesson] = EnhancedTimetableEntry(
+                    subject = entry.subject,
+                    duration = entry.duration,
+                    isBreak = entry.isBreak,
+                    breakDuration = entry.breakDuration,
+                    teacher = entry.teacher,
+                    room = entry.room,
+                    hasSchool = hasSchool,
+                    isFreePeriod = entry.subject == "Freistunde"
+                )
+            }
+
+            enhancedData[dayKey] = enhancedDayData
+        }
+
+        return enhancedData
+    }
+
+    private fun cleanDisplayString(input: String): String {
+        return input.replace("UNKNOWN", "")
+            .replace("Unbekannt", "")
+            .trim()
+            .takeIf { it.isNotBlank() } ?: ""
+    }
+
+    private fun formatTeacherRoomDisplay(teacher: String, room: String): String {
+        val cleanTeacher = cleanDisplayString(teacher)
+        val cleanRoom = cleanDisplayString(room)
+
+        return listOf(cleanTeacher, cleanRoom)
+            .filter { it.isNotBlank() }
+            .joinToString(" | ")
+    }
+
     override fun onResume() {
         super.onResume()
         loadRealTimePreference()
@@ -3519,6 +3639,7 @@ class GalleryFragment : Fragment() {
         super.onDestroyView()
         stopRealTimeUpdates()
         _binding = null
+        instance = null
     }
 
 }

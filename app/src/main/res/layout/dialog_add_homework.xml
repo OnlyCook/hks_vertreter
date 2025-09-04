@@ -30,7 +30,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:background="@android:drawable/btn_dropdown"
+            android:background="@drawable/subtle_spinner_background"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:popupBackground="@drawable/spinner_popup_background"
             android:padding="12dp"
             android:visibility="gone" />
 
@@ -43,7 +46,9 @@
             android:inputType="text"
             android:maxLines="1"
             android:padding="12dp"
-            android:background="@android:drawable/edit_text" />
+            android:background="@drawable/subtle_search_background"
+            android:textColorHint="#757575"
+            android:textSize="14sp"/>
 
         <Switch
             android:id="@+id/switchAutoHomework"
@@ -94,6 +99,10 @@
                 android:layout_marginEnd="8dp"
                 android:text="Datum wählen"
                 android:backgroundTint="@android:color/holo_blue_light"
+                android:padding="12dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:minHeight="0dp"
                 style="@style/Widget.AppCompat.Button" />
 
             <!-- Lesson Time Selection spinner -->
@@ -103,7 +112,12 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:background="@android:drawable/btn_dropdown" />
+                android:background="@drawable/subtle_spinner_background"
+                android:padding="12dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:popupBackground="@drawable/spinner_popup_background" />
+
         </LinearLayout>
 
         <!-- Content input -->
@@ -132,9 +146,11 @@
             android:inputType="textMultiLine"
             android:gravity="top|start"
             android:padding="12dp"
-            android:background="@android:drawable/edit_text"
+            android:background="@drawable/subtle_search_background"
             android:scrollbars="vertical"
-            android:maxLines="10" />
+            android:maxLines="10"
+            android:textSize="14sp"
+            android:textColorHint="#757575"/>
 
     </LinearLayout>
 

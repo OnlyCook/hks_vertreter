@@ -132,7 +132,9 @@
                         android:hint="z.B. 2.3"
                         android:inputType="numberDecimal"
                         android:padding="8dp"
-                        android:background="@android:drawable/edit_text" />
+                        android:background="@drawable/subtle_search_background"
+                        android:textSize="14sp"
+                        android:textColorHint="#757575"/>
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -263,7 +265,9 @@
                         android:hint="z.B. 11 (Punkte 0-15)"
                         android:inputType="numberDecimal"
                         android:padding="8dp"
-                        android:background="@android:drawable/edit_text" />
+                        android:background="@drawable/subtle_search_background"
+                        android:textSize="14sp"
+                        android:textColorHint="#757575"/>
 
                     <TextView
                         android:id="@+id/tvGradeRange"

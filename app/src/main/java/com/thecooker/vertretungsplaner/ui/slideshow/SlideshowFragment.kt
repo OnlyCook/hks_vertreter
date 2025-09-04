@@ -541,8 +541,8 @@ class SlideshowFragment : Fragment() {
         }
 
         switchAutoHomework.setOnCheckedChangeListener { _, isChecked ->
-            // save preference only when creating new hw
-            if (editHomework == null) {
+            // save preference only when creating new hw and auto fill disabled
+            if (editHomework == null && switchAutoHomework.isEnabled) {
                 sharedPreferences.edit().putBoolean(PREFS_AUTO_HOMEWORK, isChecked).apply()
             }
 
@@ -646,9 +646,19 @@ class SlideshowFragment : Fragment() {
     private fun updateAutoSwitchState(switchAutoHomework: Switch, subject: String?) {
         if (subject != null) {
             val schedule = getSubjectSchedule(requireContext(), subject)
-            switchAutoHomework.isEnabled = schedule.isNotEmpty()
+            val canAutoFill = schedule.isNotEmpty()
+
+            switchAutoHomework.isEnabled = canAutoFill
+
+            if (!canAutoFill) {
+                switchAutoHomework.isChecked = false
+            } else {
+                val userPreference = sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false)
+                switchAutoHomework.isChecked = userPreference
+            }
         } else {
             switchAutoHomework.isEnabled = false
+            switchAutoHomework.isChecked = false
         }
     }
 
@@ -661,7 +671,8 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun setupSubjectSpinner(spinner: Spinner, selectedSubject: String?) {
-        val subjects = getAvailableSubjects()
+        val allSubjects = getAvailableSubjects()
+        val subjects = allSubjects.filterNot { it.equals("Freistunde", ignoreCase = true) } // ignore "Freistunde"
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, subjects)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
@@ -749,13 +760,16 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun getAvailableSubjects(): List<String> {
-        val timetableSubjects = getTimetableSubjects()
-        if (timetableSubjects.isNotEmpty()) {
-            return timetableSubjects
-        }
+        val allSubjects = mutableSetOf<String>()
 
-        val subjectsString = sharedPreferences.getString("student_subjects", "") // fallback
-        return subjectsString?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        val subjectsString = sharedPreferences.getString("student_subjects", "")
+        val studentSubjects = subjectsString?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+        allSubjects.addAll(studentSubjects)
+
+        val timetableSubjects = getTimetableSubjects()
+        allSubjects.addAll(timetableSubjects)
+
+        return allSubjects.toList().sorted()
     }
 
     private fun getTimetableSubjects(): List<String> {
@@ -1000,12 +1014,38 @@ class SlideshowFragment : Fragment() {
         homeworkList.sortWith { a, b ->
             // firstly sort by completion status, then by overdue status
             when {
-                // ongoing (not complete, not overdue) servers first
+                // ongoing (not complete, not overdue) comes first
                 !a.isCompleted && !a.isOverdue() && !b.isCompleted && !b.isOverdue() -> {
                     // both ongoing
                     when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> a.dueDate.compareTo(b.dueDate)
-                        SortOrder.DUE_DATE_DESC -> b.dueDate.compareTo(a.dueDate)
+                        SortOrder.DUE_DATE_ASC -> {
+                            val dateComparison = a.dueDate.compareTo(b.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                // same date, sort by time
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1 // timed homework first
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
+                        SortOrder.DUE_DATE_DESC -> {
+                            val dateComparison = b.dueDate.compareTo(a.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                // same date, sort by time (reverse)
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1 // timed homework first
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
                         SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
                         SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
@@ -1016,8 +1056,32 @@ class SlideshowFragment : Fragment() {
                 // both overdue
                 !a.isCompleted && a.isOverdue() && !b.isCompleted && b.isOverdue() -> {
                     when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> a.dueDate.compareTo(b.dueDate)
-                        SortOrder.DUE_DATE_DESC -> b.dueDate.compareTo(a.dueDate)
+                        SortOrder.DUE_DATE_ASC -> {
+                            val dateComparison = a.dueDate.compareTo(b.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
+                        SortOrder.DUE_DATE_DESC -> {
+                            val dateComparison = b.dueDate.compareTo(a.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
                         SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
                         SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
@@ -1031,8 +1095,32 @@ class SlideshowFragment : Fragment() {
                 // both completed
                 a.isCompleted && b.isCompleted -> {
                     when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> a.dueDate.compareTo(b.dueDate)
-                        SortOrder.DUE_DATE_DESC -> b.dueDate.compareTo(a.dueDate)
+                        SortOrder.DUE_DATE_ASC -> {
+                            val dateComparison = a.dueDate.compareTo(b.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
+                        SortOrder.DUE_DATE_DESC -> {
+                            val dateComparison = b.dueDate.compareTo(a.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                when {
+                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
+                                    a.dueTime != null && b.dueTime == null -> -1
+                                    a.dueTime == null && b.dueTime != null -> 1
+                                    else -> 0
+                                }
+                            }
+                        }
                         SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
                         SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
@@ -1282,19 +1370,21 @@ class SlideshowFragment : Fragment() {
         if (todayIndex == -1) {
             // weekend -> find next monday if subject exists there
             schedule[0]?.let { lessons ->
-                if (lessons.isNotEmpty()) {
-                    val nextMonday = Calendar.getInstance().apply {
-                        while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
-                            add(Calendar.DAY_OF_YEAR, 1)
+                for (lesson in lessons) {
+                    if (hasSchoolOnLesson(0, lesson)) {
+                        val nextMonday = Calendar.getInstance().apply {
+                            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+                                add(Calendar.DAY_OF_YEAR, 1)
+                            }
                         }
+                        return Pair(nextMonday.time, lesson)
                     }
-                    return Pair(nextMonday.time, lessons.first())
                 }
             }
         }
 
         // search for next occurrence starting from tomorrow
-        for (dayOffset in 1..7) {
+        for (dayOffset in 1..14) {
             val checkDayIndex = (todayIndex + dayOffset) % 5
             val targetDay = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, dayOffset)
@@ -1307,19 +1397,20 @@ class SlideshowFragment : Fragment() {
             }
 
             schedule[checkDayIndex]?.let { lessons ->
-                if (lessons.isNotEmpty()) {
-                    return Pair(targetDay.time, lessons.first())
+                for (lesson in lessons) {
+                    if (hasSchoolOnLesson(checkDayIndex, lesson)) {
+                        return Pair(targetDay.time, lesson)
+                    }
                 }
             }
         }
 
-        // if nothing found in the next 7 days, look for the first available day
-        // (handles cases where the subject doesnt exist in the remaining days of the week)
+        // if nothing found in the next 14 days with active school, look for the first available day
+        // (fallback without checking for cancelled lessons)
         for (dayIndex in 0..4) {
             schedule[dayIndex]?.let { lessons ->
                 if (lessons.isNotEmpty()) {
                     val targetDay = Calendar.getInstance().apply {
-                        // get days to add to this weekday next week
                         val currentDayOfWeek = get(Calendar.DAY_OF_WEEK)
                         val targetDayOfWeek = when (dayIndex) {
                             0 -> Calendar.MONDAY
@@ -1343,5 +1434,27 @@ class SlideshowFragment : Fragment() {
         }
 
         return null
+    }
+
+    private fun hasSchoolOnLesson(dayIndex: Int, lesson: Int): Boolean {
+        return try {
+            val json = sharedPreferences.getString("timetable_data", "{}")
+            val type = object : TypeToken<MutableMap<String, MutableMap<Int, Any>>>() {}.type
+            val timetableData: MutableMap<String, MutableMap<Int, Any>> =
+                Gson().fromJson(json, type) ?: mutableMapOf()
+
+            val dayKey = "weekday_$dayIndex"
+            val daySchedule = timetableData[dayKey] as? Map<*, *> ?: return true
+
+            val entryData = daySchedule[lesson] as? Map<*, *> ?: return false
+
+            val subject = entryData["subject"] as? String
+            val hasSchool = entryData["hasSchool"] as? Boolean ?: true
+
+            return !subject.isNullOrEmpty() && hasSchool
+        } catch (e: Exception) {
+            L.e(TAG, "Error checking school status", e)
+            true
+        }
     }
 }

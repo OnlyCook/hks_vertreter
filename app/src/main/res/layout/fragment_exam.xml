@@ -23,8 +23,12 @@
             android:hint="Nach Fach suchen..."
             android:inputType="text"
             android:padding="12dp"
-            android:background="@android:drawable/edit_text"
-            android:drawableStart="@android:drawable/ic_menu_search" />
+            android:background="@drawable/subtle_search_background"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:textSize="14sp"
+            android:textColorHint="#757575"
+            android:drawablePadding="8dp"
+            android:paddingStart="40dp"/>
 
         <Button
             android:id="@+id/btnAddExam"
