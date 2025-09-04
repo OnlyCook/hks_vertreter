@@ -1384,8 +1384,7 @@ class SlideshowFragment : Fragment() {
         }
 
         // search for next occurrence starting from tomorrow
-        for (dayOffset in 1..14) {
-            val checkDayIndex = (todayIndex + dayOffset) % 5
+        for (dayOffset in 1..7) {
             val targetDay = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, dayOffset)
             }
@@ -1394,6 +1393,15 @@ class SlideshowFragment : Fragment() {
             val dayOfWeek = targetDay.get(Calendar.DAY_OF_WEEK)
             if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
                 continue
+            }
+
+            val checkDayIndex = when (dayOfWeek) {
+                Calendar.MONDAY -> 0
+                Calendar.TUESDAY -> 1
+                Calendar.WEDNESDAY -> 2
+                Calendar.THURSDAY -> 3
+                Calendar.FRIDAY -> 4
+                else -> continue
             }
 
             schedule[checkDayIndex]?.let { lessons ->
@@ -1405,10 +1413,35 @@ class SlideshowFragment : Fragment() {
             }
         }
 
-        // if nothing found in the next 14 days with active school, look for the first available day
-        // (fallback without checking for cancelled lessons)
+        // if nothing found in the next 7 days, look for the first available day
+        // (handles cases where the subject doesn't exist in the remaining days of the week)
         for (dayIndex in 0..4) {
             schedule[dayIndex]?.let { lessons ->
+                for (lesson in lessons) {
+                    if (hasSchoolOnLesson(dayIndex, lesson)) {
+                        val targetDay = Calendar.getInstance().apply {
+                            // get days to add to this weekday next week
+                            val currentDayOfWeek = get(Calendar.DAY_OF_WEEK)
+                            val targetDayOfWeek = when (dayIndex) {
+                                0 -> Calendar.MONDAY
+                                1 -> Calendar.TUESDAY
+                                2 -> Calendar.WEDNESDAY
+                                3 -> Calendar.THURSDAY
+                                4 -> Calendar.FRIDAY
+                                else -> Calendar.MONDAY
+                            }
+
+                            var daysToAdd = targetDayOfWeek - currentDayOfWeek
+                            if (daysToAdd <= 0) {
+                                daysToAdd += 7
+                            }
+
+                            add(Calendar.DAY_OF_YEAR, daysToAdd)
+                        }
+                        return Pair(targetDay.time, lesson)
+                    }
+                }
+                // fallback: just use next lesson
                 if (lessons.isNotEmpty()) {
                     val targetDay = Calendar.getInstance().apply {
                         val currentDayOfWeek = get(Calendar.DAY_OF_WEEK)

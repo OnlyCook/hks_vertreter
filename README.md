@@ -33,7 +33,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 ## 🔧 Technische Details
 
 - **Entwickelt mit**: Android Studio & Kotlin
-- **Plattform**: Android (.apk)
+- **Plattform**: Android 7.0+ (.apk)
 - **Lizenz**: MIT License
 - **Entwickler**: Nikodem Karol Jastrzab (Schüler der HKS)
 
@@ -70,8 +70,8 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 📬 Kontakt & Support
 
-**Entwickler**: Nikodem Karol Jastrzab  
-**E-Mail**: theactualcooker@gmail.com  
+**Entwickler**: Nikodem Karol Jastrzab
+**E-Mail**: theactualcooker@gmail.com
 
 ### Wann kontaktieren?
 - 🐛 Fehlerberichte
@@ -82,9 +82,9 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 🏫 Schul-Information
 
-**Heinrich-Kleyer-Schule**  
-Kühhornshofweg 27  
-60320 Frankfurt am Main  
+**Heinrich-Kleyer-Schule**
+Kühhornshofweg 27
+60320 Frankfurt am Main
 
 ## ⚖️ Rechtliches & Disclaimer
 

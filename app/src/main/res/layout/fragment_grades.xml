@@ -23,11 +23,11 @@
             android:hint="Nach Fach oder Lehrer suchen..."
             android:inputType="text"
             android:padding="12dp"
-            android:paddingStart="40dp"
+            android:paddingStart="20dp"
             android:background="@drawable/subtle_search_background"
             android:drawableStart="@android:drawable/ic_menu_search"
             android:drawablePadding="8dp"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:textColorHint="#757575"
             android:maxLines="1" />
 

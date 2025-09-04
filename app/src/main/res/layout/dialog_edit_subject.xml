@@ -133,7 +133,7 @@
                         android:inputType="numberDecimal"
                         android:padding="8dp"
                         android:background="@drawable/subtle_search_background"
-                        android:textSize="14sp"
+                        android:textSize="16sp"
                         android:textColorHint="#757575"/>
                 </LinearLayout>
             </LinearLayout>
@@ -266,7 +266,7 @@
                         android:inputType="numberDecimal"
                         android:padding="8dp"
                         android:background="@drawable/subtle_search_background"
-                        android:textSize="14sp"
+                        android:textSize="16sp"
                         android:textColorHint="#757575"/>
 
                     <TextView

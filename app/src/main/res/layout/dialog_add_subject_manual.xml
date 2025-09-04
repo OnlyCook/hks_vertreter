@@ -22,7 +22,7 @@
         android:maxLines="1"
         android:padding="12dp"
         android:background="@drawable/subtle_search_background"
-        android:textSize="14sp"
+        android:textSize="16sp"
         android:textColorHint="#757575"/>
 
     <EditText
@@ -35,7 +35,7 @@
         android:maxLines="1"
         android:padding="12dp"
         android:background="@drawable/subtle_search_background"
-        android:textSize="14sp"
+        android:textSize="16sp"
         android:textColorHint="#757575"/>
 
     <EditText
@@ -47,7 +47,7 @@
         android:maxLines="1"
         android:padding="12dp"
         android:background="@drawable/subtle_search_background"
-        android:textSize="14sp"
+        android:textSize="16sp"
         android:textColorHint="#757575"/>
 
 </LinearLayout>

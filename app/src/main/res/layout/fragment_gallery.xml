@@ -27,10 +27,10 @@
             android:padding="12dp"
             android:background="@drawable/subtle_search_background"
             android:drawableStart="@android:drawable/ic_menu_search"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:textColorHint="#757575"
             android:drawablePadding="8dp"
-            android:paddingStart="40dp"/>
+            android:paddingStart="20dp"/>
 
         <Button
             android:id="@+id/btnEditCalendar"

@@ -1576,6 +1576,21 @@ class GalleryFragment : Fragment() {
             cell.text = cellText
         }
 
+        if (timetableEntry?.subject == "Freistunde") {
+            cell.alpha = 0.6f
+        } else if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
+                timetableEntry?.subject ?: "",
+                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
+                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
+                calendarEntries,
+                userOccasions,
+                calendarInfo?.specialNote ?: ""
+            )) {
+            cell.alpha = 0.3f
+        } else {
+            cell.alpha = 1.0f
+        }
+
         // search filter
         if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
@@ -2126,7 +2141,9 @@ class GalleryFragment : Fragment() {
 
         cell.text = cellText
 
-        if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
+        if (timetableEntry?.subject == "Freistunde") {
+            cell.alpha = 0.6f
+        } else if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
                 getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
                 getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,

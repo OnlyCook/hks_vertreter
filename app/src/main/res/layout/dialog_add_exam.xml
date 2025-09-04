@@ -40,13 +40,13 @@
         <EditText
             android:id="@+id/editTextExamSubject"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
             android:hint="Fach eingeben"
             android:padding="12dp"
             android:background="@drawable/subtle_search_background"
             android:inputType="text"
             android:maxLines="1"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:textColorHint="#757575"
             android:layout_marginBottom="12dp"/>
 
@@ -100,7 +100,7 @@
                     android:padding="12dp"
                     android:background="@drawable/subtle_search_background"
                     android:textColorHint="#757575"
-                    android:textSize="14sp"/>
+                    android:textSize="16sp"/>
 
                 <TextView
                     android:id="@+id/textGradeDisplay"
@@ -138,7 +138,7 @@
             android:scrollbars="vertical"
             android:maxLines="5"
             android:textColorHint="#757575"
-            android:textSize="14sp"/>
+            android:textSize="16sp"/>
 
     </LinearLayout>
 

@@ -544,7 +544,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:layout_marginBottom="8dp"
-                        android:background="@drawable/subtle_spinner_background"
+                        android:background="@drawable/spinner_with_arrow_background"
                         android:padding="12dp"
                         android:paddingTop="14dp"
                         android:paddingBottom="14dp"
@@ -710,7 +710,7 @@
                         android:layout_height="48dp"
                         android:layout_marginBottom="8dp"
                         android:entries="@array/colorblind_modes"
-                        android:background="@drawable/subtle_spinner_background"
+                        android:background="@drawable/spinner_with_arrow_background"
                         android:padding="12dp"
                         android:paddingTop="14dp"
                         android:paddingBottom="14dp"
@@ -1239,7 +1239,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Dunkler Modus (nicht empfohlen)"
+                                android:text="Dunkler Modus"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/black" />
 
@@ -1519,7 +1519,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Keine Datensammlung durch den Entwickler\n• Alle Daten bleiben auf deinem Gerät\n• Gespeichert werden nur: Stundenplan, Einstellungen und Vertretungsplan (offline)\n• Internetverbindung nur zu: heinrich-kleyer-schule.de (und optional zu: kultus.hessen.de)"
+                        android:text="• Keine Datensammlung durch den Entwickler\n• Alle Daten bleiben auf deinem Gerät\n• Internetverbindung nur zu: heinrich-kleyer-schule.de (und optional zu: kultus.hessen.de)"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1538,7 +1538,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Keine Werbung oder In-App-Käufe\n• Hintergrundprozesse nur bei manueller Aktivierung\n• Benachrichtigungen standardmäßig deaktiviert\n• Völlig kostenlos"
+                        android:text="• Keine Werbung oder In-App-Käufe\n• Hintergrundprozesse nur bei manueller Aktivierung\n• Benachrichtigungen standardmäßig deaktiviert\n• Völlig kostenlos und Open Source"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
