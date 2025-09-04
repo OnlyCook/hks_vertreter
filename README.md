@@ -1,6 +1,6 @@
 # HKS Vertreter
 
-Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag vereinfacht und organisiert.
+Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
 ## 🔒 Meine Garantien
 
@@ -70,8 +70,8 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 📬 Kontakt & Support
 
-**Entwickler**: Nikodem Karol Jastrzab
-**E-Mail**: theactualcooker@gmail.com
+**Entwickler**: Nikodem Karol Jastrzab  
+**E-Mail**: theactualcooker@gmail.com  
 
 ### Wann kontaktieren?
 - 🐛 Fehlerberichte
@@ -82,9 +82,9 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 🏫 Schul-Information
 
-**Heinrich-Kleyer-Schule**
-Kühhornshofweg 27
-60320 Frankfurt am Main
+**Heinrich-Kleyer-Schule**  
+Kühhornshofweg 27  
+60320 Frankfurt am Main  
 
 ## ⚖️ Rechtliches & Disclaimer
 
@@ -109,7 +109,7 @@ Diese App verarbeitet **keine personenbezogenen Daten**. Alle von dir eingegeben
   - Noten und Bewertungen
   - App-Einstellungen und Personalisierung
 
-*So transparent wie möglich - du entscheidest selbst, welche Daten du angeben möchtest.*
+*So transparent wie möglich - du entscheidest selbst, welche Daten du eingeben möchtest.*
 
 ### Datenschutz
 - ✅ Keine Datensammlung durch den Entwickler
