@@ -44,7 +44,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 3. Installiere die App auf deinem Android-Gerät
    - *Hinweis: Du musst möglicherweise "Installation aus unbekannten Quellen" aktivieren*
 
-## 🎨 Screenshots
+## 🎨 Screenshots (1.5.2)
 <div align="center">
    <img src="git/image_1.jpeg" width="200" alt="Screenshot 1">
    <img src="git/image_2.jpeg" width="200" alt="Screenshot 2">
@@ -70,8 +70,8 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 📬 Kontakt & Support
 
-**Entwickler**: Nikodem Karol Jastrzab
-**E-Mail**: theactualcooker@gmail.com
+**Entwickler**: Nikodem Karol Jastrzab  
+**E-Mail**: theactualcooker@gmail.com  
 
 ### Wann kontaktieren?
 - 🐛 Fehlerberichte
@@ -82,9 +82,9 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 🏫 Schul-Information
 
-**Heinrich-Kleyer-Schule**
-Kühhornshofweg 27
-60320 Frankfurt am Main
+**Heinrich-Kleyer-Schule**  
+Kühhornshofweg 27  
+60320 Frankfurt am Main  
 
 ## ⚖️ Rechtliches & Disclaimer
 
