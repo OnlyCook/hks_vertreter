@@ -201,6 +201,7 @@ class BackupManager(private val context: Context) {
         val allSubjects = sharedPreferences.getString("all_extracted_subjects", "") ?: ""
         val allTeachers = sharedPreferences.getString("all_extracted_teachers", "") ?: ""
         val allRooms = sharedPreferences.getString("all_extracted_rooms", "") ?: ""
+        val alternativeRooms = sharedPreferences.getString("alternative_rooms", "{}") ?: "{}"
         val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "") ?: ""
         val hasScanned = sharedPreferences.getBoolean("has_scanned_document", false)
@@ -218,6 +219,7 @@ class BackupManager(private val context: Context) {
             appendLine("ALL_SUBJECTS=$allSubjects")
             appendLine("ALL_TEACHERS=$allTeachers")
             appendLine("ALL_ROOMS=$allRooms")
+            appendLine("ALTERNATIVE_ROOMS=$alternativeRooms")
             appendLine("FILTER_SUBJECTS=$filterSubjects")
         }
     }
@@ -238,6 +240,7 @@ class BackupManager(private val context: Context) {
                 line.startsWith("ALL_SUBJECTS=") -> editor.putString("all_extracted_subjects", line.substringAfter("="))
                 line.startsWith("ALL_TEACHERS=") -> editor.putString("all_extracted_teachers", line.substringAfter("="))
                 line.startsWith("ALL_ROOMS=") -> editor.putString("all_extracted_rooms", line.substringAfter("="))
+                line.startsWith("ALTERNATIVE_ROOMS=") -> editor.putString("alternative_rooms", line.substringAfter("="))
                 line.startsWith("FILTER_SUBJECTS=") -> editor.putBoolean("filter_only_my_subjects", line.substringAfter("=").toBoolean())
             }
         }
@@ -495,6 +498,13 @@ class BackupManager(private val context: Context) {
             exportUserDayData(sb)
             sb.appendLine("")
 
+            sb.appendLine("# Alternative Räume Verwendung:")
+            val alternativeRoomUsage = extractAlternativeRoomUsage()
+            alternativeRoomUsage.forEach { (key, room) ->
+                sb.appendLine("$key: $room")
+            }
+            sb.appendLine("")
+
             sb.appendLine("# Stundenplan Daten:")
             val timetableData = loadTimetableDataFromPrefs()
 
@@ -545,7 +555,10 @@ class BackupManager(private val context: Context) {
                     }
                     sb.appendLine("  $rangeText: ${entry.subject} ($lessonCount $lessonText)")
                     if (entry.teacher.isNotBlank()) sb.appendLine("    Lehrer: ${entry.teacher}")
-                    if (entry.room.isNotBlank()) sb.appendLine("    Raum: ${entry.room}")
+                    if (entry.room.isNotBlank()) {
+                        val roomText = if (entry.useAlternativeRoom) "    Raum: ${entry.room} (Alternativ)" else "    Raum: ${entry.room}"
+                        sb.appendLine(roomText)
+                    }
                 }
                 sb.appendLine("")
             }
@@ -562,11 +575,31 @@ class BackupManager(private val context: Context) {
             val userDayDataJson = exportUserDayDataAsJson()
             sb.appendLine("USER_DAY_DATA=$userDayDataJson")
 
+            sb.appendLine("# Alternative Rooms Usage Data:")
+            val alternativeRoomUsageJson = Gson().toJson(alternativeRoomUsage)
+            sb.appendLine("ALTERNATIVE_ROOMS_USAGE_DATA=$alternativeRoomUsageJson")
+
             sb.toString()
         } catch (e: Exception) {
             L.e(TAG, "Error exporting calendar data", e)
             "# Error exporting calendar data: ${e.message}"
         }
+    }
+
+    private fun extractAlternativeRoomUsage(): Map<String, String> {
+        val usage = mutableMapOf<String, String>()
+        val timetableData = loadTimetableDataFromPrefs()
+
+        for ((dayKey, daySchedule) in timetableData) {
+            for ((lesson, entry) in daySchedule) {
+                if (entry.useAlternativeRoom && entry.room.isNotBlank()) {
+                    val key = "${dayKey}_${lesson}_${entry.subject}"
+                    usage[key] = entry.room
+                }
+            }
+        }
+
+        return usage
     }
 
     private fun exportUserDayData(sb: StringBuilder) {
@@ -633,6 +666,7 @@ class BackupManager(private val context: Context) {
             var timetableImported = false
             var vacationImported = false
             var userDayDataImported = false
+            var alternativeRoomUsageImported = false
 
             for (line in lines) {
                 when {
@@ -652,7 +686,8 @@ class BackupManager(private val context: Context) {
                                     isBreak = entry.isBreak,
                                     breakDuration = entry.breakDuration,
                                     teacher = matchedTeacher.ifBlank { entry.teacher },
-                                    room = matchedRoom.ifBlank { entry.room }
+                                    room = entry.room.ifBlank { matchedRoom },
+                                    useAlternativeRoom = entry.useAlternativeRoom
                                 )
                                 processedSchedule[lesson] = updatedEntry
                             }
@@ -713,17 +748,57 @@ class BackupManager(private val context: Context) {
                             L.e(TAG, "Error importing user day data", e)
                         }
                     }
+                    line.startsWith("ALTERNATIVE_ROOMS_USAGE_DATA=") -> {
+                        val jsonData = line.substringAfter("ALTERNATIVE_ROOMS_USAGE_DATA=")
+                        try {
+                            val type = object : TypeToken<MutableMap<String, String>>() {}.type
+                            val importedUsage: MutableMap<String, String> = Gson().fromJson(jsonData, type)
+                            applyAlternativeRoomUsage(importedUsage)
+                            alternativeRoomUsageImported = true
+                            L.d(TAG, "Alternative room usage imported: ${importedUsage.size} entries")
+                        } catch (e: Exception) {
+                            L.e(TAG, "Error importing alternative room usage data", e)
+                        }
+                    }
                 }
             }
 
-            if (!timetableImported && !vacationImported && !userDayDataImported) {
+            if (!timetableImported && !vacationImported && !userDayDataImported && !alternativeRoomUsageImported) {
                 throw Exception("No valid calendar data found in backup")
             }
+
+            L.d(TAG, "Import completed - Timetable: $timetableImported, Vacation: $vacationImported, UserData: $userDayDataImported, AltRoomUsage: $alternativeRoomUsageImported")
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing calendar data", e)
             throw Exception("Failed to import calendar data: ${e.message}")
         }
+    }
+
+    private fun applyAlternativeRoomUsage(usage: Map<String, String>) {
+        val timetableData = loadTimetableDataFromPrefs()
+
+        for ((key, alternativeRoom) in usage) {
+            val parts = key.split("_")
+            if (parts.size >= 3) {
+                val dayKey = parts[0] + "_" + parts[1] // weekday_X
+                val lesson = parts[2].toIntOrNull()
+                val subject = parts.drop(3).joinToString("_")
+
+                if (lesson != null && timetableData[dayKey]?.containsKey(lesson) == true) {
+                    val existingEntry = timetableData[dayKey]!![lesson]!!
+                    if (existingEntry.subject == subject) {
+                        val (teacher, _) = getTeacherAndRoomForSubject(subject)
+                        timetableData[dayKey]!![lesson] = existingEntry.copy(
+                            room = alternativeRoom,
+                            useAlternativeRoom = true
+                        )
+                    }
+                }
+            }
+        }
+
+        saveTimetableDataToPrefs(timetableData)
     }
 
     private fun clearAllUserDayData() {
@@ -839,7 +914,8 @@ class BackupManager(private val context: Context) {
         val isBreak: Boolean = false,
         val breakDuration: Int = 0,
         val teacher: String = "",
-        val room: String = ""
+        val room: String = "",
+        val useAlternativeRoom: Boolean = false
     )
 
     data class VacationWeek(

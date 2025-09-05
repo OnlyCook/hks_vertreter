@@ -42,6 +42,7 @@
         android:id="@+id/editTextRoom"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
         android:hint="Raum (optional)"
         android:inputType="text"
         android:maxLines="1"
@@ -49,5 +50,55 @@
         android:background="@drawable/subtle_search_background"
         android:textSize="16sp"
         android:textColorHint="#757575"/>
+
+    <!-- alt rooms -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Alternative Räume"
+            android:textSize="14sp"
+            android:textColor="@android:color/black" />
+
+        <Switch
+            android:id="@+id/switchAlternativeRooms"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/alternativeRoomsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Alternative Räume (max. 2):"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginBottom="8dp" />
+
+        <!-- here dynamically added alt rooms will appear -->
+
+        <Button
+            android:id="@+id/btnAddAlternativeRoom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Raum hinzufügen"
+            android:textSize="12sp"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
 
 </LinearLayout>

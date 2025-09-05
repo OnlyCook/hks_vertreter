@@ -23,8 +23,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Mathematik | 15.03.2025 (in 5 Tagen)"
-            android:textSize="16sp"
-            android:textStyle="bold"
+            android:textSize="18sp"
             android:padding="4dp" />
 
         <!-- Exam note -->

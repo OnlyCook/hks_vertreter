@@ -412,6 +412,9 @@ class ExamFragment : Fragment() {
             },
             onExamEdited = { exam ->
                 showAddExamDialog(exam)
+            },
+            onExamDetailsRequested = { exam ->
+                showExamDetailsDialog(exam)
             }
         )
 
@@ -2411,5 +2414,64 @@ class ExamFragment : Fragment() {
         }
 
         datePickerDialog.show()
+    }
+
+    private fun showExamDetailsDialog(exam: ExamEntry) {
+        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_exam_details, null)
+
+        val textSubject = dialogView.findViewById<TextView>(R.id.textDetailSubject)
+        val textDate = dialogView.findViewById<TextView>(R.id.textDetailDate)
+        val textDetailedDate = dialogView.findViewById<TextView>(R.id.textDetailedDate)
+        val textNotes = dialogView.findViewById<TextView>(R.id.textDetailNotes)
+        val textMark = dialogView.findViewById<TextView>(R.id.textDetailMark)
+
+        textSubject.text = exam.subject
+        textDate.text = exam.getDisplayDateString()
+
+        val detailedDateInfo = buildDetailedDateInfo(exam)
+        textDetailedDate.text = detailedDateInfo
+
+        if (exam.note.isNotBlank()) {
+            textNotes.text = exam.note
+            textNotes.visibility = View.VISIBLE
+        } else {
+            textNotes.text = "Keine Notizen"
+            textNotes.visibility = View.VISIBLE
+        }
+
+        if (exam.mark != null) {
+            val grade = exam.getGradeFromMark()
+            textMark.text = "Note: ${exam.mark} Punkte ($grade)"
+            textMark.visibility = View.VISIBLE
+        } else {
+            textMark.visibility = View.GONE
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Klausur Details")
+            .setView(dialogView)
+            .setNeutralButton("Bearbeiten") { _, _ ->
+                showAddExamDialog(exam)
+            }
+            .setPositiveButton("Schließen", null)
+            .show()
+    }
+
+    private fun buildDetailedDateInfo(exam: ExamEntry): String {
+        val format = SimpleDateFormat("EEEE, dd. MMMM yyyy", Locale.GERMANY)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
+        val formattedDate = format.format(exam.date)
+        val formattedTime = timeFormat.format(exam.date)
+
+        val daysUntil = exam.getDaysUntilExam()
+        val statusText = when {
+            exam.isOverdue() -> "Diese Klausur ist bereits vergangen"
+            daysUntil == 0L -> "Diese Klausur ist heute!"
+            daysUntil == 1L -> "Diese Klausur ist morgen"
+            daysUntil <= 7 -> "Noch $daysUntil Tag${if (daysUntil > 1) "e" else ""} bis zur Klausur"
+            else -> "Noch ${daysUntil} Tage bis zur Klausur"
+        }
+
+        return "$formattedDate\n$statusText"
     }
 }

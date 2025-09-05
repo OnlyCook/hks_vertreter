@@ -202,11 +202,11 @@ class HomeFragment : Fragment() {
             }
             "tritanopia" -> when (originalColor) {
                 "red" -> resources.getColor(android.R.color.holo_red_dark, null)
-                "green" -> resources.getColor(android.R.color.darker_gray, null)
+                "green" -> resources.getColor(android.R.color.holo_blue_dark, null)
                 "orange" -> resources.getColor(android.R.color.holo_blue_light, null)
                 else -> resources.getColor(android.R.color.transparent, null)
             }
-            else -> when (originalColor) { // Normal vision
+            else -> when (originalColor) { // normal
                 "red" -> resources.getColor(android.R.color.holo_red_light, null)
                 "green" -> resources.getColor(android.R.color.holo_green_light, null)
                 "orange" -> resources.getColor(android.R.color.holo_orange_light, null)

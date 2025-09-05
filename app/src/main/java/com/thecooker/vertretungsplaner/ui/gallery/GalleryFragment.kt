@@ -50,6 +50,9 @@ import android.animation.ValueAnimator
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.lifecycle.lifecycleScope
 import com.thecooker.vertretungsplaner.utils.BackupManager
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.abs
 
 class GalleryFragment : Fragment() {
 
@@ -83,6 +86,8 @@ class GalleryFragment : Fragment() {
 
     private lateinit var backupManager: BackupManager
 
+    private var colorBlindMode: String = "none"
+
     data class VacationWeek(
         val weekKey: String,
         val name: String,
@@ -95,8 +100,55 @@ class GalleryFragment : Fragment() {
     }
 
     companion object {
-        private var instance: GalleryFragment? = null
-        fun getCurrentInstance(): GalleryFragment? = instance
+        fun getAlternativeRoomsForSubject(context: Context, subject: String): List<String> {
+            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val json = sharedPreferences.getString("alternative_rooms", "{}")
+            return try {
+                val type = object : TypeToken<MutableMap<String, List<String>>>() {}.type
+                val allRooms: MutableMap<String, List<String>> = Gson().fromJson(json, type) ?: mutableMapOf()
+                allRooms[subject] ?: emptyList()
+            } catch (e: Exception) {
+                L.e("GalleryFragment", "Error loading alternative rooms for subject", e)
+                emptyList()
+            }
+        }
+
+        fun setAlternativeRoomsForSubject(context: Context, subject: String, rooms: List<String>) {
+            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val json = sharedPreferences.getString("alternative_rooms", "{}")
+
+            val allRooms = try {
+                val type = object : TypeToken<MutableMap<String, List<String>>>() {}.type
+                Gson().fromJson<MutableMap<String, List<String>>>(json, type) ?: mutableMapOf()
+            } catch (e: Exception) {
+                mutableMapOf()
+            }
+
+            if (rooms.isEmpty()) {
+                allRooms.remove(subject)
+            } else {
+                allRooms[subject] = rooms
+            }
+
+            val newJson = Gson().toJson(allRooms)
+            sharedPreferences.edit()
+                .putString("alternative_rooms", newJson)
+                .apply()
+
+            L.d("GalleryFragment", "Alternative rooms updated for subject: $subject")
+        }
+
+        fun getAllAlternativeRooms(context: Context): Map<String, List<String>> {
+            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val json = sharedPreferences.getString("alternative_rooms", "{}")
+            return try {
+                val type = object : TypeToken<MutableMap<String, List<String>>>() {}.type
+                Gson().fromJson(json, type) ?: mutableMapOf()
+            } catch (e: Exception) {
+                L.e("GalleryFragment", "Error loading all alternative rooms", e)
+                emptyMap()
+            }
+        }
     }
 
     private val cellWidth = 150
@@ -141,18 +193,8 @@ class GalleryFragment : Fragment() {
         val isBreak: Boolean = false,
         val breakDuration: Int = 0,
         val teacher: String = "",
-        val room: String = ""
-    )
-
-    data class EnhancedTimetableEntry( // kinda unnecessary but only for the homework page
-        val subject: String,
-        val duration: Int = 1,
-        val isBreak: Boolean = false,
-        val breakDuration: Int = 0,
-        val teacher: String = "",
         val room: String = "",
-        val hasSchool: Boolean = true,
-        val isFreePeriod: Boolean = false
+        val useAlternativeRoom: Boolean = false
     )
 
     data class CalendarEntry(
@@ -178,7 +220,6 @@ class GalleryFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        instance = this
         _binding = FragmentGalleryBinding.inflate(inflater, container, false)
 
         calendarDataManager = CalendarDataManager.getInstance(requireContext())
@@ -295,6 +336,7 @@ class GalleryFragment : Fragment() {
         loadViewPreference()
         loadRealTimePreference()
         loadWeekendPreference()
+        loadColorBlindSettings()
         backupManager = BackupManager(requireContext())
 
         binding.root.findViewById<Button>(R.id.btnEditCalendar).apply {
@@ -304,6 +346,18 @@ class GalleryFragment : Fragment() {
 
         binding.root.findViewById<Button>(R.id.btnMenuCalendar).setOnClickListener {
             showHamburgerMenu(it)
+        }
+
+        binding.root.findViewById<Button>(R.id.btnPreviousWeek).apply {
+            text = ""
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_arrow_left, 0, 0, 0)
+            contentDescription = "Vorherige Woche"
+        }
+
+        binding.root.findViewById<Button>(R.id.btnNextWeek).apply {
+            text = ""
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_arrow_right, 0, 0, 0)
+            contentDescription = "Nächste Woche"
         }
 
         setupSearchBar()
@@ -453,7 +507,7 @@ class GalleryFragment : Fragment() {
             appendLine("• Bis nächster Feiertag: ${if (stats.daysUntilNextHoliday == -1) "Keiner geplant" else "${stats.daysUntilNextHoliday} Tage"}")
             appendLine()
 
-            appendLine("Letzte 30 Tage:") // this month
+            appendLine("Nächste 30 Tage:") // this month
             appendLine("• Klausuren: ${stats.examsThisMonth}")
             appendLine("• Hausaufgaben: ${stats.homeworkThisMonth}")
             appendLine("• Feiertage: ${stats.holidaysThisMonth}")
@@ -469,7 +523,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Statistiken")
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton("Schließen", null)
             .show()
     }
 
@@ -1525,11 +1579,21 @@ class GalleryFragment : Fragment() {
             )
 
             val additionalInfo = mutableListOf<String>()
+            var hasSubstitute = false
+            var substituteText = ""
+
             calendarEntries.forEach { entry ->
                 when (entry.type) {
                     EntryType.HOMEWORK -> additionalInfo.add("Hausaufgabe")
                     EntryType.EXAM -> additionalInfo.add("Klausur")
-                    EntryType.SUBSTITUTE -> additionalInfo.add(entry.content)
+                    EntryType.SUBSTITUTE -> {
+                        if (entry.content.contains("statt", ignoreCase = true)) {
+                            hasSubstitute = true
+                            substituteText = entry.content
+                        } else {
+                            additionalInfo.add(entry.content)
+                        }
+                    }
                     EntryType.SPECIAL_DAY -> {
                         if (entry.content.contains("Feiertag", ignoreCase = true)) {
                             additionalInfo.add("Feiertag")
@@ -1541,57 +1605,51 @@ class GalleryFragment : Fragment() {
                 }
             }
 
-            if (additionalInfo.isNotEmpty()) {
-                cellText += "\n" + additionalInfo.joinToString(" | ")
-            }
+            if (hasSubstitute) {
+                // strike through original and new subject below (for "verlegte" subjects)
+                val originalSubject = timetableEntry.subject
+                val newSubjectInfo = substituteText
 
-            val lines = cellText.split("\n")
-            if (lines.isNotEmpty()) {
-                val firstLine = lines[0]
-                val subjectEndIndex = firstLine.indexOf(" |")
+                val htmlText = "<small><s>$originalSubject</s></small><br><b>$newSubjectInfo</b>"
 
-                val formattedFirstLine = if (subjectEndIndex > 0) {
-                    val subject = firstLine.substring(0, subjectEndIndex)
-                    val restOfFirstLine = firstLine.substring(subjectEndIndex)
-                    "<b>$subject</b>$restOfFirstLine"
+                if (additionalInfo.isNotEmpty()) {
+                    val finalHtml = htmlText + "<br><small>" + additionalInfo.joinToString(" | ") + "</small>"
+                    cell.text = android.text.Html.fromHtml(finalHtml, android.text.Html.FROM_HTML_MODE_COMPACT)
                 } else {
-                    "<b>$firstLine</b>"
+                    cell.text = android.text.Html.fromHtml(htmlText, android.text.Html.FROM_HTML_MODE_COMPACT)
                 }
-
-                val finalText = if (lines.size > 1) {
-                    formattedFirstLine + "<br>" + lines.drop(1).joinToString("<br>")
-                } else {
-                    formattedFirstLine
-                }
-
-                cell.text = android.text.Html.fromHtml(finalText, android.text.Html.FROM_HTML_MODE_COMPACT)
             } else {
-                cell.text = cellText
+                // Normal display logic
+                if (additionalInfo.isNotEmpty()) {
+                    cellText += "\n" + additionalInfo.joinToString(" | ")
+                }
+
+                val lines = cellText.split("\n")
+                if (lines.isNotEmpty()) {
+                    val firstLine = lines[0]
+                    val subjectEndIndex = firstLine.indexOf(" |")
+
+                    val formattedFirstLine = if (subjectEndIndex > 0) {
+                        val subject = firstLine.substring(0, subjectEndIndex)
+                        val restOfFirstLine = firstLine.substring(subjectEndIndex)
+                        "<b>$subject</b>$restOfFirstLine"
+                    } else {
+                        "<b>$firstLine</b>"
+                    }
+
+                    val finalText = if (lines.size > 1) {
+                        formattedFirstLine + "<br>" + lines.drop(1).joinToString("<br>")
+                    } else {
+                        formattedFirstLine
+                    }
+
+                    cell.text = android.text.Html.fromHtml(finalText, android.text.Html.FROM_HTML_MODE_COMPACT)
+                } else {
+                    cell.text = cellText
+                }
             }
-        } else if (isEditMode) {
-            cellText = "+"
-            cell.setTextColor(Color.GRAY)
-            cell.text = cellText
-        } else {
-            cell.text = cellText
         }
 
-        if (timetableEntry?.subject == "Freistunde") {
-            cell.alpha = 0.6f
-        } else if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
-                timetableEntry?.subject ?: "",
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
-                calendarEntries,
-                userOccasions,
-                calendarInfo?.specialNote ?: ""
-            )) {
-            cell.alpha = 0.3f
-        } else {
-            cell.alpha = 1.0f
-        }
-
-        // search filter
         if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
                 getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
@@ -1601,8 +1659,26 @@ class GalleryFragment : Fragment() {
                 calendarInfo?.specialNote ?: ""
             )) {
             cell.alpha = 0.3f
+        } else if (timetableEntry?.subject == "Freistunde") {
+            cell.alpha = 0.6f
         } else {
             cell.alpha = 1.0f
+        }
+
+        // search filter
+        val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
+
+        if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
+                timetableEntry?.subject ?: "",
+                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
+                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
+                calendarEntries,
+                userOccasions,
+                calendarInfo?.specialNote ?: ""
+            )) {
+            cell.alpha = baseOpacity * 0.3f
+        } else {
+            cell.alpha = baseOpacity
         }
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
@@ -1676,7 +1752,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Stundenzeiten")
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton("Schließen", null)
             .show()
     }
 
@@ -1722,7 +1798,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Stundendetails")
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton("Schließen", null)
             .show()
     }
 
@@ -1956,6 +2032,8 @@ class GalleryFragment : Fragment() {
         sharedPreferences.edit()
             .putString("user_special_occasions_$dateStr", json)
             .apply()
+
+        saveHolidaysData()
     }
 
     private fun clearUserDataForDate(date: Date) {
@@ -1979,7 +2057,7 @@ class GalleryFragment : Fragment() {
                     appendLine("${lesson}. Stunde: $startTime - $endTime")
 
                     breakTimes[lesson]?.let { breakMinutes ->
-                        appendLine("   → Pause: $breakMinutes Minuten")
+                        appendLine("   ➞ Pause: $breakMinutes Minuten")
                     }
                 }
             }
@@ -1988,7 +2066,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Alle Stundenzeiten")
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton("Schließen", null)
             .show()
     }
 
@@ -2141,9 +2219,9 @@ class GalleryFragment : Fragment() {
 
         cell.text = cellText
 
-        if (timetableEntry?.subject == "Freistunde") {
-            cell.alpha = 0.6f
-        } else if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
+        val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
+
+        if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
                 getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
                 getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
@@ -2151,9 +2229,9 @@ class GalleryFragment : Fragment() {
                 userOccasions,
                 calendarInfo?.specialNote ?: ""
             )) {
-            cell.alpha = 0.3f
+            cell.alpha = baseOpacity * 0.3f
         } else {
-            cell.alpha = 1.0f
+            cell.alpha = baseOpacity
         }
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
@@ -2200,7 +2278,23 @@ class GalleryFragment : Fragment() {
 
         val query = currentSearchQuery.lowercase()
 
-        if (matchesSearch(subject, teacher, room, calendarEntries)) return true
+        if (subject.lowercase().contains(query)) return true
+
+        if (teacher.lowercase().contains(query)) return true
+
+        if (room.lowercase().contains(query)) return true
+
+        // additional calendar entries
+        for (entry in calendarEntries) {
+            when (entry.type) {
+                EntryType.HOMEWORK -> if ("hausaufgabe".contains(query)) return true
+                EntryType.EXAM -> if ("klausur".contains(query)) return true
+                EntryType.SUBSTITUTE -> if (entry.content.lowercase().contains(query)) return true
+                EntryType.SPECIAL_DAY -> if (entry.content.lowercase().contains(query)) return true
+                EntryType.VACATION -> if ("ferien".contains(query) || "ferientag".contains(query)) return true
+                else -> if (entry.content.lowercase().contains(query)) return true
+            }
+        }
 
         if (userOccasions.any { it.lowercase().contains(query) }) return true
 
@@ -2276,9 +2370,9 @@ class GalleryFragment : Fragment() {
             Pair("Hausaufgabe", Color.CYAN),
             Pair("Klausur", examColor),
             Pair("Feiertag/Ferien", Color.LTGRAY),
-            Pair("Entfällt", ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)),
-            Pair("Vertretung", ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)),
-            Pair("Betreuung", ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light))
+            Pair("Entfällt", getColorBlindFriendlyColor("red")),
+            Pair("Vertretung", getColorBlindFriendlyColor("green")),
+            Pair("Betreuung", getColorBlindFriendlyColor("orange"))
         )
 
         val firstRow = LinearLayout(requireContext()).apply {
@@ -2649,7 +2743,63 @@ class GalleryFragment : Fragment() {
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, durationOptions).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(1) // 2 stunde default (for empty cells) as most common
+            setSelection(1)
+        }
+
+        val roomLabel = TextView(requireContext()).apply {
+            text = "Raum:"
+            textSize = 14f
+            setTextColor(Color.BLACK)
+            visibility = View.GONE
+        }
+
+        val roomSpinner = Spinner(requireContext()).apply {
+            visibility = View.GONE
+        }
+
+        subjectSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selectedSubject = subjectSpinner.selectedItem.toString()
+                if (position > 0) { // not "Kein Unterricht"
+                    val alternativeRooms = getAlternativeRoomsForSubject(requireContext(), selectedSubject)
+                    if (alternativeRooms.isNotEmpty()) {
+                        val (_, mainRoom) = getTeacherAndRoomForSubject(selectedSubject)
+
+                        val roomOptions = mutableListOf<String>()
+                        if (mainRoom.isNotBlank() && mainRoom != "UNKNOWN") {
+                            roomOptions.add(mainRoom)
+                        }
+                        alternativeRooms.forEach { room ->
+                            if (room != mainRoom) {
+                                roomOptions.add(room)
+                            }
+                        }
+
+                        if (roomOptions.isNotEmpty()) {
+                            roomSpinner.adapter = ArrayAdapter(requireContext(),
+                                android.R.layout.simple_spinner_item, roomOptions).apply {
+                                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            }
+                            roomLabel.visibility = View.VISIBLE
+                            roomSpinner.visibility = View.VISIBLE
+
+                            // main room default (index 0)
+                            roomSpinner.setSelection(0)
+                        } else {
+                            roomLabel.visibility = View.GONE
+                            roomSpinner.visibility = View.GONE
+                        }
+                    } else {
+                        roomLabel.visibility = View.GONE
+                        roomSpinner.visibility = View.GONE
+                    }
+                } else {
+                    roomLabel.visibility = View.GONE
+                    roomSpinner.visibility = View.GONE
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
         val dayKey = getWeekdayKey(dayIndex)
@@ -2657,7 +2807,21 @@ class GalleryFragment : Fragment() {
         existingEntry?.let { entry ->
             val subjectIndex = subjects.indexOf(entry.subject)
             if (subjectIndex != -1) {
-                subjectSpinner.setSelection(subjectIndex + 1) // kein unterricht
+                subjectSpinner.setSelection(subjectIndex + 1)
+
+                if (entry.room.isNotBlank()) {
+                    subjectSpinner.onItemSelectedListener?.onItemSelected(subjectSpinner, null, subjectIndex + 1, 0)
+
+                    val roomAdapter = roomSpinner.adapter
+                    if (roomAdapter != null) {
+                        for (i in 0 until roomAdapter.count) {
+                            if (roomAdapter.getItem(i).toString() == entry.room) {
+                                roomSpinner.setSelection(i)
+                                break
+                            }
+                        }
+                    }
+                }
             }
             durationSpinner.setSelection(entry.duration - 1)
         }
@@ -2674,6 +2838,8 @@ class GalleryFragment : Fragment() {
             setTextColor(Color.BLACK)
         })
         container.addView(durationSpinner)
+        container.addView(roomLabel)
+        container.addView(roomSpinner)
 
         AlertDialog.Builder(requireContext())
             .setTitle("Stundenplan bearbeiten - ${weekdays[dayIndex]} ${lesson}. Stunde")
@@ -2681,15 +2847,18 @@ class GalleryFragment : Fragment() {
             .setPositiveButton("Speichern") { _, _ ->
                 val selectedSubject = subjectSpinner.selectedItem.toString()
                 val duration = durationSpinner.selectedItemPosition + 1
+                val selectedRoom = if (roomSpinner.visibility == View.VISIBLE && roomSpinner.selectedItem != null) {
+                    roomSpinner.selectedItem.toString()
+                } else ""
 
-                saveTimetableEntry(dayIndex, lesson, selectedSubject, duration)
+                saveTimetableEntryWithRoom(dayIndex, lesson, selectedSubject, duration, selectedRoom)
                 updateCalendar()
             }
             .setNegativeButton("Abbrechen", null)
             .show()
     }
 
-    private fun saveTimetableEntry(dayIndex: Int, lesson: Int, subject: String, duration: Int) {
+    private fun saveTimetableEntryWithRoom(dayIndex: Int, lesson: Int, subject: String, duration: Int, alternativeRoom: String) {
         val dayKey = getWeekdayKey(dayIndex)
 
         if (!timetableData.containsKey(dayKey)) {
@@ -2700,8 +2869,17 @@ class GalleryFragment : Fragment() {
             if (subject == "Kein Unterricht") {
                 timetableData[dayKey]?.remove(i)
             } else {
-                val (teacher, room) = getTeacherAndRoomForSubject(subject)
-                timetableData[dayKey]?.set(i, TimetableEntry(subject, duration, teacher = teacher, room = room))
+                val (teacher, defaultRoom) = getTeacherAndRoomForSubject(subject)
+                val roomToUse = alternativeRoom.takeIf { it.isNotBlank() } ?: defaultRoom
+                val isUsingAlternativeRoom = alternativeRoom.isNotBlank() && alternativeRoom != defaultRoom
+
+                timetableData[dayKey]?.set(i, TimetableEntry(
+                    subject = subject,
+                    duration = duration,
+                    teacher = teacher,
+                    room = roomToUse,
+                    useAlternativeRoom = isUsingAlternativeRoom
+                ))
             }
         }
 
@@ -3011,7 +3189,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Tagesdetails")
             .setMessage(details.toString())
-            .setPositiveButton("OK", null)
+            .setPositiveButton("Schließen", null)
             .setNeutralButton("Bearbeiten") { _, _ ->
                 showEditDayDialog(date)
             }
@@ -3021,11 +3199,13 @@ class GalleryFragment : Fragment() {
     private fun getSubstituteBackgroundColor(text: String): Int {
         return when {
             text.contains("Entfällt", ignoreCase = true) || text == "Auf einen anderen Termin verlegt" ->
-                ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
-            text.contains("Wird vertreten", ignoreCase = true) || text.contains("entfällt, stattdessen", ignoreCase = true) ->
-                ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
+                getColorBlindFriendlyColor("red")
+            text.contains("entfällt, stattdessen", ignoreCase = true) ->
+                getColorBlindFriendlyColor("green")
+            text.contains("Wird vertreten", ignoreCase = true) ->
+                getColorBlindFriendlyColor("green")
             text.contains("Wird betreut", ignoreCase = true) ->
-                ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light)
+                getColorBlindFriendlyColor("orange")
             else -> Color.TRANSPARENT
         }
     }
@@ -3033,22 +3213,27 @@ class GalleryFragment : Fragment() {
     private fun formatSubstituteText(originalText: String): String {
         return when {
             originalText == "Auf einen anderen Termin verlegt" -> "Entfällt (verlegt)"
-            originalText.contains("entfällt, stattdessen", ignoreCase = true) -> {
-                if (originalText.contains("in Raum", ignoreCase = true)) {
-                    val regex = Regex(".*entfällt, stattdessen (.*) in Raum (.*)", RegexOption.IGNORE_CASE)
-                    val matchResult = regex.find(originalText)
-                    if (matchResult != null) {
-                        val newSubject = matchResult.groups[1]?.value ?: ""
-                        val room = matchResult.groups[2]?.value ?: ""
-                        "$newSubject ($room)"
-                    } else originalText
+            originalText.matches(Regex(".*entfällt, stattdessen .* in Raum .*", RegexOption.IGNORE_CASE)) -> {
+                val regex = Regex(".*entfällt, stattdessen (.*) in Raum (.*)", RegexOption.IGNORE_CASE)
+                val matchResult = regex.find(originalText)
+                if (matchResult != null) {
+                    val newSubject = matchResult.groups[1]?.value ?: ""
+                    val room = matchResult.groups[2]?.value ?: ""
+                    val originalSubject = originalText.substringBefore(" entfällt")
+                    "$newSubject in Raum $room (statt $originalSubject)"
                 } else {
-                    val regex = Regex("(.*) entfällt, stattdessen (.*)", RegexOption.IGNORE_CASE)
-                    val matchResult = regex.find(originalText)
-                    if (matchResult != null) {
-                        matchResult.groups[2]?.value ?: originalText
-                    } else originalText
+                    originalText
                 }
+            }
+            originalText.matches(Regex(".*entfällt, stattdessen .*", RegexOption.IGNORE_CASE)) &&
+                    !originalText.contains("in Raum", ignoreCase = true) -> {
+                val regex = Regex("(.*) entfällt, stattdessen (.*)", RegexOption.IGNORE_CASE)
+                val matchResult = regex.find(originalText)
+                if (matchResult != null) {
+                    val originalSubject = matchResult.groups[1]?.value ?: ""
+                    val newSubject = matchResult.groups[2]?.value ?: ""
+                    "$newSubject (statt $originalSubject)"
+                } else originalText
             }
             originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> "Entfällt (Exk./Prak.)"
             else -> originalText.take(20)
@@ -3201,6 +3386,10 @@ class GalleryFragment : Fragment() {
                 .putString("vacation_data", json)
                 .apply()
             L.d("GalleryFragment", "Vacation data saved")
+
+            // Also save in homework-compatible format
+            saveVacationsData()
+
         } catch (e: Exception) {
             L.e("GalleryFragment", "Error saving vacation data", e)
         }
@@ -3505,12 +3694,6 @@ class GalleryFragment : Fragment() {
                 val entry = lessons[lessonNum]
                 if (entry == null || entry.subject.isBlank()) {
                     // freistunde
-                    val enhancedEntry = EnhancedTimetableEntry(
-                        subject = "Freistunde",
-                        duration = 1,
-                        hasSchool = true,
-                        isFreePeriod = true
-                    )
                     dayTimetable[lessonNum] = TimetableEntry(
                         subject = "Freistunde",
                         duration = 1,
@@ -3521,104 +3704,6 @@ class GalleryFragment : Fragment() {
                 }
             }
         }
-    }
-
-    private fun getEnhancedTimetableForDate(date: Date, lesson: Int, subject: String): EnhancedTimetableEntry? {
-        val dayIndex = getDayOfWeekIndex(date)
-        val dayKey = getWeekdayKey(dayIndex)
-        val baseEntry = timetableData[dayKey]?.get(lesson) ?: return null
-
-        // Check if user has school (considering substitutes, holidays, vacations)
-        val hasSchool = determineIfUserHasSchool(date, lesson, subject)
-
-        return EnhancedTimetableEntry(
-            subject = baseEntry.subject,
-            duration = baseEntry.duration,
-            isBreak = baseEntry.isBreak,
-            breakDuration = baseEntry.breakDuration,
-            teacher = baseEntry.teacher,
-            room = baseEntry.room,
-            hasSchool = hasSchool,
-            isFreePeriod = baseEntry.subject == "Freistunde"
-        )
-    }
-
-    private fun determineIfUserHasSchool(date: Date, lesson: Int, subject: String): Boolean {
-        // vacation
-        if (isDateInVacation(date)) return false
-
-        val userOccasions = getUserSpecialOccasionsForDate(date)
-        val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
-
-        // holidays
-        val isHoliday = userOccasions.any {
-            it.contains("Feiertag", ignoreCase = true) ||
-                    it.contains("Ferientag", ignoreCase = true)
-        } || (calendarInfo?.isSpecialDay == true && calendarInfo.specialNote.contains("Feiertag", ignoreCase = true))
-
-        if (isHoliday) return false
-
-        // early dismissal (3. Std.)
-        val isEarlyDismissal = userOccasions.any {
-            it.contains("3. Std", ignoreCase = true)
-        } || (calendarInfo?.specialNote?.contains("3. Std.", ignoreCase = true) == true)
-
-        if (isEarlyDismissal && lesson >= 4) return false
-
-        try {
-            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-            val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
-
-            for (substitute in substituteEntries) {
-                val startLesson = substitute.stunde
-                val endLesson = substitute.stundeBis ?: substitute.stunde
-
-                if (lesson >= startLesson && lesson <= endLesson && substitute.fach == subject) {
-                    // check if lesson is cancelled
-                    if (substitute.art.contains("Entfällt", ignoreCase = true) ||
-                        substitute.art == "Auf einen anderen Termin verlegt") {
-                        return false
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            L.w("GalleryFragment", "Error checking substitute plan for school status", e)
-        }
-
-        return true
-    }
-
-    fun getCurrentEnhancedTimetableData(): Map<String, Map<Int, EnhancedTimetableEntry>> {
-        val enhancedData = mutableMapOf<String, Map<Int, EnhancedTimetableEntry>>()
-
-        for ((dayKey, dayTimetable) in timetableData) {
-            val enhancedDayData = mutableMapOf<Int, EnhancedTimetableEntry>()
-
-            for ((lesson, entry) in dayTimetable) {
-                val dayIndex = dayKey.removePrefix("weekday_").toIntOrNull() ?: continue
-                val currentDay = Calendar.getInstance().apply {
-                    time = currentWeekStart.time
-                    add(Calendar.DAY_OF_WEEK, dayIndex)
-                }
-
-                val hasSchool = determineIfUserHasSchool(currentDay.time, lesson, entry.subject)
-
-                enhancedDayData[lesson] = EnhancedTimetableEntry(
-                    subject = entry.subject,
-                    duration = entry.duration,
-                    isBreak = entry.isBreak,
-                    breakDuration = entry.breakDuration,
-                    teacher = entry.teacher,
-                    room = entry.room,
-                    hasSchool = hasSchool,
-                    isFreePeriod = entry.subject == "Freistunde"
-                )
-            }
-
-            enhancedData[dayKey] = enhancedDayData
-        }
-
-        return enhancedData
     }
 
     private fun cleanDisplayString(input: String): String {
@@ -3637,10 +3722,190 @@ class GalleryFragment : Fragment() {
             .joinToString(" | ")
     }
 
+    private fun loadColorBlindSettings() {
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        colorBlindMode = sharedPreferences.getString("colorblind_mode", "none") ?: "none"
+        L.d("GalleryFragment", "Colorblind mode loaded: $colorBlindMode")
+    }
+
+    private fun getColorBlindFriendlyColor(originalColor: String): Int {
+        return when (colorBlindMode) {
+            "protanopia" -> when (originalColor) {
+                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
+                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
+                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+                else -> Color.TRANSPARENT
+            }
+            "deuteranopia" -> when (originalColor) {
+                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
+                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
+                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+                else -> Color.TRANSPARENT
+            }
+            "tritanopia" -> when (originalColor) {
+                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
+                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_dark)
+                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
+                else -> Color.TRANSPARENT
+            }
+            else -> when (originalColor) { // normal
+                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
+                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
+                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light)
+                else -> Color.TRANSPARENT
+            }
+        }
+    }
+
+    private fun saveHolidaysData() {
+        try {
+            val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val holidaysArray = JSONArray()
+
+            val processedDates = mutableSetOf<String>()
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY)
+
+            val checkDate = Calendar.getInstance()
+            checkDate.add(Calendar.YEAR, -1)
+            val endDate = Calendar.getInstance()
+            endDate.add(Calendar.YEAR, 2)
+
+            while (!checkDate.after(endDate)) {
+                val dateStr = dateFormat.format(checkDate.time)
+
+                if (!processedDates.contains(dateStr)) {
+                    val userOccasions = getUserSpecialOccasionsForDate(checkDate.time)
+                    val calendarInfo = calendarDataManager.getCalendarInfoForDate(checkDate.time)
+
+                    var isHoliday = false
+                    var holidayName = ""
+
+                    userOccasions.forEach { occasion ->
+                        if (occasion.contains("Feiertag", ignoreCase = true) ||
+                            occasion.contains("Ferientag", ignoreCase = true)) {
+                            isHoliday = true
+                            holidayName = occasion
+                        }
+                    }
+
+                    calendarInfo?.let { info ->
+                        if (info.isSpecialDay && info.specialNote.isNotBlank()) {
+                            if (info.specialNote.contains("Feiertag", ignoreCase = true) ||
+                                info.specialNote.contains("Ferientag", ignoreCase = true)) {
+                                isHoliday = true
+                                if (holidayName.isEmpty()) holidayName = info.specialNote
+                            }
+                        }
+                    }
+
+                    if (isHoliday) {
+                        val holidayObject = JSONObject().apply {
+                            put("date", dateStr)
+                            put("name", holidayName.ifEmpty { "Feiertag" })
+                        }
+                        holidaysArray.put(holidayObject)
+                        processedDates.add(dateStr)
+                    }
+                }
+
+                checkDate.add(Calendar.DAY_OF_YEAR, 1)
+            }
+
+            sharedPreferences.edit()
+                .putString("holidays_data", holidaysArray.toString())
+                .apply()
+
+            L.d("GalleryFragment", "Holidays data saved: ${holidaysArray.length()} holidays")
+
+        } catch (e: Exception) {
+            L.e("GalleryFragment", "Error saving holidays data", e)
+        }
+    }
+
+    private fun saveVacationsData() {
+        try {
+            val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val vacationsArray = JSONArray()
+
+            val vacationPeriods = mutableListOf<Pair<Date, Date>>()
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY)
+
+            val sortedVacationWeeks = vacationWeeks.keys.sorted()
+            if (sortedVacationWeeks.isNotEmpty()) {
+                var currentStart: Date? = null
+                var currentEnd: Date? = null
+                var currentName = ""
+
+                for (weekKey in sortedVacationWeeks) {
+                    val weekStart = dateFormat.parse(weekKey)
+                    val weekEnd = Calendar.getInstance().apply {
+                        if (weekStart != null) {
+                            time = weekStart
+                        }
+                        add(Calendar.DAY_OF_YEAR, 6) // sunday
+                    }.time
+
+                    val vacationWeek = vacationWeeks[weekKey]
+                    val vacationName = vacationWeek?.name ?: "Ferien"
+
+                    if (currentStart == null) {
+                        currentStart = weekStart
+                        currentEnd = weekEnd
+                        currentName = vacationName
+                    } else {
+                        val expectedNextWeek = Calendar.getInstance().apply {
+                            if (currentEnd != null) {
+                                time = currentEnd
+                            }
+                            add(Calendar.DAY_OF_YEAR, 1)
+                        }.time
+
+                        if (weekStart != null) {
+                            if (abs(weekStart.time - expectedNextWeek.time) <= 24 * 60 * 60 * 1000 &&
+                                vacationName == currentName) {
+                                currentEnd = weekEnd
+                            } else {
+                                val vacationObject = JSONObject().apply {
+                                    put("start_date", dateFormat.format(currentStart))
+                                    put("end_date", dateFormat.format(currentEnd))
+                                    put("name", currentName)
+                                }
+                                vacationsArray.put(vacationObject)
+
+                                currentStart = weekStart
+                                currentEnd = weekEnd
+                                currentName = vacationName
+                            }
+                        }
+                    }
+                }
+
+                if (currentStart != null && currentEnd != null) {
+                    val vacationObject = JSONObject().apply {
+                        put("start_date", dateFormat.format(currentStart))
+                        put("end_date", dateFormat.format(currentEnd))
+                        put("name", currentName)
+                    }
+                    vacationsArray.put(vacationObject)
+                }
+            }
+
+            sharedPreferences.edit()
+                .putString("vacations_data", vacationsArray.toString())
+                .apply()
+
+            L.d("GalleryFragment", "Vacations data saved: ${vacationsArray.length()} vacation periods")
+
+        } catch (e: Exception) {
+            L.e("GalleryFragment", "Error saving vacations data", e)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         loadRealTimePreference()
         loadWeekendPreference()
+        loadColorBlindSettings()
 
         setupRealTimeUpdates()
 
@@ -3656,7 +3921,5 @@ class GalleryFragment : Fragment() {
         super.onDestroyView()
         stopRealTimeUpdates()
         _binding = null
-        instance = null
     }
-
 }

@@ -1,6 +1,7 @@
 package com.thecooker.vertretungsplaner
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -49,8 +50,46 @@ class SubjectSelectionActivity : AppCompatActivity() {
             val parts = mutableListOf<String>()
             if (subject.isNotBlank()) parts.add(subject)
             if (teacher.isNotBlank() && teacher != "UNKNOWN") parts.add(teacher)
-            if (room.isNotBlank() && room != "UNKNOWN") parts.add(room)
+
+            if (room.isNotBlank() && room != "UNKNOWN") {
+                parts.add(room)
+            }
             return parts.joinToString(" | ")
+        }
+
+        fun getDisplayTextWithAlternatives(context: Context): String {
+            val parts = mutableListOf<String>()
+            if (subject.isNotBlank()) parts.add(subject)
+            if (teacher.isNotBlank() && teacher != "UNKNOWN") parts.add(teacher)
+
+            if (room.isNotBlank() && room != "UNKNOWN") {
+                val alternativeRooms = getAlternativeRoomsForSubject(context, subject)
+                val roomText = if (alternativeRooms.isNotEmpty()) {
+                    val allRooms = mutableListOf(room)
+                    allRooms.addAll(alternativeRooms)
+                    when {
+                        allRooms.size == 2 -> allRooms.joinToString("/")
+                        allRooms.size >= 3 -> "${allRooms.take(2).joinToString("/")}/.."
+                        else -> room
+                    }
+                } else {
+                    room
+                }
+                parts.add(roomText)
+            }
+            return parts.joinToString(" | ")
+        }
+
+        private fun getAlternativeRoomsForSubject(context: Context, subject: String): List<String> {
+            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val json = sharedPreferences.getString("alternative_rooms", "{}")
+            return try {
+                val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+                val allRooms: MutableMap<String, List<String>> = com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
+                allRooms[subject] ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
         }
 
         fun matchesSearch(searchText: String): Boolean {
@@ -268,7 +307,11 @@ class SubjectSelectionActivity : AppCompatActivity() {
         val editTextSubject = dialogView.findViewById<EditText>(R.id.editTextSubject)
         val editTextTeacher = dialogView.findViewById<EditText>(R.id.editTextTeacher)
         val editTextRoom = dialogView.findViewById<EditText>(R.id.editTextRoom)
+        val switchAlternativeRooms = dialogView.findViewById<Switch>(R.id.switchAlternativeRooms)
+        val alternativeRoomsContainer = dialogView.findViewById<LinearLayout>(R.id.alternativeRoomsContainer)
+        val btnAddAlternativeRoom = dialogView.findViewById<Button>(R.id.btnAddAlternativeRoom)
 
+        // Pre-fill existing data
         editTextSubject.setText(triplet.subject)
         editTextTeacher.setText(if (triplet.teacher == "UNKNOWN") "" else triplet.teacher)
         editTextRoom.setText(if (triplet.room == "UNKNOWN") "" else triplet.room)
@@ -276,6 +319,86 @@ class SubjectSelectionActivity : AppCompatActivity() {
         editTextSubject.hint = "Fach (erforderlich)"
         editTextTeacher.hint = "Lehrer (optional)"
         editTextRoom.hint = "Raum (optional)"
+
+        val alternativeRoomEditTexts = mutableListOf<EditText>()
+        val existingAlternativeRooms = getAlternativeRoomsForSubject(triplet.subject)
+
+        fun addAlternativeRoomField(text: String = "") {
+            if (alternativeRoomEditTexts.size >= 2) {
+                Toast.makeText(this, "Maximal 2 alternative Räume erlaubt", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val roomLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 8, 0, 8)
+            }
+
+            val editText = EditText(this).apply {
+                hint = "Alternativer Raum"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setText(text)
+                setPadding(16, 16, 16, 16)
+            }
+            alternativeRoomEditTexts.add(editText)
+
+            val removeButton = Button(this).apply {
+                setText("×")
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener {
+                    alternativeRoomsContainer.removeView(roomLayout)
+                    alternativeRoomEditTexts.remove(editText)
+
+                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
+                        View.VISIBLE
+                    } else {
+                        View.GONE
+                    }
+                }
+            }
+
+            roomLayout.addView(editText)
+            roomLayout.addView(removeButton)
+
+            val addButtonIndex = alternativeRoomsContainer.indexOfChild(btnAddAlternativeRoom)
+            alternativeRoomsContainer.addView(roomLayout, addButtonIndex)
+
+            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        }
+
+        if (existingAlternativeRooms.isNotEmpty()) {
+            switchAlternativeRooms.isChecked = true
+            alternativeRoomsContainer.visibility = View.VISIBLE
+            existingAlternativeRooms.forEach { room ->
+                addAlternativeRoomField(room)
+            }
+        }
+
+        switchAlternativeRooms.setOnCheckedChangeListener { _, isChecked ->
+            alternativeRoomsContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
+
+            if (isChecked && alternativeRoomEditTexts.isEmpty()) {
+                addAlternativeRoomField()
+            }
+
+            val mainRoom = editTextRoom.text.toString().trim()
+            if (isChecked && (mainRoom.isEmpty() || mainRoom == "UNKNOWN")) {
+                switchAlternativeRooms.isChecked = false
+                alternativeRoomsContainer.visibility = View.GONE
+                Toast.makeText(this, "Hauptraum muss angegeben werden für alternative Räume", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnAddAlternativeRoom.setOnClickListener {
+            addAlternativeRoomField()
+        }
 
         AlertDialog.Builder(this)
             .setTitle("Fach bearbeiten")
@@ -286,6 +409,11 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
 
                 if (subjectText.isNotEmpty()) {
+                    val alternativeRooms = alternativeRoomEditTexts
+                        .mapNotNull { it.text.toString().trim().takeIf { room -> room.isNotEmpty() && room != "UNKNOWN" } }
+
+                    setAlternativeRoomsForSubject(subjectText, alternativeRooms)
+
                     updateSubject(triplet, subjectText, teacherText, roomText)
                 } else {
                     Toast.makeText(this, "Gebe bitte mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
@@ -442,10 +570,84 @@ class SubjectSelectionActivity : AppCompatActivity() {
         val editTextSubject = dialogView.findViewById<EditText>(R.id.editTextSubject)
         val editTextTeacher = dialogView.findViewById<EditText>(R.id.editTextTeacher)
         val editTextRoom = dialogView.findViewById<EditText>(R.id.editTextRoom)
+        val switchAlternativeRooms = dialogView.findViewById<Switch>(R.id.switchAlternativeRooms)
+        val alternativeRoomsContainer = dialogView.findViewById<LinearLayout>(R.id.alternativeRoomsContainer)
+        val btnAddAlternativeRoom = dialogView.findViewById<Button>(R.id.btnAddAlternativeRoom)
 
         editTextSubject.hint = "Fach (erforderlich)"
         editTextTeacher.hint = "Lehrer (optional)"
         editTextRoom.hint = "Raum (optional)"
+
+        val alternativeRoomEditTexts = mutableListOf<EditText>()
+
+        fun addAlternativeRoomField(text: String = "") {
+            if (alternativeRoomEditTexts.size >= 2) {
+                Toast.makeText(this, "Maximal 2 alternative Räume erlaubt", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val roomLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 8, 0, 8)
+            }
+
+            val editText = EditText(this).apply {
+                hint = "Alternativer Raum"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setText(text)
+                setPadding(16, 16, 16, 16)
+            }
+            alternativeRoomEditTexts.add(editText)
+
+            val removeButton = Button(this).apply {
+                setText("×")
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener {
+                    alternativeRoomsContainer.removeView(roomLayout)
+                    alternativeRoomEditTexts.remove(editText)
+
+                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
+                        View.VISIBLE
+                    } else {
+                        View.GONE
+                    }
+                }
+            }
+
+            roomLayout.addView(editText)
+            roomLayout.addView(removeButton)
+
+            val addButtonIndex = alternativeRoomsContainer.indexOfChild(btnAddAlternativeRoom)
+            alternativeRoomsContainer.addView(roomLayout, addButtonIndex)
+
+            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        }
+
+        switchAlternativeRooms.setOnCheckedChangeListener { _, isChecked ->
+            alternativeRoomsContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
+
+            if (isChecked && alternativeRoomEditTexts.isEmpty()) {
+                addAlternativeRoomField()
+            }
+
+            val mainRoom = editTextRoom.text.toString().trim()
+            if (isChecked && (mainRoom.isEmpty() || mainRoom == "UNKNOWN")) {
+                switchAlternativeRooms.isChecked = false
+                alternativeRoomsContainer.visibility = View.GONE
+                Toast.makeText(this, "Hauptraum muss angegeben werden für alternative Räume", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnAddAlternativeRoom.setOnClickListener {
+            addAlternativeRoomField()
+        }
 
         AlertDialog.Builder(this)
             .setTitle("Fach manuell hinzufügen")
@@ -456,6 +658,13 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
 
                 if (subjectText.isNotEmpty()) {
+                    // Collect alternative rooms
+                    val alternativeRooms = alternativeRoomEditTexts
+                        .mapNotNull { it.text.toString().trim().takeIf { room -> room.isNotEmpty() && room != "UNKNOWN" } }
+
+                    // Save alternative rooms
+                    setAlternativeRoomsForSubject(subjectText, alternativeRooms)
+
                     addManualSubject(subjectText, teacherText, roomText)
                 } else {
                     Toast.makeText(this, "Bitte gebe mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
@@ -564,6 +773,41 @@ class SubjectSelectionActivity : AppCompatActivity() {
         finish()
     }
 
+    private fun getAlternativeRoomsForSubject(subject: String): List<String> {
+        val json = sharedPreferences.getString("alternative_rooms", "{}")
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+            val allRooms: MutableMap<String, List<String>> = com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
+            allRooms[subject] ?: emptyList()
+        } catch (e: Exception) {
+            L.e(TAG, "Error loading alternative rooms for subject", e)
+            emptyList()
+        }
+    }
+
+    private fun setAlternativeRoomsForSubject(subject: String, rooms: List<String>) {
+        val json = sharedPreferences.getString("alternative_rooms", "{}")
+        val allRooms = try {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+            com.google.gson.Gson().fromJson<MutableMap<String, List<String>>>(json, type) ?: mutableMapOf()
+        } catch (e: Exception) {
+            mutableMapOf()
+        }
+
+        if (rooms.isEmpty()) {
+            allRooms.remove(subject)
+        } else {
+            allRooms[subject] = rooms
+        }
+
+        val newJson = com.google.gson.Gson().toJson(allRooms)
+        sharedPreferences.edit()
+            .putString("alternative_rooms", newJson)
+            .apply()
+
+        L.d(TAG, "Alternative rooms updated for subject: $subject -> $rooms")
+    }
+
     private fun updateCounters() {
         tvSelectionCount.text = selectedSubjects.size.toString()
         tvTotalCount.text = filteredSubjectTriplets.size.toString()
@@ -624,8 +868,7 @@ class SubjectSelectionActivity : AppCompatActivity() {
             val triplet = subjectTriplets[position]
             val subject = triplet.subject
 
-            // show the full display text (subject | teacher | room)
-            holder.textSubject.text = triplet.getDisplayText()
+            holder.textSubject.text = triplet.getDisplayTextWithAlternatives(holder.itemView.context)
             holder.checkBox.isChecked = selectedItems.contains(subject)
 
             val selectionClickListener = View.OnClickListener {

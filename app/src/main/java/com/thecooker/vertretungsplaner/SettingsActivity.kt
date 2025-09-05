@@ -435,11 +435,25 @@ class SettingsActivity : AppCompatActivity() {
             btnScanTimetable.text = "Stundenplan löschen"
             val documentInfo = sharedPreferences.getString("scanned_document_info", "")
             val selectedSubjects = sharedPreferences.getString("student_subjects", "")?.split(",") ?: emptyList()
+
+            var alternativeRoomCount = 0
+            selectedSubjects.forEach { subject ->
+                if (getAlternativeRoomsForSubject(subject).isNotEmpty()) {
+                    alternativeRoomCount++
+                }
+            }
+
             val subjectInfo = if (selectedSubjects.isNotEmpty() && selectedSubjects.first().isNotBlank()) {
-                "\nAusgewählte Fächer: ${selectedSubjects.size}"
+                val alternativeInfo = if (alternativeRoomCount > 0) {
+                    " ($alternativeRoomCount mit alternativen Räumen)"
+                } else {
+                    ""
+                }
+                "\nAusgewählte Fächer: ${selectedSubjects.size}$alternativeInfo"
             } else {
                 "\nKeine Fächer ausgewählt"
             }
+
             tvScannedDocument.text = "Gescanntes Dokument:\n$documentInfo$subjectInfo"
             tvScannedDocument.visibility = TextView.VISIBLE
         } else {
@@ -729,10 +743,11 @@ class SettingsActivity : AppCompatActivity() {
         extractedTeachers.clear()
         extractedRooms.clear()
 
+        val allSubjectData = mutableListOf<Triple<String, String, String>>()
+
         L.d(TAG, "=== SUBJECT EXTRACTION DEBUG ===")
         L.d(TAG, "Looking for subjects after class: '$klasse'")
 
-        // find where user class appears in the text
         val klasseIndex = text.indexOf(klasse, ignoreCase = true)
         if (klasseIndex == -1) {
             L.e(TAG, "ERROR: Class '$klasse' not found in text")
@@ -742,7 +757,6 @@ class SettingsActivity : AppCompatActivity() {
         L.d(TAG, "Found class '$klasse' at position: $klasseIndex")
 
         val afterKlasse = text.substring(klasseIndex + klasse.length)
-
         val datePattern = Regex("\\d{1,2}\\.\\d{1,2}\\.\\d{4}")
         val endMatch = datePattern.find(afterKlasse)
         val relevantText = if (endMatch != null) {
@@ -762,7 +776,7 @@ class SettingsActivity : AppCompatActivity() {
             val currentTeachers = mutableListOf<String>()
             val currentRooms = mutableListOf<String>()
 
-            // look for weekdays (Mo, Di, Mi, Do, Fr)
+            // Skip weekdays
             if (tokens[i].matches(Regex("^(Mo|Di|Mi|Do|Fr)$"))) {
                 L.d(TAG, "Found weekday: ${tokens[i]}, skipping weekday line...")
                 while (i < tokens.size && tokens[i].matches(Regex("^(Mo|Di|Mi|Do|Fr)$"))) {
@@ -771,10 +785,7 @@ class SettingsActivity : AppCompatActivity() {
                 continue
             }
 
-            // get subjects
-            val subjectStartIndex = i
-            L.d(TAG, "Looking for subjects starting at index $i")
-
+            // extract subjects
             while (i < tokens.size) {
                 val token = tokens[i].replace(Regex("[.,;:!?()\\[\\]]+"), "")
 
@@ -783,16 +794,14 @@ class SettingsActivity : AppCompatActivity() {
                     L.d(TAG, "Found subject: '$token'")
                     i++
                 } else if (isTeacher(token) && currentSubjects.isNotEmpty()) {
-                    // found teacher -> stop looking for subjects
                     L.d(TAG, "Found teacher '$token', stopping subject search")
                     break
                 } else if (isHourMarker(token)) {
-                    // skip hour markers (1, 2, 3 ..)
                     L.d(TAG, "Skipping hour marker: '$token'")
                     i++
                 } else {
                     L.d(TAG, "Skipping unknown token: '$token'")
-                    i++ // fallback -> skip
+                    i++
                 }
             }
 
@@ -801,9 +810,7 @@ class SettingsActivity : AppCompatActivity() {
                 continue
             }
 
-            L.d(TAG, "Found ${currentSubjects.size} subjects in this block")
-
-            // extract teachers (should be exactly the same count as subjects)
+            // extract teachers
             val expectedTeacherCount = currentSubjects.size
             var teacherCount = 0
 
@@ -822,11 +829,9 @@ class SettingsActivity : AppCompatActivity() {
                     teacherCount++
                     i++
                 } else if (isRoom(token) && teacherCount > 0) {
-                    // started hitting rooms -> stop looking for teachers
                     L.d(TAG, "Found room '$token', stopping teacher search")
                     break
                 } else if (isSubject(token)) {
-                    // hit the next subject block
                     L.d(TAG, "Found next subject '$token', stopping teacher search")
                     break
                 } else {
@@ -835,153 +840,120 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
 
-            // extract rooms (should be exactly the same count as subjects/teachers, but best possibility to be false)
-            val expectedRoomCount = currentSubjects.size
-            var roomCount = 0
-
-            while (i < tokens.size && roomCount < expectedRoomCount) {
+            // extract rooms
+            val roomsForThisBlock = mutableListOf<String>()
+            while (i < tokens.size) {
                 val token = tokens[i].replace(Regex("[.,;:!?()\\[\\]]+"), "")
 
                 if (isRoom(token)) {
-                    currentRooms.add(token)
+                    roomsForThisBlock.add(token)
                     L.d(TAG, "Found room: '$token'")
-                    roomCount++
                     i++
                 } else if (isSubject(token)) {
-                    // hit the next subject block
                     L.d(TAG, "Found next subject '$token', stopping room search")
                     break
+                } else if (isHourMarker(token)) {
+                    L.d(TAG, "Skipping hour marker in room section: '$token'")
+                    i++
                 } else {
                     L.d(TAG, "Skipping token in room section: '$token'")
                     i++
                 }
             }
 
-            // handle missing rooms (and only rooms) using known data and validate
             if (currentSubjects.size == currentTeachers.size) {
-                if (currentRooms.size == currentSubjects.size) {
-                    // exact match -> store the combinations for future reference
-                    for (j in currentSubjects.indices) {
-                        val key = Pair(currentSubjects[j], currentTeachers[j])
-                        val room = currentRooms[j]
+                for (j in currentSubjects.indices) {
+                    val subject = currentSubjects[j]
+                    val teacher = currentTeachers[j]
 
-                        // only update "knownSubjectRooms" if the room is not "UNKNOWN" (ensures we dont overwrite good rooms)
-                        if (room != "UNKNOWN") {
-                            knownSubjectRooms[key] = room
-                            L.d(TAG, "Storing known room: $key -> $room")
-                        }
-                    }
-
-                    subjects.addAll(currentSubjects)
-                    extractedTeachers.addAll(currentTeachers)
-                    extractedRooms.addAll(currentRooms)
-
-                    L.d(TAG, "Successfully matched ${currentSubjects.size} subjects with teachers and rooms")
-                    for (j in currentSubjects.indices) {
-                        L.d(TAG, "   ${currentSubjects[j]} -> ${currentTeachers[j]} -> ${currentRooms[j]}")
-                    }
-                } else if (currentRooms.size < currentSubjects.size) {
-                    L.d(TAG, "Missing rooms detected: ${currentSubjects.size} subjects/teachers but only ${currentRooms.size} rooms")
-                    L.d(TAG, "Attempting advanced room filling...")
-
-                    val completedRooms = fillMissingRooms(currentSubjects, currentTeachers, currentRooms)
-
-                    if (completedRooms.size == currentSubjects.size) {
-                        L.d(TAG, "Successfully filled missing rooms using positional analysis")
-
-                        for (j in currentSubjects.indices) {
-                            val key = Pair(currentSubjects[j], currentTeachers[j])
-                            val room = completedRooms[j]
-                            if (room != "UNKNOWN") {
-                                knownSubjectRooms[key] = room
-                                L.d(TAG, "Storing filled room: $key -> $room")
-                            }
-                        }
-
-                        subjects.addAll(currentSubjects)
-                        extractedTeachers.addAll(currentTeachers)
-                        extractedRooms.addAll(completedRooms)
-
-                        L.d(TAG, "Final verified mappings:")
-                        for (j in currentSubjects.indices) {
-                            L.d(TAG, "   ${currentSubjects[j]} -> ${currentTeachers[j]} -> ${completedRooms[j]}")
-                        }
+                    val room = if (j < roomsForThisBlock.size) {
+                        roomsForThisBlock[j]
                     } else {
-                        // safety fallback fill with "UNKNOWN"
-                        L.w(TAG, "Could not fill all missing rooms, padding remaining with UNKNOWN")
-
-                        subjects.addAll(currentSubjects)
-                        extractedTeachers.addAll(currentTeachers)
-
-                        val paddedRooms = completedRooms.toMutableList()
-                        while (paddedRooms.size < currentSubjects.size) {
-                            paddedRooms.add("UNKNOWN")
-                        }
-                        extractedRooms.addAll(paddedRooms)
-
-                        for (j in currentSubjects.indices) {
-                            if (j < completedRooms.size && completedRooms[j] != "UNKNOWN") {
-                                val key = Pair(currentSubjects[j], currentTeachers[j])
-                                knownSubjectRooms[key] = completedRooms[j]
-                                L.d(TAG, "Storing known room: $key -> ${completedRooms[j]}")
-                            }
-                        }
+                        val key = Pair(subject, teacher)
+                        knownSubjectRooms[key] ?: "UNKNOWN"
                     }
-                } else {
-                    L.w(TAG, "More rooms than subjects: ${currentRooms.size} rooms vs ${currentSubjects.size} subjects")
 
-                    subjects.addAll(currentSubjects)
-                    extractedTeachers.addAll(currentTeachers)
-                    extractedRooms.addAll(currentRooms.take(currentSubjects.size))
-
-                    for (j in currentSubjects.indices) {
-                        val key = Pair(currentSubjects[j], currentTeachers[j])
-                        val room = currentRooms[j]
-                        if (room != "UNKNOWN") {
-                            knownSubjectRooms[key] = room
-                            L.d(TAG, "Storing room: $key -> $room")
-                        }
-                    }
+                    allSubjectData.add(Triple(subject, teacher, room))
+                    L.d(TAG, "Added combination: $subject -> $teacher -> $room")
                 }
             } else {
-                // missing teachers (if this is hit take them prayers out🙏)
-                L.w(TAG, "Missing teachers detected: ${currentSubjects.size} subjects, ${currentTeachers.size} teachers")
-                L.w(TAG, "NOT attempting to fill missing teachers - marking as UNKNOWN")
+                L.w(TAG, "Subject-teacher mismatch: ${currentSubjects.size} subjects, ${currentTeachers.size} teachers")
+                val maxSize = maxOf(currentSubjects.size, currentTeachers.size)
+                for (j in 0 until maxSize) {
+                    val subject = if (j < currentSubjects.size) currentSubjects[j] else "UNKNOWN"
+                    val teacher = if (j < currentTeachers.size) currentTeachers[j] else "UNKNOWN"
+                    val room = if (j < roomsForThisBlock.size) roomsForThisBlock[j] else "UNKNOWN"
 
-                subjects.addAll(currentSubjects)
-
-                val paddedTeachers = currentTeachers.toMutableList()
-                while (paddedTeachers.size < currentSubjects.size) {
-                    paddedTeachers.add("UNKNOWN")
+                    if (subject != "UNKNOWN") {
+                        allSubjectData.add(Triple(subject, teacher, room))
+                        L.d(TAG, "Added padded combination: $subject -> $teacher -> $room")
+                    }
                 }
-                extractedTeachers.addAll(paddedTeachers)
-
-                val paddedRooms = currentRooms.toMutableList()
-                while (paddedRooms.size < currentSubjects.size) {
-                    paddedRooms.add("UNKNOWN")
-                }
-                extractedRooms.addAll(paddedRooms)
-
-                L.w(TAG, "Added ${currentSubjects.size} subjects with UNKNOWN teachers/rooms due to teacher mismatch")
             }
         }
 
-        val uniqueData = removeDuplicatesKeepingOrder(subjects, extractedTeachers, extractedRooms)
+        // detect alt rooms
+        val subjectRoomMap = mutableMapOf<String, MutableList<String>>()
+        val finalSubjects = mutableListOf<String>()
+        val finalTeachers = mutableListOf<String>()
+        val finalRooms = mutableListOf<String>()
+        val processedSubjects = mutableSetOf<String>()
+
+        for ((subject, teacher, room) in allSubjectData) {
+            if (subject !in subjectRoomMap) {
+                subjectRoomMap[subject] = mutableListOf()
+            }
+            if (room != "UNKNOWN" && room !in subjectRoomMap[subject]!!) {
+                subjectRoomMap[subject]!!.add(room)
+            }
+        }
+
+        val alternativeRoomsMap = mutableMapOf<String, List<String>>()
+        for ((subject, rooms) in subjectRoomMap) {
+            if (rooms.size > 1) {
+                L.d(TAG, "Found alternative rooms for $subject: $rooms")
+                alternativeRoomsMap[subject] = rooms.drop(1)
+            }
+        }
+
+        if (alternativeRoomsMap.isNotEmpty()) {
+            val gson = com.google.gson.Gson()
+            val json = gson.toJson(alternativeRoomsMap)
+            sharedPreferences.edit()
+                .putString("alternative_rooms", json)
+                .apply()
+            L.d(TAG, "Saved alternative rooms: $alternativeRoomsMap")
+        }
+
+        for ((subject, teacher, room) in allSubjectData) {
+            if (subject !in processedSubjects) {
+                processedSubjects.add(subject)
+                finalSubjects.add(subject)
+                finalTeachers.add(teacher)
+                val mainRoom = subjectRoomMap[subject]?.firstOrNull() ?: room
+                finalRooms.add(mainRoom)
+
+                val key = Pair(subject, teacher)
+                knownSubjectRooms[key] = mainRoom
+            }
+        }
 
         extractedSubjects.clear()
-        extractedSubjects.addAll(uniqueData.first)
+        extractedSubjects.addAll(finalSubjects)
         extractedTeachers.clear()
-        extractedTeachers.addAll(uniqueData.second)
+        extractedTeachers.addAll(finalTeachers)
         extractedRooms.clear()
-        extractedRooms.addAll(uniqueData.third)
-
-        backfillUnknownRooms()
+        extractedRooms.addAll(finalRooms)
 
         L.d(TAG, "=== FINAL EXTRACTION RESULTS ===")
         L.d(TAG, "Total unique subjects found: ${extractedSubjects.size}")
-        L.d(TAG, "Subjects with teachers and rooms:")
+        L.d(TAG, "Alternative rooms found: ${alternativeRoomsMap.size}")
         for (i in extractedSubjects.indices) {
             L.d(TAG, "  ${extractedSubjects[i]} -> ${extractedTeachers[i]} -> ${extractedRooms[i]}")
+            val altRooms = alternativeRoomsMap[extractedSubjects[i]]
+            if (!altRooms.isNullOrEmpty()) {
+                L.d(TAG, "    Alternative rooms: $altRooms")
+            }
         }
 
         return extractedSubjects
@@ -1288,6 +1260,7 @@ class SettingsActivity : AppCompatActivity() {
         val rooms = sharedPreferences.getString("student_rooms", "")?.split(",") ?: emptyList()
         val klasse = sharedPreferences.getString("selected_klasse", "")
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
+        val alternativeRooms = sharedPreferences.getString("alternative_rooms", "{}")
 
         val documentInfo = sharedPreferences.getString("scanned_document_info", "")
         val schuljahrPattern = Regex("Schuljahr\\s+(\\d{4}/\\d{4})")
@@ -1301,6 +1274,7 @@ class SettingsActivity : AppCompatActivity() {
         content.appendLine("SCHULJAHR=$schuljahr")
         content.appendLine("KLASSE=$klasse")
         content.appendLine("BILDUNGSGANG=$bildungsgang")
+        content.appendLine("ALTERNATIVE_ROOMS=$alternativeRooms")
         content.appendLine()
         content.appendLine("# Fächer (Format: Fach|Lehrer|Raum)")
 
@@ -1436,6 +1410,7 @@ class SettingsActivity : AppCompatActivity() {
         var schuljahr = ""
         var klasse = ""
         var bildungsgang = ""
+        var alternativeRooms = "{}"
         val subjects = mutableListOf<String>()
         val teachers = mutableListOf<String>()
         val rooms = mutableListOf<String>()
@@ -1445,6 +1420,7 @@ class SettingsActivity : AppCompatActivity() {
                 line.startsWith("SCHULJAHR=") -> schuljahr = line.substringAfter("=")
                 line.startsWith("KLASSE=") -> klasse = line.substringAfter("=")
                 line.startsWith("BILDUNGSGANG=") -> bildungsgang = line.substringAfter("=")
+                line.startsWith("ALTERNATIVE_ROOMS=") -> alternativeRooms = line.substringAfter("=")
                 line.contains("|") -> {
                     val parts = line.split("|")
                     if (parts.size >= 3) {
@@ -1458,24 +1434,24 @@ class SettingsActivity : AppCompatActivity() {
 
         // validation
         if (schuljahr.isEmpty()) {
-            return ImportResult(false, "Schuljahr nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, "Schuljahr nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList(), "{}")
         }
 
         if (klasse.isEmpty()) {
-            return ImportResult(false, "Klasse nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, "Klasse nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList(), "{}")
         }
 
         if (subjects.isEmpty()) {
-            return ImportResult(false, "Keine Fächer gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, "Keine Fächer gefunden", "", "", "", emptyList(), emptyList(), emptyList(), "{}")
         }
 
         // validate class matches users selection
         val userKlasse = sharedPreferences.getString("selected_klasse", "") ?: ""
         if (userKlasse.isNotEmpty() && klasse != userKlasse) {
-            return ImportResult(false, "Klasse stimmt nicht überein (Datei: $klasse, Ausgewählt: $userKlasse)", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, "Klasse stimmt nicht überein (Datei: $klasse, Ausgewählt: $userKlasse)", "", "", "", emptyList(), emptyList(), emptyList(), "{}")
         }
 
-        return ImportResult(true, "", schuljahr, klasse, bildungsgang, subjects, teachers, rooms)
+        return ImportResult(true, "", schuljahr, klasse, bildungsgang, subjects, teachers, rooms, alternativeRooms)
     }
 
     private fun showImportConfirmationDialog(importResult: ImportResult) {
@@ -1524,6 +1500,7 @@ class SettingsActivity : AppCompatActivity() {
         editor.putString("all_extracted_subjects", importResult.subjects.joinToString(","))
         editor.putString("all_extracted_teachers", importResult.teachers.joinToString(","))
         editor.putString("all_extracted_rooms", importResult.rooms.joinToString(","))
+        editor.putString("alternative_rooms", importResult.alternativeRooms)
         editor.putString("scanned_document_info", "Schuljahr ${importResult.schuljahr}\n${importResult.klasse} (Importiert)")
         editor.apply()
 
@@ -2475,6 +2452,58 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun getAlternativeRoomsForSubject(subject: String): List<String> {
+        val json = sharedPreferences.getString("alternative_rooms", "{}")
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+            val allRooms: MutableMap<String, List<String>> = com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
+            allRooms[subject] ?: emptyList()
+        } catch (e: Exception) {
+            L.e(TAG, "Error loading alternative rooms for subject", e)
+            emptyList()
+        }
+    }
+
+    private fun setAlternativeRoomsForSubject(subject: String, rooms: List<String>) {
+        val json = sharedPreferences.getString("alternative_rooms", "{}")
+        val allRooms = try {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+            com.google.gson.Gson().fromJson<MutableMap<String, List<String>>>(json, type) ?: mutableMapOf()
+        } catch (e: Exception) {
+            mutableMapOf()
+        }
+
+        if (rooms.isEmpty()) {
+            allRooms.remove(subject)
+        } else {
+            allRooms[subject] = rooms
+        }
+
+        val newJson = com.google.gson.Gson().toJson(allRooms)
+        sharedPreferences.edit()
+            .putString("alternative_rooms", newJson)
+            .apply()
+
+        L.d(TAG, "Alternative rooms updated for subject: $subject -> $rooms")
+    }
+
+    private fun formatSubjectDisplayText(subject: String, teacher: String, room: String): String {
+        val alternativeRooms = getAlternativeRoomsForSubject(subject)
+
+        return if (alternativeRooms.isNotEmpty() && room != "UNKNOWN") {
+            val allRooms = mutableListOf(room)
+            allRooms.addAll(alternativeRooms)
+            val roomsText = if (allRooms.size > 2) {
+                "${allRooms.take(2).joinToString("/")}/.."
+            } else {
+                allRooms.joinToString("/")
+            }
+            "$subject | $teacher | $roomsText"
+        } else {
+            "$subject | $teacher | $room"
+        }
+    }
+
     data class ValidationResult(
         val isValid: Boolean,
         val errorMessage: String,
@@ -2492,5 +2521,6 @@ data class ImportResult(
     val bildungsgang: String,
     val subjects: List<String>,
     val teachers: List<String>,
-    val rooms: List<String>
+    val rooms: List<String>,
+    val alternativeRooms: String
 )

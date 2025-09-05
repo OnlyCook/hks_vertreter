@@ -8,11 +8,15 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.thecooker.vertretungsplaner.R
+import android.text.SpannableString
+import android.text.style.StyleSpan
+import android.graphics.Typeface
 
 class ExamAdapter(
     private val examList: MutableList<ExamFragment.ExamEntry>,
     private val onExamDeleted: (ExamFragment.ExamEntry) -> Unit,
-    private val onExamEdited: (ExamFragment.ExamEntry) -> Unit
+    private val onExamEdited: (ExamFragment.ExamEntry) -> Unit,
+    private val onExamDetailsRequested: ((ExamFragment.ExamEntry) -> Unit)? = null
 ) : RecyclerView.Adapter<ExamAdapter.ViewHolder>() {
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -31,13 +35,36 @@ class ExamAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val exam = examList[position]
 
-        holder.textExamInfo.text = "${exam.subject} | ${exam.getDisplayDateString()}"
+        val fullText = "${exam.subject} | ${exam.getDisplayDateString()}"
+        val spannableString = SpannableString(fullText)
+        val subjectLength = exam.subject.length
+
+        // make subject bold
+        spannableString.setSpan(
+            StyleSpan(Typeface.BOLD),
+            0,
+            subjectLength,
+            SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+
+        holder.textExamInfo.text = spannableString
 
         if (exam.note.isNotBlank()) {
-            holder.textExamNote.text = exam.note
+            val lines = exam.note.split("\n") // 5 line limit
+            val displayText = if (lines.size > 5) {
+                lines.take(5).joinToString("\n") + "\n... (Zum Anzeigen tippen)"
+            } else {
+                exam.note
+            }
+
+            holder.textExamNote.text = displayText
             holder.textExamNote.visibility = View.VISIBLE
         } else {
             holder.textExamNote.visibility = View.GONE
+        }
+
+        holder.itemView.setOnClickListener {
+            showExamDetails(exam)
         }
 
         // bg color based on exam state
@@ -61,13 +88,12 @@ class ExamAdapter(
             holder.textExamNote.alpha = 1.0f
         }
 
-        holder.btnEdit.setOnClickListener {
-            onExamEdited(exam)
-        }
+        holder.btnEdit.setOnClickListener { onExamEdited(exam) }
+        holder.btnDelete.setOnClickListener { onExamDeleted(exam) }
+    }
 
-        holder.btnDelete.setOnClickListener {
-            onExamDeleted(exam)
-        }
+    private fun showExamDetails(exam: ExamFragment.ExamEntry) {
+        onExamDetailsRequested?.invoke(exam)
     }
 
     override fun getItemCount(): Int = examList.size

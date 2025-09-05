@@ -31,6 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import com.thecooker.vertretungsplaner.utils.BackupManager
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SlideshowFragment : Fragment() {
 
@@ -491,10 +493,10 @@ class SlideshowFragment : Fragment() {
         val availableSubjects = getAvailableSubjects()
         val hasTimetableData = availableSubjects.isNotEmpty()
 
-        val isAutoEnabled = if (editHomework == null) {
-            sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false)
+        val isAutoEnabled = if (editHomework != null) {
+            false // force uncheck when editing
         } else {
-            false
+            sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false) // Use saved preference when creating new
         }
         switchAutoHomework.isChecked = isAutoEnabled
 
@@ -508,7 +510,7 @@ class SlideshowFragment : Fragment() {
             spinnerSubject.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     val selectedSubject = spinnerSubject.selectedItem?.toString()
-                    updateAutoSwitchState(switchAutoHomework, selectedSubject)
+                    updateAutoSwitchState(switchAutoHomework, selectedSubject, editHomework != null)
 
                     if (switchAutoHomework.isChecked && switchAutoHomework.isEnabled) {
                         selectedSubject?.let { subject ->
@@ -612,7 +614,7 @@ class SlideshowFragment : Fragment() {
 
         if (hasTimetableData) {
             val currentSubject = editHomework?.subject ?: spinnerSubject.selectedItem?.toString()
-            updateAutoSwitchState(switchAutoHomework, currentSubject)
+            updateAutoSwitchState(switchAutoHomework, currentSubject, editHomework != null)
         }
 
         val dialog = AlertDialog.Builder(requireContext())
@@ -643,7 +645,7 @@ class SlideshowFragment : Fragment() {
         dialog.show()
     }
 
-    private fun updateAutoSwitchState(switchAutoHomework: Switch, subject: String?) {
+    private fun updateAutoSwitchState(switchAutoHomework: Switch, subject: String?, isEditMode: Boolean = false) {
         if (subject != null) {
             val schedule = getSubjectSchedule(requireContext(), subject)
             val canAutoFill = schedule.isNotEmpty()
@@ -652,7 +654,7 @@ class SlideshowFragment : Fragment() {
 
             if (!canAutoFill) {
                 switchAutoHomework.isChecked = false
-            } else {
+            } else if (!isEditMode) {
                 val userPreference = sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false)
                 switchAutoHomework.isChecked = userPreference
             }
@@ -1367,24 +1369,8 @@ class SlideshowFragment : Fragment() {
             else -> -1
         }
 
-        if (todayIndex == -1) {
-            // weekend -> find next monday if subject exists there
-            schedule[0]?.let { lessons ->
-                for (lesson in lessons) {
-                    if (hasSchoolOnLesson(0, lesson)) {
-                        val nextMonday = Calendar.getInstance().apply {
-                            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
-                                add(Calendar.DAY_OF_YEAR, 1)
-                            }
-                        }
-                        return Pair(nextMonday.time, lesson)
-                    }
-                }
-            }
-        }
-
-        // search for next occurrence starting from tomorrow
-        for (dayOffset in 1..7) {
+        // start searching from tomorrow
+        for (dayOffset in 1..14) { // max 2 weeks ahead, then fallback to simply next
             val targetDay = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, dayOffset)
             }
@@ -1407,66 +1393,123 @@ class SlideshowFragment : Fragment() {
             schedule[checkDayIndex]?.let { lessons ->
                 for (lesson in lessons) {
                     if (hasSchoolOnLesson(checkDayIndex, lesson)) {
-                        return Pair(targetDay.time, lesson)
-                    }
-                }
-            }
-        }
+                        val dateForCheck = targetDay.time
 
-        // if nothing found in the next 7 days, look for the first available day
-        // (handles cases where the subject doesn't exist in the remaining days of the week)
-        for (dayIndex in 0..4) {
-            schedule[dayIndex]?.let { lessons ->
-                for (lesson in lessons) {
-                    if (hasSchoolOnLesson(dayIndex, lesson)) {
-                        val targetDay = Calendar.getInstance().apply {
-                            // get days to add to this weekday next week
-                            val currentDayOfWeek = get(Calendar.DAY_OF_WEEK)
-                            val targetDayOfWeek = when (dayIndex) {
-                                0 -> Calendar.MONDAY
-                                1 -> Calendar.TUESDAY
-                                2 -> Calendar.WEDNESDAY
-                                3 -> Calendar.THURSDAY
-                                4 -> Calendar.FRIDAY
-                                else -> Calendar.MONDAY
-                            }
-
-                            var daysToAdd = targetDayOfWeek - currentDayOfWeek
-                            if (daysToAdd <= 0) {
-                                daysToAdd += 7
-                            }
-
-                            add(Calendar.DAY_OF_YEAR, daysToAdd)
-                        }
-                        return Pair(targetDay.time, lesson)
-                    }
-                }
-                // fallback: just use next lesson
-                if (lessons.isNotEmpty()) {
-                    val targetDay = Calendar.getInstance().apply {
-                        val currentDayOfWeek = get(Calendar.DAY_OF_WEEK)
-                        val targetDayOfWeek = when (dayIndex) {
-                            0 -> Calendar.MONDAY
-                            1 -> Calendar.TUESDAY
-                            2 -> Calendar.WEDNESDAY
-                            3 -> Calendar.THURSDAY
-                            4 -> Calendar.FRIDAY
-                            else -> Calendar.MONDAY
+                        // check for holiday/vacation
+                        if (isDateHolidayOrVacation(context, dateForCheck)) {
+                            continue
                         }
 
-                        var daysToAdd = targetDayOfWeek - currentDayOfWeek
-                        if (daysToAdd <= 0) {
-                            daysToAdd += 7
+                        // check if cancelled
+                        if (isLessonCancelled(context, dateForCheck, lesson, subject)) {
+                            continue
                         }
 
-                        add(Calendar.DAY_OF_YEAR, daysToAdd)
+                        return Pair(dateForCheck, lesson)
                     }
-                    return Pair(targetDay.time, lessons.first())
                 }
             }
         }
 
         return null
+    }
+
+    private fun isDateHolidayOrVacation(context: Context, date: Date): Boolean {
+        val sharedPrefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+
+        try {
+            // holidays
+            val holidaysJson = sharedPrefs.getString("holidays_data", "[]")
+            val holidaysArray = JSONArray(holidaysJson)
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val dateStr = dateFormat.format(date)
+
+            for (i in 0 until holidaysArray.length()) {
+                val holiday = holidaysArray.getJSONObject(i)
+                val holidayDate = holiday.optString("date", "")
+                if (holidayDate == dateStr) {
+                    L.d(TAG, "Date $dateStr is a holiday")
+                    return true
+                }
+            }
+
+            // vacations
+            val vacationsJson = sharedPrefs.getString("vacations_data", "[]")
+            val vacationsArray = JSONArray(vacationsJson)
+
+            for (i in 0 until vacationsArray.length()) {
+                val vacation = vacationsArray.getJSONObject(i)
+                val startDateStr = vacation.optString("start_date", "")
+                val endDateStr = vacation.optString("end_date", "")
+
+                if (startDateStr.isNotEmpty() && endDateStr.isNotEmpty()) {
+                    val startDate = dateFormat.parse(startDateStr)
+                    val endDate = dateFormat.parse(endDateStr)
+
+                    if (startDate != null && endDate != null) {
+                        if (date.after(startDate) && date.before(endDate) ||
+                            date.equals(startDate) || date.equals(endDate)) {
+                            L.d(TAG, "Date $dateStr is in vacation period")
+                            return true
+                        }
+                    }
+                }
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error checking holidays/vacations", e)
+        }
+
+        return false
+    }
+
+    private fun isLessonCancelled(context: Context, date: Date, lesson: Int, subject: String): Boolean {
+        val sharedPrefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val klasse = sharedPrefs.getString("selected_klasse", "") ?: return false
+
+        try {
+            val cacheFile = File(context.cacheDir, "substitute_plan_$klasse.json")
+            if (!cacheFile.exists()) {
+                return false
+            }
+
+            val cachedData = cacheFile.readText()
+            val jsonData = JSONObject(cachedData)
+            val dates = jsonData.optJSONArray("dates") ?: return false
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val targetDateStr = dateFormat.format(date)
+
+            for (i in 0 until dates.length()) {
+                val dateObj = dates.getJSONObject(i)
+                val dateString = dateObj.getString("date")
+
+                if (dateString == targetDateStr) {
+                    val entries = dateObj.getJSONArray("entries")
+
+                    for (j in 0 until entries.length()) {
+                        val entry = entries.getJSONObject(j)
+                        val entryLesson = entry.getInt("stunde")
+                        val entrySubject = entry.optString("fach", "")
+                        val entryText = entry.optString("text", "")
+
+                        if (entryLesson == lesson &&
+                            entrySubject.equals(subject, ignoreCase = true) &&
+                            (entryText.contains("Entfällt", ignoreCase = true) ||
+                                    entryText.contains("verlegt", ignoreCase = true))) {
+                            L.d(TAG, "Lesson $lesson for $subject on $targetDateStr is cancelled")
+                            return true
+                        }
+                    }
+                }
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error checking cancelled lessons", e)
+        }
+
+        return false
     }
 
     private fun hasSchoolOnLesson(dayIndex: Int, lesson: Int): Boolean {
