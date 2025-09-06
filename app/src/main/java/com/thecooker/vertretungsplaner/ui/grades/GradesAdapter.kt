@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -23,7 +24,7 @@ class GradesAdapter(
         val textOralGrade: TextView = itemView.findViewById(R.id.textOralGrade)
         val textWrittenGrade: TextView = itemView.findViewById(R.id.textWrittenGrade)
         val textFinalGrade: TextView = itemView.findViewById(R.id.textFinalGrade)
-        val btnEditSubject: Button = itemView.findViewById(R.id.btnEditSubject)
+        val btnEditSubject: ImageButton = itemView.findViewById(R.id.btnEditSubject)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): GradeViewHolder {

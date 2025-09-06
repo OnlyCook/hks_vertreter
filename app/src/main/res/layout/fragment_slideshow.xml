@@ -14,17 +14,21 @@
         android:padding="12dp"
         android:background="@android:color/background_light">
 
-        <Spinner
-            android:id="@+id/spinnerSort"
+        <EditText
+            android:id="@+id/searchBarHomework"
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:background="@drawable/spinner_with_arrow_background"
+            android:hint="Nach Fach suchen..."
+            android:inputType="text"
             android:padding="12dp"
-            android:paddingTop="14dp"
-            android:paddingBottom="14dp"
-            android:popupBackground="@drawable/spinner_popup_background" />
+            android:background="@drawable/subtle_search_background"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:textSize="16sp"
+            android:textColorHint="#757575"
+            android:drawablePadding="8dp"
+            android:paddingStart="20dp"/>
 
         <Button
             android:id="@+id/btnAddHomework"

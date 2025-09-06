@@ -23,7 +23,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Mathematik | 15.03.2025 (in 5 Tagen)"
-            android:textSize="18sp"
+            android:textSize="16sp"
             android:padding="4dp" />
 
         <!-- Exam note -->
@@ -46,27 +46,26 @@
         android:orientation="horizontal"
         android:layout_gravity="center_vertical">
 
-        <Button
+        <ImageButton
             android:id="@+id/btnEditExam"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✎"
-            android:textSize="14sp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_pencil"
             android:backgroundTint="@android:color/holo_orange_light"
             android:layout_marginEnd="4dp"
-            android:minWidth="36dp"
-            android:minHeight="36dp"
+            android:scaleType="centerInside"
+            android:contentDescription="Edit"
             style="@style/Widget.AppCompat.Button" />
 
-        <Button
+
+        <ImageButton
             android:id="@+id/btnDeleteExam"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✖"
-            android:textSize="14sp"
-            android:backgroundTint="@android:color/holo_red_light"
-            android:minWidth="36dp"
-            android:minHeight="36dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_trash_can"
+            android:backgroundTint="@android:color/holo_red_dark"
+            android:scaleType="centerInside"
+            android:contentDescription="Delete"
             style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>

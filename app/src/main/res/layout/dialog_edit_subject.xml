@@ -129,7 +129,7 @@
                         android:id="@+id/editPruefungsergebnis"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="z.B. 2.3"
+                        android:hint="z.B. 12 (Punkte 0-15)"
                         android:inputType="numberDecimal"
                         android:padding="8dp"
                         android:background="@drawable/subtle_search_background"

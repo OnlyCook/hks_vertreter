@@ -47,12 +47,130 @@ import android.os.Handler
 import android.os.Looper
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.util.AttributeSet
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.lifecycle.lifecycleScope
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
+import android.view.ViewGroup
+import android.view.Gravity
+import android.widget.LinearLayout
+import kotlin.math.min
+
+data class CalendarPeriodData(
+    val date: Date,
+    val calendarView: TableLayout,
+    val isLoaded: Boolean = false
+)
+
+class SwipeInterceptorLayout @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : FrameLayout(context, attrs, defStyleAttr) {
+
+    interface SwipeListener {
+        fun onSwipeLeft()
+        fun onSwipeRight()
+        fun onSwipeProgress(progress: Float, isRightSwipe: Boolean)
+        fun onSwipeEnd()
+    }
+
+    var swipeListener: SwipeListener? = null
+
+    private var initialX = 0f
+    private var initialY = 0f
+    private var lastX = 0f
+    private var isSwipeGesture = false
+    private var hasMovedEnough = false
+    private val minSwipeDistance = 150f
+    private val minMovementToDetect = 30f
+    private val maxVerticalRatio = 2.0f
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.action) {
+            MotionEvent.ACTION_DOWN -> {
+                initialX = ev.x
+                initialY = ev.y
+                lastX = ev.x
+                isSwipeGesture = false
+                hasMovedEnough = false
+                return false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val deltaX = ev.x - initialX
+                val deltaY = ev.y - initialY
+                val totalHorizontalMovement = abs(deltaX)
+                val totalVerticalMovement = abs(deltaY)
+
+                if (totalHorizontalMovement > minMovementToDetect) {
+                    if (totalVerticalMovement == 0f || (totalHorizontalMovement / totalVerticalMovement) > 0.3f) {
+
+                        if (!isSwipeGesture) {
+                            isSwipeGesture = true
+                            hasMovedEnough = true
+                        }
+
+                        val progress = kotlin.math.min(totalHorizontalMovement / minSwipeDistance, 1f)
+                        swipeListener?.onSwipeProgress(progress, deltaX > 0)
+                        return true
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (isSwipeGesture) {
+                    swipeListener?.onSwipeEnd()
+                }
+                reset()
+            }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.action) {
+            MotionEvent.ACTION_MOVE -> {
+                if (isSwipeGesture) {
+                    val deltaX = event.x - initialX
+                    val progress = kotlin.math.min(abs(deltaX) / minSwipeDistance, 1f)
+                    swipeListener?.onSwipeProgress(progress, deltaX > 0)
+                    lastX = event.x
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isSwipeGesture) {
+                    val deltaX = event.x - initialX
+                    if (abs(deltaX) > minSwipeDistance) {
+                        if (deltaX > 0) {
+                            swipeListener?.onSwipeRight()
+                        } else {
+                            swipeListener?.onSwipeLeft()
+                        }
+                    }
+                    swipeListener?.onSwipeEnd()
+                }
+                reset()
+                return isSwipeGesture
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (isSwipeGesture) {
+                    swipeListener?.onSwipeEnd()
+                }
+                reset()
+                return isSwipeGesture
+            }
+        }
+        return isSwipeGesture
+    }
+
+    private fun reset() {
+        isSwipeGesture = false
+        hasMovedEnough = false
+    }
+}
 
 class GalleryFragment : Fragment() {
 
@@ -87,6 +205,10 @@ class GalleryFragment : Fragment() {
     private lateinit var backupManager: BackupManager
 
     private var colorBlindMode: String = "none"
+
+    // swipe ux
+    private var swipeIndicatorView: View? = null
+    private var gestureDetector: GestureDetector? = null
 
     data class VacationWeek(
         val weekKey: String,
@@ -407,6 +529,9 @@ class GalleryFragment : Fragment() {
         }
 
         calendarGrid = binding.root.findViewById(R.id.calendarGrid)
+
+        setupSwipeGestures()
+        setupAlternativeSwipeGestures()
     }
 
     private fun toggleCalendarView() {
@@ -514,7 +639,7 @@ class GalleryFragment : Fragment() {
             appendLine("• Ferientage: ${stats.vacationDaysThisMonth}")
             appendLine()
 
-            appendLine("Gesamt (aktuelles Halbjahr):")
+            appendLine("Gesamt:") // != aktuelles halbjahr
             appendLine("• Klausuren gesamt: ${stats.totalExams}")
             appendLine("• Hausaufgaben gesamt: ${stats.totalHomework}")
             appendLine("• Ferientage gesamt: ${stats.totalVacationDays}")
@@ -1329,8 +1454,9 @@ class GalleryFragment : Fragment() {
         }
 
         // lesson/time column header
-        val timeHeader = createStyledCell("Zeit", isHeader = true, isLessonColumn = true, isDayView = true)
+        val timeHeader = createStyledCell("Stunde", isHeader = true, isLessonColumn = true, isDayView = true)
         timeHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
+        timeHeader.setOnClickListener { showAllLessonTimes() }
         headerRow.addView(timeHeader)
 
         // day header
@@ -1668,10 +1794,13 @@ class GalleryFragment : Fragment() {
         // search filter
         val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
 
+        val actualRoom = timetableEntry?.room ?: ""
+        val actualTeacher = timetableEntry?.teacher ?: ""
+
         if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
+                actualTeacher,
+                actualRoom,
                 calendarEntries,
                 userOccasions,
                 calendarInfo?.specialNote ?: ""
@@ -1705,32 +1834,6 @@ class GalleryFragment : Fragment() {
         }
 
         return cell
-    }
-
-    private fun matchesSearch(subject: String, teacher: String, room: String, calendarEntries: List<CalendarEntry>): Boolean {
-        if (currentSearchQuery.isBlank()) return true
-
-        val query = currentSearchQuery.lowercase()
-
-        if (subject.lowercase().contains(query)) return true
-
-        if (teacher.lowercase().contains(query)) return true
-
-        if (room.lowercase().contains(query)) return true
-
-        // additional calendar entries
-        for (entry in calendarEntries) {
-            when (entry.type) {
-                EntryType.HOMEWORK -> if ("hausaufgabe".contains(query)) return true
-                EntryType.EXAM -> if ("klausur".contains(query)) return true
-                EntryType.SUBSTITUTE -> if (entry.content.lowercase().contains(query)) return true
-                EntryType.SPECIAL_DAY -> if (entry.content.lowercase().contains(query)) return true
-                EntryType.VACATION -> if ("ferien".contains(query) || "ferientag".contains(query)) return true
-                else -> if (entry.content.lowercase().contains(query)) return true
-            }
-        }
-
-        return false
     }
 
     private fun showLessonTimeDetails(lesson: Int) {
@@ -1767,10 +1870,9 @@ class GalleryFragment : Fragment() {
         val endTime = lessonEndTimes[lesson] ?: "Unbekannt"
 
         val message = buildString {
-            appendLine("Unterrichtstunde")
-            appendLine()
             appendLine("Datum: $dateStr")
             appendLine("Zeit: $startTime - $endTime (${lesson}. Stunde)")
+            appendLine()
             appendLine("Fach: ${timetableEntry.subject}")
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
@@ -1826,6 +1928,7 @@ class GalleryFragment : Fragment() {
 
         // lesson number column header
         val lessonHeader = createStyledCell("Std.", isHeader = true, isLessonColumn = true)
+        lessonHeader.setTypeface(null, Typeface.BOLD)
         lessonHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
         lessonHeader.setOnClickListener { showAllLessonTimes() }
         headerRow.addView(lessonHeader)
@@ -1842,7 +1945,7 @@ class GalleryFragment : Fragment() {
             val dayHeader = createStyledCell(weekdaysShort[i], isHeader = true).apply {
                 setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
 
-                setTypeface(null, Typeface.NORMAL)
+                setTypeface(null, Typeface.BOLD)
 
                 val isToday = isSameDay(currentWeekDay.time, today.time) &&
                         isSameWeek(currentWeekStart.time, today.time)
@@ -2091,6 +2194,7 @@ class GalleryFragment : Fragment() {
 
             // lesson number column
             val timeCell = createStyledCell("$lesson", isLessonColumn = true)
+            timeCell.setTypeface(null, Typeface.BOLD)
             timeCell.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
 
             // check for current lesson and highlight
@@ -2221,10 +2325,14 @@ class GalleryFragment : Fragment() {
 
         val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
 
+        // get actual room being used (could be alternative room from timetableEntry)
+        val actualRoom = timetableEntry?.room ?: ""
+        val actualTeacher = timetableEntry?.teacher ?: ""
+
         if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
                 timetableEntry?.subject ?: "",
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
+                actualTeacher,
+                actualRoom,
                 calendarEntries,
                 userOccasions,
                 calendarInfo?.specialNote ?: ""
@@ -2631,26 +2739,22 @@ class GalleryFragment : Fragment() {
     ): TextView {
         return TextView(requireContext()).apply {
             this.text = text
-            textSize = if (isHeader) 14f else if (isDayView) 12f else 10f
+            textSize = if (isHeader) 14f else if (isDayView) 12f else if (isLessonColumn) 13f else 10f
             gravity = Gravity.CENTER
 
             if (isDayView) {
                 if (isHeader && isLessonColumn) {
-                    // "Zeit"
                     setPadding(16, 24, 16, 24)
-                    textSize = 12f
+                    textSize = 13f
                     setTypeface(null, Typeface.BOLD)
                 } else if (isHeader) {
-                    // day name header
                     setPadding(20, 24, 20, 24)
-                    textSize = 12f
+                    textSize = 13f
                     setTypeface(null, Typeface.BOLD)
                 } else if (isLessonColumn) {
-                    // time cells on left
                     setPadding(12, 24, 12, 24)
-                    textSize = 11f
+                    textSize = 12f
                 } else {
-                    // main subject content cells
                     setPadding(16, 24, 16, 24)
                     textSize = 12f
                 }
@@ -2658,29 +2762,33 @@ class GalleryFragment : Fragment() {
                 setPadding(8, 16, 8, 16)
             }
 
-            setTextColor(Color.BLACK)
+            setTextColor(if (isHeader) Color.WHITE else Color.parseColor("#212121"))
 
-            val drawable = createRoundedDrawable(Color.WHITE) // always set drawable for consistency
+            val drawable = if (isHeader) {
+                createModernHeaderDrawable()
+            } else {
+                createModernCellDrawable()
+            }
             background = drawable
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                elevation = if (isHeader) 6f else 2f
+            }
 
             if (isDayView) {
                 if (isLessonColumn) {
                     if (isHeader) {
-                        // "Zeit"
                         width = 160
                         height = 160
                     } else {
-                        // lesson/time cells
                         width = 160
                         height = 150
                     }
                 } else {
                     if (isHeader) {
-                        // day header
                         width = 500
                         height = 160
                     } else {
-                        // subject cells
                         width = 500
                         height = 150
                     }
@@ -2690,7 +2798,7 @@ class GalleryFragment : Fragment() {
                     if (isLessonColumn) 160 else 500,
                     if (isHeader) 160 else 150
                 ).apply {
-                    setMargins(3, 3, 3, 3)
+                    setMargins(4, 4, 4, 4)
                     gravity = Gravity.CENTER_VERTICAL
                 }
             } else {
@@ -2703,10 +2811,32 @@ class GalleryFragment : Fragment() {
                 }
 
                 layoutParams = TableRow.LayoutParams().apply {
-                    setMargins(3, 3, 3, 3)
+                    setMargins(4, 4, 4, 4)
                     if (!isLessonColumn) weight = 1f
                 }
             }
+        }
+    }
+
+    private fun createModernHeaderDrawable(): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            colors = intArrayOf(
+                Color.parseColor("#1976D2"),
+                Color.parseColor("#1565C0")
+            )
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            cornerRadius = 16f
+            setStroke(0, Color.TRANSPARENT)
+        }
+    }
+
+    private fun createModernCellDrawable(): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.WHITE)
+            cornerRadius = 12f
+            setStroke(1, Color.parseColor("#E0E0E0"))
         }
     }
 
@@ -3079,7 +3209,7 @@ class GalleryFragment : Fragment() {
         if (userOccasions.isNotEmpty()) {
             details.append("Besondere Ereignisse (manuell hinzugefügt):\n")
             userOccasions.forEach { occasion ->
-                details.append("- $occasion\n")
+                details.append("➞ $occasion\n")
             }
             details.append("\n")
         }
@@ -3115,7 +3245,7 @@ class GalleryFragment : Fragment() {
                         }
                     }
 
-                    details.append("- ${homework.subject}$lessonText\n")
+                    details.append("➞ ${homework.subject}$lessonText\n")
                 }
                 details.append("\n")
             }
@@ -3129,7 +3259,7 @@ class GalleryFragment : Fragment() {
             if (exams.isNotEmpty()) {
                 details.append("Klausuren:\n")
                 exams.forEach { exam ->
-                    details.append("- ${exam.subject}\n")
+                    details.append("➞ ${exam.subject}\n")
                 }
                 details.append("\n")
                 examsAdded = true
@@ -3141,7 +3271,7 @@ class GalleryFragment : Fragment() {
         if (examsFromManager.isNotEmpty() && !examsAdded) {
             details.append("Klausuren:\n")
             examsFromManager.forEach { exam ->
-                details.append("- ${exam.subject}\n")
+                details.append("➞ ${exam.subject}\n")
             }
             details.append("\n")
         }
@@ -3177,7 +3307,7 @@ class GalleryFragment : Fragment() {
                 } else {
                     "${substitute.stunde}. Stunde"
                 }
-                details.append("- $lessonRange ${substitute.fach}: ${substitute.art}\n")
+                details.append("➞ $lessonRange ${substitute.fach}: ${substitute.art}\n")
             }
             details.append("\n")
         }
@@ -3336,8 +3466,8 @@ class GalleryFragment : Fragment() {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
-            cornerRadius = 12f
-            setStroke(1, Color.GRAY)
+            cornerRadius = 16f
+            setStroke(1, Color.parseColor("#E0E0E0"))
         }
     }
 
@@ -3901,6 +4031,231 @@ class GalleryFragment : Fragment() {
         }
     }
 
+    private fun setupSwipeGestures() {
+        val swipeInterceptor = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
+
+        swipeInterceptor.swipeListener = object : SwipeInterceptorLayout.SwipeListener {
+            override fun onSwipeLeft() {
+                navigateToNext()
+            }
+
+            override fun onSwipeRight() {
+                navigateToPrevious()
+            }
+
+            override fun onSwipeProgress(progress: Float, isRightSwipe: Boolean) {
+                showSwipeIndicator(isRightSwipe, progress)
+            }
+
+            override fun onSwipeEnd() {
+                hideSwipeIndicator()
+            }
+        }
+    }
+
+    private fun navigateToPrevious() {
+        if (isDayView) {
+            if (includeWeekendsInDayView) {
+                currentDayOffset--
+                if (currentDayOffset < 0) {
+                    currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
+                    currentDayOffset = 6 // sunday
+                }
+            } else {
+                currentDayOffset--
+                if (currentDayOffset < 0) {
+                    currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
+                    currentDayOffset = 4 // friday
+                }
+            }
+        } else {
+            currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
+        }
+        updateCalendar()
+    }
+
+    private fun navigateToNext() {
+        if (isDayView) {
+            if (includeWeekendsInDayView) {
+                currentDayOffset++
+                if (currentDayOffset > 6) {
+                    currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
+                    currentDayOffset = 0 // monday
+                }
+            } else {
+                currentDayOffset++
+                if (currentDayOffset > 4) {
+                    currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
+                    currentDayOffset = 0 // monday
+                }
+            }
+        } else {
+            currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
+        }
+        updateCalendar()
+    }
+
+    private fun showSwipeIndicator(isRightSwipe: Boolean, progress: Float) {
+        if (swipeIndicatorView == null) {
+            createSwipeIndicator()
+        }
+
+        swipeIndicatorView?.let { indicator ->
+            val scaledProgress = kotlin.math.min(progress, 1f)
+            val targetAlpha = kotlin.math.min(scaledProgress * 1.2f, 0.95f)
+
+            indicator.alpha = targetAlpha
+            indicator.visibility = View.VISIBLE
+
+            val textView = indicator as TextView
+
+            val text = if (isRightSwipe) {
+                if (isDayView) "← Vorheriger Tag" else "← Vorherige Woche"
+            } else {
+                if (isDayView) "Nächster Tag →" else "Nächste Woche →"
+            }
+
+            textView.text = text
+
+            val scale = 0.7f + (scaledProgress * 0.3f)
+            indicator.scaleX = scale
+            indicator.scaleY = scale
+
+            val rotation = if (isRightSwipe) -scaledProgress * 3f else scaledProgress * 3f
+            indicator.rotation = rotation
+
+            positionSwipeIndicatorSided(isRightSwipe)
+        }
+    }
+
+    private fun positionSwipeIndicatorSided(isRightSwipe: Boolean) {
+        swipeIndicatorView?.let { indicator ->
+            indicator.post {
+                val calendarArea = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
+
+                val calendarWidth = calendarArea.width
+                val calendarHeight = calendarArea.height
+
+                val centerY = (calendarHeight - indicator.height) / 2 // center vertically
+
+                val horizontalMargin = 60
+                val finalX = if (isRightSwipe) {
+                    horizontalMargin // previous -> left side
+                } else {
+                    calendarWidth - indicator.width - horizontalMargin // next -> right side
+                }
+
+                val layoutParams = indicator.layoutParams as ViewGroup.MarginLayoutParams
+                layoutParams.setMargins(finalX, centerY, 0, 0)
+                indicator.layoutParams = layoutParams
+            }
+        }
+    }
+
+    private fun createSwipeIndicator() {
+        swipeIndicatorView?.let {
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+
+        val calendarContainer = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
+
+        val indicator = TextView(requireContext()).apply {
+            textSize = 18f
+            setTextColor(Color.parseColor("#1976D2"))
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(40, 20, 40, 20)
+            alpha = 0f
+            elevation = 30f
+            isClickable = false
+            isFocusable = false
+
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(Color.parseColor("#F0FFFFFF"))
+                cornerRadius = 35f
+                setStroke(4, Color.parseColor("#1976D2"))
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    elevation = 15f
+                }
+            }
+
+            layoutParams = ViewGroup.MarginLayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        calendarContainer.addView(indicator)
+        swipeIndicatorView = indicator
+    }
+
+    private fun hideSwipeIndicator() {
+        swipeIndicatorView?.let { indicator ->
+            indicator.animate()
+                .alpha(0f)
+                .scaleX(0.8f)
+                .scaleY(0.8f)
+                .rotation(0f)
+                .setDuration(200)
+                .withEndAction {
+                    indicator.visibility = View.GONE
+                }
+                .start()
+        }
+    }
+
+    private fun setupAlternativeSwipeGestures() {
+        gestureDetector = GestureDetector(requireContext(), object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                if (e1 == null) return false
+
+                val deltaX = e2.x - e1.x
+                val deltaY = e2.y - e1.y
+
+                if (abs(deltaX) > 50 && abs(velocityX) > 200) {
+                    if (abs(deltaX) > abs(deltaY) * 0.5f) {
+                        if (deltaX > 0) {
+                            navigateToPrevious()
+                        } else {
+                            navigateToNext()
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                if (e1 == null) return false
+
+                val deltaX = e2.x - e1.x
+                val deltaY = e2.y - e1.y
+
+                if (abs(deltaX) > 30 && abs(deltaX) > abs(deltaY) * 0.4f) {
+                    val progress = kotlin.math.min(abs(deltaX) / 120f, 1f)
+                    showSwipeIndicator(deltaX > 0, progress)
+                    return true
+                }
+                return false
+            }
+        })
+
+        binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor).setOnTouchListener { _, event ->
+            gestureDetector?.onTouchEvent(event) ?: false
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         loadRealTimePreference()
@@ -3920,6 +4275,8 @@ class GalleryFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         stopRealTimeUpdates()
+        hideSwipeIndicator()
+        gestureDetector = null
         _binding = null
     }
 }

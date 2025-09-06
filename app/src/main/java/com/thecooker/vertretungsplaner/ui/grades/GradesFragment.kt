@@ -204,6 +204,8 @@ class GradesFragment : Fragment() {
         private const val PREFS_GRADES_SUBJECTS = "grades_subjects"
         private const val PREFS_GRADES_TEACHERS = "grades_teachers"
         private const val PREFS_GRADES_ROOMS = "grades_rooms"
+        private const val PREFS_SUBJECT_GRADE_SYSTEM = "subject_grade_system"
+        private const val PREFS_SUBJECT_RANGE_MODE = "subject_range_mode"
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -756,10 +758,38 @@ class GradesFragment : Fragment() {
 
     private fun showEditSubjectDialog(subject: SubjectGradeInfo) {
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
-        val useComplexGrading = bildungsgang == "BG" && sharedPreferences.getBoolean(PREFS_USE_SIMPLE_GRADING, false).not()
+        val useComplexGrading =
+            bildungsgang == "BG" && sharedPreferences.getBoolean(PREFS_USE_SIMPLE_GRADING, false)
+                .not()
 
         val dialog = AlertDialog.Builder(requireContext())
         val dialogView = layoutInflater.inflate(R.layout.dialog_edit_subject, null)
+
+        val pointsToGradeMap = mapOf(
+            15 to 0.7, 14 to 1.0, 13 to 1.3, 12 to 1.7, 11 to 2.0, 10 to 2.3,
+            9 to 2.7, 8 to 3.0, 7 to 3.3, 6 to 3.7, 5 to 4.0, 4 to 4.3,
+            3 to 4.7, 2 to 5.0, 1 to 5.3, 0 to 5.7
+        )
+
+        val gradeToPointsMap = pointsToGradeMap.entries.associate { (k, v) -> v to k }
+
+        val sortedGrades = pointsToGradeMap.values.sorted()
+
+        val convertPointsToGrade = { points: Int -> pointsToGradeMap[points] ?: 6.0 }
+        val convertGradeToPoints = { grade: Double ->
+            gradeToPointsMap[grade] ?: run {
+                val nearestGrade = sortedGrades.firstOrNull { it >= grade } ?: sortedGrades.last()
+                gradeToPointsMap[nearestGrade] ?: 0
+            }
+        }
+
+        val snapToValidGrade = { inputGrade: Double ->
+            if (gradeToPointsMap.containsKey(inputGrade)) {
+                inputGrade
+            } else {
+                sortedGrades.firstOrNull { it >= inputGrade } ?: sortedGrades.last()
+            }
+        }
 
         val editOralGrade = dialogView.findViewById<EditText>(R.id.editOralGrade)
         val editPruefungsergebnis = dialogView.findViewById<EditText>(R.id.editPruefungsergebnis)
@@ -783,10 +813,12 @@ class GradesFragment : Fragment() {
             seekBarHalfYears.visibility = View.GONE
             tvHalfYearsCount.visibility = View.GONE
 
-            val pruefungsfachCard = dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardPruefungsfach)
+            val pruefungsfachCard =
+                dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardPruefungsfach)
             pruefungsfachCard?.visibility = View.GONE
 
-            val halfYearsCard = dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardHalfYears)
+            val halfYearsCard =
+                dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardHalfYears)
             halfYearsCard?.visibility = View.GONE
         }
 
@@ -796,28 +828,51 @@ class GradesFragment : Fragment() {
             switchExamCount.isEnabled = false
             seekBarOral.progress = 50
             seekBarWritten.progress = 50
+            seekBarOral.isEnabled = false
+            seekBarWritten.isEnabled = false
         } else {
             switchExamCount.isEnabled = true
+            seekBarOral.isEnabled = true
+            seekBarWritten.isEnabled = true
         }
 
-        switchGradeSystem.isChecked = true
+        val gradeSystemSwitchesJson = sharedPreferences.getString(PREFS_SUBJECT_GRADE_SYSTEM, "{}")
+        val gradeSystemSwitchesType = object : TypeToken<Map<String, Boolean>>() {}.type
+        val gradeSystemSwitches: Map<String, Boolean> = try {
+            Gson().fromJson(gradeSystemSwitchesJson, gradeSystemSwitchesType) ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
 
-        val requirements = if (useComplexGrading) getSubjectRequirements(subject.subject) else SubjectRequirements()
+        val gradeRangeSwitchesJson = sharedPreferences.getString(PREFS_SUBJECT_RANGE_MODE, "{}")
+        val gradeRangeSwitchesType = object : TypeToken<Map<String, Boolean>>() {}.type
+        val gradeRangeSwitches: Map<String, Boolean> = try {
+            Gson().fromJson(gradeRangeSwitchesJson, gradeRangeSwitchesType) ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+
+        switchGradeSystem.isChecked = gradeSystemSwitches[subject.subject] ?: true
+        switchGradeRange.isChecked = gradeRangeSwitches[subject.subject] ?: false
+
+        val requirements =
+            if (useComplexGrading) getSubjectRequirements(subject.subject) else SubjectRequirements()
         val currentHalfyear = getCurrentHalfyear()
-        var selectedPruefungsfaecher = if (useComplexGrading) gradeList.count { it.isPruefungsfach } else 0
+        var selectedPruefungsfaecher =
+            if (useComplexGrading) gradeList.count { it.isPruefungsfach } else 0
 
         if (useComplexGrading) {
             tvSubjectInfo.text = subject.getWeightingInfo(requirements, currentHalfyear)
         }
 
         val currentOralGrade = subject.oralGradeHistory[currentHalfyear]
-        if (currentOralGrade != null) {
-            editOralGrade.setText(DecimalFormat("0.0").format(currentOralGrade))
-        }
+        val currentPruefungsergebnis = if (useComplexGrading) subject.pruefungsergebnis else null
 
-        if (useComplexGrading && subject.pruefungsergebnis != null) {
-            editPruefungsergebnis.setText(DecimalFormat("0.0").format(subject.pruefungsergebnis!!))
-        }
+        val originalOralDecimal = currentOralGrade?.let { snapToValidGrade(it) }
+        val originalPruefungDecimal = currentPruefungsergebnis?.let { snapToValidGrade(it) }
+
+        var currentOralDisplayValue: String = ""
+        var currentPruefungDisplayValue: String = ""
 
         seekBarOral.max = 100
         seekBarWritten.max = 100
@@ -859,8 +914,113 @@ class GradesFragment : Fragment() {
             switchExamCount.isChecked = isOneExam
         }
 
-        var isPointSystem = true // default points (0 - 15)
-        var isRangeMode = false
+        var isPointSystem = switchGradeSystem.isChecked
+        var isRangeMode = switchGradeRange.isChecked
+
+        val setupInputFilters = {
+            if (isPointSystem) {
+                // points mode -> max 2 characters, no commas
+                editOralGrade.filters = arrayOf(
+                    android.text.InputFilter.LengthFilter(2),
+                    android.text.InputFilter { source, _, _, _, _, _ ->
+                        if (source.contains(",") || source.contains(".")) "" else null
+                    }
+                )
+                editOralGrade.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+
+                if (useComplexGrading) {
+                    editPruefungsergebnis.filters = arrayOf(
+                        android.text.InputFilter.LengthFilter(2),
+                        android.text.InputFilter { source, _, _, _, _, _ ->
+                            if (source.contains(",") || source.contains(".")) "" else null
+                        }
+                    )
+                    editPruefungsergebnis.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                }
+            } else {
+                // decimal mode -> max 4 characters, only one comma/dot allowed
+                editOralGrade.filters = arrayOf(
+                    android.text.InputFilter.LengthFilter(4),
+                    android.text.InputFilter { source, start, end, dest, dstart, dend ->
+                        val input = source.subSequence(start, end).toString()
+                        val existing = dest.subSequence(0, dstart).toString() +
+                                dest.subSequence(dend, dest.length).toString()
+                        val result =
+                            existing.substring(0, dstart) + input + existing.substring(dstart)
+
+                        val commaCount = result.count { it == ',' || it == '.' }
+                        if (commaCount > 1) return@InputFilter ""
+
+                        if (result.length == 4 && result.contains('.')) {
+                            val parts = result.split('.')
+                            if (parts.size == 2 && parts[1].length == 2) {
+                                val rounded = String.format("%.1f", result.toDoubleOrNull() ?: 0.0)
+                                editOralGrade.setText(rounded)
+                                editOralGrade.setSelection(rounded.length)
+                                return@InputFilter ""
+                            }
+                        }
+
+                        null
+                    }
+                )
+                editOralGrade.inputType =
+                    android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+
+                if (useComplexGrading) {
+                    editPruefungsergebnis.filters = arrayOf(
+                        android.text.InputFilter.LengthFilter(4),
+                        android.text.InputFilter { source, start, end, dest, dstart, dend ->
+                            val input = source.subSequence(start, end).toString()
+                            val existing = dest.subSequence(0, dstart).toString() +
+                                    dest.subSequence(dend, dest.length).toString()
+                            val result =
+                                existing.substring(0, dstart) + input + existing.substring(dstart)
+
+                            val commaCount = result.count { it == ',' || it == '.' }
+                            if (commaCount > 1) return@InputFilter ""
+
+                            if (result.length == 4 && result.contains('.')) {
+                                val parts = result.split('.')
+                                if (parts.size == 2 && parts[1].length == 2) {
+                                    val rounded =
+                                        String.format("%.1f", result.toDoubleOrNull() ?: 0.0)
+                                    editPruefungsergebnis.setText(rounded)
+                                    editPruefungsergebnis.setSelection(rounded.length)
+                                    return@InputFilter ""
+                                }
+                            }
+
+                            null
+                        }
+                    )
+                    editPruefungsergebnis.inputType =
+                        android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                }
+            }
+        }
+
+        val convertAndDisplayGrades = {
+            if (originalOralDecimal != null) {
+                currentOralDisplayValue = if (isPointSystem) {
+                    val points = convertGradeToPoints(originalOralDecimal)
+                    points.toString()
+                } else {
+                    DecimalFormat("0.0").format(originalOralDecimal)
+                }
+                editOralGrade.setText(currentOralDisplayValue)
+            }
+
+            if (useComplexGrading && originalPruefungDecimal != null) {
+                currentPruefungDisplayValue = if (isPointSystem) {
+                    val points = convertGradeToPoints(originalPruefungDecimal)
+                    points.toString()
+                } else {
+                    DecimalFormat("0.0").format(originalPruefungDecimal)
+                }
+                editPruefungsergebnis.setText(currentPruefungDisplayValue)
+            }
+        }
 
         val updateRatioDisplay = {
             val oral = seekBarOral.progress
@@ -881,7 +1041,11 @@ class GradesFragment : Fragment() {
             if (useComplexGrading) {
                 if (switchPruefungsfach.isChecked && !subject.isPruefungsfach) {
                     if (selectedPruefungsfaecher >= 5) {
-                        Toast.makeText(requireContext(), "Maximal 5 Prüfungsfächer erlaubt", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            "Maximal 5 Prüfungsfächer erlaubt",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         switchPruefungsfach.isChecked = false
                         false
                     } else {
@@ -904,17 +1068,27 @@ class GradesFragment : Fragment() {
                 try {
                     val input = editOralGrade.text.toString().replace(",", ".").toDouble()
                     if (isPointSystem) {
-                        val nextPoint = (input + 1).toInt()
-                        if (nextPoint <= 15) {
-                            tvGradeRange.text = "≈ ${input.toInt()}-$nextPoint Punkte"
-                            tvGradeRange.visibility = View.VISIBLE
+                        val currentPoints = input.toInt().coerceIn(0, 15)
+                        val nextBetterPoints = (currentPoints + 1).coerceAtMost(15)
+
+                        if (nextBetterPoints != currentPoints) {
+                            tvGradeRange.text = "≈ $currentPoints-$nextBetterPoints Punkte"
                         } else {
-                            tvGradeRange.visibility = View.GONE
+                            tvGradeRange.text = "≈ $currentPoints Punkte"
                         }
+                        tvGradeRange.visibility = View.VISIBLE
                     } else {
-                        val lower = maxOf(1.0, input - 0.3)
-                        val upper = minOf(6.0, input + 0.3)
-                        tvGradeRange.text = "≈ ${DecimalFormat("0.0").format(lower)}-${DecimalFormat("0.0").format(upper)}"
+                        // snap input to a valid grade
+                        val snappedGrade = snapToValidGrade(input.coerceIn(1.0, 6.0))
+                        val currentPoints = convertGradeToPoints(snappedGrade)
+                        val nextBetterPoints = (currentPoints + 1).coerceAtMost(15)
+                        val betterGrade = if (nextBetterPoints <= 15) convertPointsToGrade(nextBetterPoints) else snappedGrade
+
+                        if (betterGrade != snappedGrade) {
+                            tvGradeRange.text = "≈ ${DecimalFormat("0.0").format(snappedGrade)}-${DecimalFormat("0.0").format(betterGrade)}"
+                        } else {
+                            tvGradeRange.text = "≈ ${DecimalFormat("0.0").format(snappedGrade)}"
+                        }
                         tvGradeRange.visibility = View.VISIBLE
                     }
                 } catch (e: NumberFormatException) {
@@ -924,6 +1098,39 @@ class GradesFragment : Fragment() {
                 tvGradeRange.visibility = View.GONE
             }
         }
+
+        val saveSwitchStates = {
+            val updatedGradeSystemSwitches = gradeSystemSwitches.toMutableMap()
+            updatedGradeSystemSwitches[subject.subject] = isPointSystem
+            sharedPreferences.edit()
+                .putString(PREFS_SUBJECT_GRADE_SYSTEM, Gson().toJson(updatedGradeSystemSwitches))
+                .apply()
+
+            val updatedGradeRangeSwitches = gradeRangeSwitches.toMutableMap()
+            updatedGradeRangeSwitches[subject.subject] = isRangeMode
+            sharedPreferences.edit()
+                .putString(PREFS_SUBJECT_RANGE_MODE, Gson().toJson(updatedGradeRangeSwitches))
+                .apply()
+        }
+
+        val updateHints = {
+            if (isPointSystem) {
+                editOralGrade.hint = "z.B. 11 (Punkte 0-15)"
+                if (useComplexGrading) {
+                    editPruefungsergebnis.hint = "z.B. 12 (Punkte 0-15)"
+                }
+            } else {
+                editOralGrade.hint = "z.B. 2.5 (Note 1.0-6.0)"
+                if (useComplexGrading) {
+                    editPruefungsergebnis.hint = "z.B. 2.3 (Note 1.0-6.0)"
+                }
+            }
+        }
+
+        setupInputFilters()
+        updateHints()
+        convertAndDisplayGrades()
+        updateGradeRange()
 
         if (useComplexGrading) {
             switchPruefungsfach.setOnCheckedChangeListener { _, _ ->
@@ -948,17 +1155,9 @@ class GradesFragment : Fragment() {
 
         switchGradeSystem.setOnCheckedChangeListener { _, isChecked ->
             isPointSystem = isChecked
-            if (isPointSystem) {
-                editOralGrade.hint = "z.B. 11 (Punkte 0-15)"
-                if (useComplexGrading) {
-                    editPruefungsergebnis.hint = "z.B. 12 (Punkte 0-15)"
-                }
-            } else {
-                editOralGrade.hint = "z.B. 2.5 (Note 1.0-6.0)"
-                if (useComplexGrading) {
-                    editPruefungsergebnis.hint = "z.B. 2.3 (Note 1.0-6.0)"
-                }
-            }
+            setupInputFilters()
+            updateHints()
+            convertAndDisplayGrades()
             updateGradeRange()
         }
 
@@ -975,33 +1174,49 @@ class GradesFragment : Fragment() {
             }
         })
 
-        seekBarOral.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && !isLK) {
-                    seekBarWritten.progress = 100 - progress
-                    updateRatioDisplay()
-                    switchExamCount.isChecked = (progress == 70)
+        if (!isLK) {
+            seekBarOral.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    if (fromUser) {
+                        seekBarWritten.progress = 100 - progress
+                        updateRatioDisplay()
+                        switchExamCount.isChecked = (progress == 70)
+                    }
                 }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
 
-        seekBarWritten.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && !isLK) {
-                    seekBarOral.progress = 100 - progress
-                    updateRatioDisplay()
-                    switchExamCount.isChecked = (seekBarOral.progress == 70)
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+
+            seekBarWritten.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    if (fromUser) {
+                        seekBarOral.progress = 100 - progress
+                        updateRatioDisplay()
+                        switchExamCount.isChecked = (seekBarOral.progress == 70)
+                    }
                 }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
 
         if (useComplexGrading) {
             seekBarHalfYears.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
                     if (fromUser) {
                         val minHalfYears = requirements.minRequiredHalfYears
                         val adjustedProgress = maxOf(minHalfYears, progress)
@@ -1011,6 +1226,7 @@ class GradesFragment : Fragment() {
                         updateHalfYearsDisplay()
                     }
                 }
+
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
@@ -1020,32 +1236,24 @@ class GradesFragment : Fragment() {
             .setView(dialogView)
             .setPositiveButton("Speichern") { _, _ ->
                 val oralGradeText = editOralGrade.text.toString().trim()
-                val pruefungsergebnisText = if (useComplexGrading) editPruefungsergebnis.text.toString().trim() else ""
+                val pruefungsergebnisText =
+                    if (useComplexGrading) editPruefungsergebnis.text.toString().trim() else ""
                 var newOralGrade: Double? = null
                 var newPruefungsergebnis: Double? = null
 
                 if (oralGradeText.isNotEmpty()) {
                     try {
-                        val inputValue = oralGradeText.replace(",", ".").toDouble()
-                        newOralGrade = if (isPointSystem) {
-                            if (inputValue >= 0 && inputValue <= 15) {
-                                val baseGrade = (17.0 - inputValue) / 3.0
-                                if (isRangeMode && inputValue < 15) {
-                                    val upperPoints = inputValue + 1
-                                    val upperGrade = (17.0 - upperPoints) / 3.0
-                                    (baseGrade + upperGrade) / 2.0
-                                } else {
-                                    baseGrade
-                                }
-                            } else null
+                        if (isPointSystem) {
+                            val points = oralGradeText.toInt()
+                            if (points >= 0 && points <= 15) {
+                                newOralGrade = convertPointsToGrade(points)
+                            }
                         } else {
-                            if (inputValue >= 1.0 && inputValue <= 6.0) {
-                                if (isRangeMode) {
-                                    maxOf(1.0, inputValue - 0.15)
-                                } else {
-                                    inputValue
-                                }
-                            } else null
+                            val grade = oralGradeText.replace(",", ".").toDouble()
+                            if (grade >= 1.0 && grade <= 6.0) {
+                                // snap to valid grade
+                                newOralGrade = snapToValidGrade(grade)
+                            }
                         }
                     } catch (e: NumberFormatException) {
                         newOralGrade = null
@@ -1054,20 +1262,25 @@ class GradesFragment : Fragment() {
 
                 if (useComplexGrading && pruefungsergebnisText.isNotEmpty()) {
                     try {
-                        val inputValue = pruefungsergebnisText.replace(",", ".").toDouble()
-                        newPruefungsergebnis = if (isPointSystem) {
-                            if (inputValue >= 0 && inputValue <= 15) {
-                                (17.0 - inputValue) / 3.0
-                            } else null
+                        if (isPointSystem) {
+                            val points = pruefungsergebnisText.toInt()
+                            if (points >= 0 && points <= 15) {
+                                newPruefungsergebnis = convertPointsToGrade(points)
+                            }
                         } else {
-                            if (inputValue >= 1.0 && inputValue <= 6.0) inputValue else null
+                            val grade = pruefungsergebnisText.replace(",", ".").toDouble()
+                            if (grade >= 1.0 && grade <= 6.0) {
+                                newPruefungsergebnis = snapToValidGrade(grade)
+                            }
                         }
                     } catch (e: NumberFormatException) {
                         newPruefungsergebnis = null
                     }
                 }
+
                 val newRatio = Pair(seekBarOral.progress, seekBarWritten.progress)
-                val isPruefungsfach = if (useComplexGrading) switchPruefungsfach.isChecked else false
+                val isPruefungsfach =
+                    if (useComplexGrading) switchPruefungsfach.isChecked else false
                 val selectedHalfYears = if (useComplexGrading) {
                     if (requirements.mustCountAllHalfYears) {
                         subject.getHalfYearGrades(currentHalfyear).size
@@ -1078,13 +1291,24 @@ class GradesFragment : Fragment() {
                     1
                 }
 
-                saveSubjectGradeData(subject.subject, newOralGrade, newRatio, isPruefungsfach, newPruefungsergebnis, selectedHalfYears)
+                saveSwitchStates()
+
+                saveSubjectGradeData(
+                    subject.subject,
+                    newOralGrade,
+                    newRatio,
+                    isPruefungsfach,
+                    newPruefungsergebnis,
+                    selectedHalfYears
+                )
                 loadGrades()
                 updateFinalGrade()
 
                 Toast.makeText(requireContext(), "Gespeichert", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton("Abbrechen") { _, _ ->
+                saveSwitchStates()
+            }
             .show()
     }
 

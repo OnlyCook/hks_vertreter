@@ -261,6 +261,7 @@ class BackupManager(private val context: Context) {
         val landscape = sharedPreferences.getBoolean("landscape_mode_enabled", true)
         val colorblindMode = sharedPreferences.getString("colorblind_mode", "none") ?: ""
         val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
+        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false);
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -275,6 +276,7 @@ class BackupManager(private val context: Context) {
             appendLine("LANDSCAPE_MODE=$landscape")
             appendLine("COLORBLIND_MODE=$colorblindMode")
             appendLine("REMOVE_COOLDOWN=$removeCooldown")
+            appendLine("LEFT_FILTER_LIFT=$leftFilterLift")
         }
     }
 
@@ -296,6 +298,7 @@ class BackupManager(private val context: Context) {
                 line.startsWith("LANDSCAPE_MODE=") -> editor.putBoolean("landscape_mode_enabled", line.substringAfter("=").toBoolean())
                 line.startsWith("COLORBLIND_MODE=") -> editor.putString("colorblind_mode", line.substringAfter("="))
                 line.startsWith("REMOVE_COOLDOWN=") -> editor.putBoolean("remove_update_cooldown", line.substringAfter("=").toBoolean())
+                line.startsWith("LEFT_FILTER_LIFT=") -> editor.putBoolean("left_filter_lift", line.substringAfter("=").toBoolean())
             }
         }
 
@@ -1118,6 +1121,22 @@ class BackupManager(private val context: Context) {
                 emptyMap()
             }
 
+            val subjectGradeSystemJson = sharedPreferences.getString("subject_grade_system", "{}")
+            val subjectGradeSystemType = object : TypeToken<Map<String, Boolean>>() {}.type
+            val subjectGradeSystems: Map<String, Boolean> = try {
+                Gson().fromJson(subjectGradeSystemJson, subjectGradeSystemType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
+            val subjectRangeModeJson = sharedPreferences.getString("subject_range_mode", "{}")
+            val subjectRangeModeType = object : TypeToken<Map<String, Boolean>>() {}.type
+            val subjectRangeModes: Map<String, Boolean> = try {
+                Gson().fromJson(subjectRangeModeJson, subjectRangeModeType) ?: emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+
             for (halfyear in 1..4) {
                 sb.appendLine("## Halbjahr $halfyear")
 
@@ -1132,8 +1151,10 @@ class BackupManager(private val context: Context) {
                     val pruefungsergebnis = if (useComplexGrading && pruefungsergebnisse[subject] != null)
                         DecimalFormat("0.0").format(pruefungsergebnisse[subject]!!) else ""
                     val selectedHalfYearsCount = if (useComplexGrading) selectedHalfYears[subject]?.toString() ?: "1" else "1"
+                    val gradeSystem = if (subjectGradeSystems[subject] == false) "D" else "P" // D=Decimal, P=Points
+                    val rangeMode = if (subjectRangeModes[subject] == true) "R" else "E" // R=Range, E=Exact
 
-                    sb.appendLine("$subject|$teacher|$oralGrade|$ratio|$isPruefungsfach|$pruefungsergebnis|$selectedHalfYearsCount")
+                    sb.appendLine("$subject|$teacher|$oralGrade|$ratio|$isPruefungsfach|$pruefungsergebnis|$selectedHalfYearsCount|$gradeSystem|$rangeMode")
                 }
                 sb.appendLine()
             }
@@ -1187,6 +1208,8 @@ class BackupManager(private val context: Context) {
             var currentHalfyear = 1
             var importedComplexGrading = false
             var importedCurrentHalfyear = 1
+            val subjectGradeSystems = mutableMapOf<String, Boolean>()
+            val subjectRangeModes = mutableMapOf<String, Boolean>()
 
             for (line in lines) {
                 if (line.startsWith("#") || line.trim().isEmpty()) {
@@ -1218,13 +1241,15 @@ class BackupManager(private val context: Context) {
                     parts[0] == "CURRENT_HALFYEAR" && parts.size >= 2 -> {
                         importedCurrentHalfyear = parts[1].toIntOrNull() ?: 1
                     }
-                    parts.size >= 7 -> {
+                    parts.size >= 9 -> {
                         val subject = parts[0].trim()
                         val oralGradeStr = parts[2].trim()
                         val ratioStr = parts[3].trim()
                         val isPruefungsfachStr = parts[4].trim()
                         val pruefungsergebnisStr = parts[5].trim()
                         val selectedHalfYearsStr = parts[6].trim()
+                        val gradeSystemStr = parts[7].trim()
+                        val rangeModeStr = parts[8].trim()
 
                         if (!oralGradesAllHalfYears.containsKey(subject)) {
                             oralGradesAllHalfYears[subject] = mutableMapOf()
@@ -1254,6 +1279,9 @@ class BackupManager(private val context: Context) {
                         if (selectedHalfYearsStr.isNotEmpty()) {
                             selectedHalfYears[subject] = selectedHalfYearsStr.toIntOrNull() ?: 1
                         }
+
+                        subjectGradeSystems[subject] = gradeSystemStr != "D" // P=Points (true), D=Decimal (false)
+                        subjectRangeModes[subject] = rangeModeStr == "R" // R=Range (true), E=Exact (false)
                     }
                     parts.size >= 4 -> {
                         val subject = parts[0].trim()
@@ -1288,6 +1316,8 @@ class BackupManager(private val context: Context) {
             editor.putString("selected_half_years", Gson().toJson(selectedHalfYears))
             editor.putBoolean("use_simple_grading", !importedComplexGrading)
             editor.putInt("current_halfyear", importedCurrentHalfyear)
+            editor.putString("subject_grade_system", Gson().toJson(subjectGradeSystems))
+            editor.putString("subject_range_mode", Gson().toJson(subjectRangeModes))
 
             if (goalGrade != null) {
                 editor.putFloat("goal_grade", goalGrade)

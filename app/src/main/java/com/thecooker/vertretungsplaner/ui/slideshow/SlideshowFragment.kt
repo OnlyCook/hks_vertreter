@@ -39,7 +39,6 @@ class SlideshowFragment : Fragment() {
     private var isLoading = true
     private lateinit var loadingView: View
 
-    private lateinit var spinnerSort: Spinner
     private lateinit var btnAddHomework: Button
     private lateinit var btnMenu: Button
     private lateinit var recyclerView: RecyclerView
@@ -50,7 +49,8 @@ class SlideshowFragment : Fragment() {
     private lateinit var backupManager: BackupManager
 
     private var homeworkList = mutableListOf<HomeworkEntry>()
-    private var currentSortOrder = SortOrder.DUE_DATE_ASC
+
+    private lateinit var searchBarHomework: EditText
 
     // auto delete
     private val cleanupHandler = Handler(Looper.getMainLooper())
@@ -72,13 +72,6 @@ class SlideshowFragment : Fragment() {
         6 to "12:00", 7 to "13:15", 8 to "14:00", 9 to "15:00", 10 to "15:45",
         11 to "17:00", 12 to "17:45", 13 to "18:45", 14 to "19:30", 15 to "20:15"
     )
-
-    enum class SortOrder(val displayName: String) {
-        DUE_DATE_ASC("Fälligkeit (aufsteigend)"),
-        DUE_DATE_DESC("Fälligkeit (absteigend)"),
-        SUBJECT_ASC("Fach (A-Z)"),
-        SUBJECT_DESC("Fach (Z-A)")
-    }
 
     data class HomeworkEntry(
         val id: String = UUID.randomUUID().toString(),
@@ -298,7 +291,7 @@ class SlideshowFragment : Fragment() {
         view.post {
             setupRecyclerView()
             loadHomework()
-            setupSortSpinner()
+            setupSearchBar()
             setupListeners()
             updateHomeworkCount()
 
@@ -325,7 +318,7 @@ class SlideshowFragment : Fragment() {
         }
 
         recyclerView.visibility = View.GONE
-        spinnerSort.visibility = View.GONE
+        searchBarHomework.visibility = View.GONE
         btnAddHomework.visibility = View.GONE
         btnMenu.visibility = View.GONE
         tvHomeworkCount.visibility = View.GONE
@@ -341,7 +334,7 @@ class SlideshowFragment : Fragment() {
         }
 
         recyclerView.visibility = View.VISIBLE
-        spinnerSort.visibility = View.VISIBLE
+        searchBarHomework.visibility = View.VISIBLE
         btnAddHomework.visibility = View.VISIBLE
         btnMenu.visibility = View.VISIBLE
         tvHomeworkCount.visibility = View.VISIBLE
@@ -375,26 +368,22 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun initializeViews(view: View) {
-        spinnerSort = view.findViewById(R.id.spinnerSort)
+        searchBarHomework = view.findViewById(R.id.searchBarHomework)
         btnAddHomework = view.findViewById(R.id.btnAddHomework)
         btnMenu = view.findViewById(R.id.btnMenu)
         recyclerView = view.findViewById(R.id.recyclerViewHomework)
         tvHomeworkCount = view.findViewById(R.id.tvHomeworkCount)
     }
 
-    private fun setupSortSpinner() {
-        val sortOptions = SortOrder.values().map { it.displayName }
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, sortOptions)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerSort.adapter = adapter
-
-        spinnerSort.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                currentSortOrder = SortOrder.values()[position]
-                sortHomework()
+    private fun setupSearchBar() {
+        searchBarHomework.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                adapter.filter(s.toString())
+                updateHomeworkCount()
             }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+        })
     }
 
     private fun setupRecyclerView() {
@@ -1014,117 +1003,51 @@ class SlideshowFragment : Fragment() {
 
     private fun sortHomework() {
         homeworkList.sortWith { a, b ->
-            // firstly sort by completion status, then by overdue status
+            // always sort ascending by due date/time
             when {
-                // ongoing (not complete, not overdue) comes first
                 !a.isCompleted && !a.isOverdue() && !b.isCompleted && !b.isOverdue() -> {
-                    // both ongoing
-                    when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> {
-                            val dateComparison = a.dueDate.compareTo(b.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                // same date, sort by time
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1 // timed homework first
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
+                    val dateComparison = a.dueDate.compareTo(b.dueDate)
+                    if (dateComparison != 0) {
+                        dateComparison
+                    } else {
+                        when {
+                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                            a.dueTime != null && b.dueTime == null -> -1
+                            a.dueTime == null && b.dueTime != null -> 1
+                            else -> 0
                         }
-                        SortOrder.DUE_DATE_DESC -> {
-                            val dateComparison = b.dueDate.compareTo(a.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                // same date, sort by time (reverse)
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1 // timed homework first
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
-                        }
-                        SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
-                        SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
                 }
-                // ongoing and overdue
                 !a.isCompleted && !a.isOverdue() && !b.isCompleted && b.isOverdue() -> -1
                 !a.isCompleted && a.isOverdue() && !b.isCompleted && !b.isOverdue() -> 1
-                // both overdue
                 !a.isCompleted && a.isOverdue() && !b.isCompleted && b.isOverdue() -> {
-                    when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> {
-                            val dateComparison = a.dueDate.compareTo(b.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
+                    val dateComparison = a.dueDate.compareTo(b.dueDate)
+                    if (dateComparison != 0) {
+                        dateComparison
+                    } else {
+                        when {
+                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                            a.dueTime != null && b.dueTime == null -> -1
+                            a.dueTime == null && b.dueTime != null -> 1
+                            else -> 0
                         }
-                        SortOrder.DUE_DATE_DESC -> {
-                            val dateComparison = b.dueDate.compareTo(a.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
-                        }
-                        SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
-                        SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
                 }
-                // overdue and completed
                 !a.isCompleted && a.isOverdue() && b.isCompleted -> -1
                 a.isCompleted && !b.isCompleted && b.isOverdue() -> 1
-                // ongoing and completed
                 !a.isCompleted && !a.isOverdue() && b.isCompleted -> -1
                 a.isCompleted && !b.isCompleted && !b.isOverdue() -> 1
-                // both completed
                 a.isCompleted && b.isCompleted -> {
-                    when (currentSortOrder) {
-                        SortOrder.DUE_DATE_ASC -> {
-                            val dateComparison = a.dueDate.compareTo(b.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
+                    val dateComparison = a.dueDate.compareTo(b.dueDate)
+                    if (dateComparison != 0) {
+                        dateComparison
+                    } else {
+                        when {
+                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
+                            a.dueTime != null && b.dueTime == null -> -1
+                            a.dueTime == null && b.dueTime != null -> 1
+                            else -> 0
                         }
-                        SortOrder.DUE_DATE_DESC -> {
-                            val dateComparison = b.dueDate.compareTo(a.dueDate)
-                            if (dateComparison != 0) {
-                                dateComparison
-                            } else {
-                                when {
-                                    a.dueTime != null && b.dueTime != null -> b.dueTime!!.compareTo(a.dueTime!!)
-                                    a.dueTime != null && b.dueTime == null -> -1
-                                    a.dueTime == null && b.dueTime != null -> 1
-                                    else -> 0
-                                }
-                            }
-                        }
-                        SortOrder.SUBJECT_ASC -> a.subject.compareTo(b.subject, ignoreCase = true)
-                        SortOrder.SUBJECT_DESC -> b.subject.compareTo(a.subject, ignoreCase = true)
                     }
                 }
                 else -> 0

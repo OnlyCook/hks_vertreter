@@ -1,7 +1,6 @@
 package com.thecooker.vertretungsplaner
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -44,59 +43,30 @@ class SubjectSelectionActivity : AppCompatActivity() {
     data class SubjectTriplet(
         val subject: String,
         val teacher: String,
-        val room: String
+        val room: String,
+        val alternativeRooms: List<String> = emptyList()
     ) {
         fun getDisplayText(): String {
             val parts = mutableListOf<String>()
             if (subject.isNotBlank()) parts.add(subject)
             if (teacher.isNotBlank() && teacher != "UNKNOWN") parts.add(teacher)
-
             if (room.isNotBlank() && room != "UNKNOWN") {
-                parts.add(room)
-            }
-            return parts.joinToString(" | ")
-        }
-
-        fun getDisplayTextWithAlternatives(context: Context): String {
-            val parts = mutableListOf<String>()
-            if (subject.isNotBlank()) parts.add(subject)
-            if (teacher.isNotBlank() && teacher != "UNKNOWN") parts.add(teacher)
-
-            if (room.isNotBlank() && room != "UNKNOWN") {
-                val alternativeRooms = getAlternativeRoomsForSubject(context, subject)
-                val roomText = if (alternativeRooms.isNotEmpty()) {
-                    val allRooms = mutableListOf(room)
-                    allRooms.addAll(alternativeRooms)
-                    when {
-                        allRooms.size == 2 -> allRooms.joinToString("/")
-                        allRooms.size >= 3 -> "${allRooms.take(2).joinToString("/")}/.."
-                        else -> room
-                    }
+                val roomDisplay = if (alternativeRooms.isNotEmpty()) {
+                    "$room (+${alternativeRooms.size} alt.)"
                 } else {
                     room
                 }
-                parts.add(roomText)
+                parts.add(roomDisplay)
             }
             return parts.joinToString(" | ")
-        }
-
-        private fun getAlternativeRoomsForSubject(context: Context, subject: String): List<String> {
-            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-            val json = sharedPreferences.getString("alternative_rooms", "{}")
-            return try {
-                val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
-                val allRooms: MutableMap<String, List<String>> = com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
-                allRooms[subject] ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
-            }
         }
 
         fun matchesSearch(searchText: String): Boolean {
             val lowerSearchText = searchText.lowercase()
             return subject.lowercase().contains(lowerSearchText) ||
                     (teacher != "UNKNOWN" && teacher.lowercase().contains(lowerSearchText)) ||
-                    (room != "UNKNOWN" && room.lowercase().contains(lowerSearchText))
+                    (room != "UNKNOWN" && room.lowercase().contains(lowerSearchText)) ||
+                    alternativeRooms.any { altRoom -> altRoom.lowercase().contains(lowerSearchText) }
         }
     }
 
@@ -193,7 +163,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
         allSubjectTriplets.clear()
         selectedSubjects.clear()
 
-        // try to load from intent extras (passed from settings activity)
         val intentSubjects = intent.getStringArrayExtra(EXTRA_SUBJECTS)
         val intentTeachers = intent.getStringArrayExtra(EXTRA_TEACHERS)
         val intentRooms = intent.getStringArrayExtra(EXTRA_ROOMS)
@@ -203,16 +172,18 @@ class SubjectSelectionActivity : AppCompatActivity() {
         if (intentSubjects != null && intentSubjects.isNotEmpty()) {
             L.d(TAG, "Using Intent data for triplets")
 
+            val alternativeRoomsMap = loadAlternativeRoomsFromPrefs()
+
             for (i in intentSubjects.indices) {
                 val subject = intentSubjects[i]
                 val teacher = intentTeachers?.getOrNull(i) ?: "UNKNOWN"
                 val room = intentRooms?.getOrNull(i) ?: "UNKNOWN"
+                val altRooms = alternativeRoomsMap[subject] ?: emptyList()
 
-                allSubjectTriplets.add(SubjectTriplet(subject, teacher, room))
-                L.d(TAG, "Added from Intent: '$subject' -> '$teacher' -> '$room'")
+                allSubjectTriplets.add(SubjectTriplet(subject, teacher, room, altRooms))
+                L.d(TAG, "Added from Intent: '$subject' -> '$teacher' -> '$room' + ${altRooms.size} alt rooms")
             }
         } else {
-            // fallback -> load from shared preferences (existing data)
             L.d(TAG, "No Intent data, loading from SharedPreferences")
 
             val allExtractedSubjects = sharedPreferences.getString("all_extracted_subjects", "")
@@ -222,6 +193,8 @@ class SubjectSelectionActivity : AppCompatActivity() {
             val allExtractedRooms = sharedPreferences.getString("all_extracted_rooms", "")
                 ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
 
+            val alternativeRoomsMap = loadAlternativeRoomsFromPrefs()
+
             L.d(TAG, "SharedPreferences data - Subjects: ${allExtractedSubjects.size}, Teachers: ${allExtractedTeachers.size}, Rooms: ${allExtractedRooms.size}")
 
             if (allExtractedSubjects.isNotEmpty()) {
@@ -229,9 +202,10 @@ class SubjectSelectionActivity : AppCompatActivity() {
                     val subject = allExtractedSubjects[i]
                     val teacher = allExtractedTeachers.getOrElse(i) { "UNKNOWN" }
                     val room = allExtractedRooms.getOrElse(i) { "UNKNOWN" }
+                    val altRooms = alternativeRoomsMap[subject] ?: emptyList()
 
-                    allSubjectTriplets.add(SubjectTriplet(subject, teacher, room))
-                    L.d(TAG, "Added from SharedPrefs: '$subject' -> '$teacher' -> '$room'")
+                    allSubjectTriplets.add(SubjectTriplet(subject, teacher, room, altRooms))
+                    L.d(TAG, "Added from SharedPrefs: '$subject' -> '$teacher' -> '$room' + ${altRooms.size} alt rooms")
                 }
             }
         }
@@ -248,6 +222,25 @@ class SubjectSelectionActivity : AppCompatActivity() {
         filteredSubjectTriplets.addAll(allSubjectTriplets)
 
         L.d(TAG, "Final triplets loaded: ${allSubjectTriplets.size}")
+    }
+
+    private fun loadAlternativeRoomsFromPrefs(): Map<String, List<String>> {
+        val json = sharedPreferences.getString("alternative_rooms", "{}")
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
+            com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
+        } catch (e: Exception) {
+            L.e(TAG, "Error loading alternative rooms", e)
+            emptyMap()
+        }
+    }
+
+    private fun saveAlternativeRoomsToPrefs(alternativeRoomsMap: Map<String, List<String>>) {
+        val json = com.google.gson.Gson().toJson(alternativeRoomsMap)
+        sharedPreferences.edit()
+            .putString("alternative_rooms", json)
+            .apply()
+        L.d(TAG, "Saved alternative rooms: $json")
     }
 
     private fun setupRecyclerView() {
@@ -311,17 +304,11 @@ class SubjectSelectionActivity : AppCompatActivity() {
         val alternativeRoomsContainer = dialogView.findViewById<LinearLayout>(R.id.alternativeRoomsContainer)
         val btnAddAlternativeRoom = dialogView.findViewById<Button>(R.id.btnAddAlternativeRoom)
 
-        // Pre-fill existing data
         editTextSubject.setText(triplet.subject)
         editTextTeacher.setText(if (triplet.teacher == "UNKNOWN") "" else triplet.teacher)
         editTextRoom.setText(if (triplet.room == "UNKNOWN") "" else triplet.room)
 
-        editTextSubject.hint = "Fach (erforderlich)"
-        editTextTeacher.hint = "Lehrer (optional)"
-        editTextRoom.hint = "Raum (optional)"
-
         val alternativeRoomEditTexts = mutableListOf<EditText>()
-        val existingAlternativeRooms = getAlternativeRoomsForSubject(triplet.subject)
 
         fun addAlternativeRoomField(text: String = "") {
             if (alternativeRoomEditTexts.size >= 2) {
@@ -338,7 +325,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 hint = "Alternativer Raum"
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
-                setPadding(16, 16, 16, 16)
             }
             alternativeRoomEditTexts.add(editText)
 
@@ -351,54 +337,57 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 setOnClickListener {
                     alternativeRoomsContainer.removeView(roomLayout)
                     alternativeRoomEditTexts.remove(editText)
-
-                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
-                        View.VISIBLE
-                    } else {
-                        View.GONE
-                    }
+                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) View.VISIBLE else View.GONE
                 }
             }
 
             roomLayout.addView(editText)
             roomLayout.addView(removeButton)
+            alternativeRoomsContainer.addView(roomLayout, alternativeRoomsContainer.childCount - 1)
 
-            val addButtonIndex = alternativeRoomsContainer.indexOfChild(btnAddAlternativeRoom)
-            alternativeRoomsContainer.addView(roomLayout, addButtonIndex)
+            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) View.VISIBLE else View.GONE
+        }
 
-            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
-                View.VISIBLE
-            } else {
-                View.GONE
+        fun updateAlternativeRoomsVisibility() {
+            val mainRoom = editTextRoom.text.toString().trim()
+            val hasValidMainRoom = mainRoom.isNotBlank() && mainRoom != "UNKNOWN"
+            val switchEnabled = switchAlternativeRooms.isChecked && hasValidMainRoom
+
+            alternativeRoomsContainer.visibility = if (switchEnabled) View.VISIBLE else View.GONE
+            switchAlternativeRooms.isEnabled = hasValidMainRoom
+
+            if (!hasValidMainRoom) {
+                switchAlternativeRooms.isChecked = false
+                alternativeRoomsContainer.removeAllViews()
+                alternativeRoomsContainer.addView(btnAddAlternativeRoom)
+                alternativeRoomEditTexts.clear()
             }
         }
 
-        if (existingAlternativeRooms.isNotEmpty()) {
-            switchAlternativeRooms.isChecked = true
-            alternativeRoomsContainer.visibility = View.VISIBLE
-            existingAlternativeRooms.forEach { room ->
-                addAlternativeRoomField(room)
+        editTextRoom.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                updateAlternativeRoomsVisibility()
             }
-        }
+        })
 
         switchAlternativeRooms.setOnCheckedChangeListener { _, isChecked ->
             alternativeRoomsContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
-
-            if (isChecked && alternativeRoomEditTexts.isEmpty()) {
-                addAlternativeRoomField()
-            }
-
-            val mainRoom = editTextRoom.text.toString().trim()
-            if (isChecked && (mainRoom.isEmpty() || mainRoom == "UNKNOWN")) {
-                switchAlternativeRooms.isChecked = false
-                alternativeRoomsContainer.visibility = View.GONE
-                Toast.makeText(this, "Hauptraum muss angegeben werden für alternative Räume", Toast.LENGTH_SHORT).show()
-            }
         }
 
         btnAddAlternativeRoom.setOnClickListener {
             addAlternativeRoomField()
         }
+
+        if (triplet.alternativeRooms.isNotEmpty()) {
+            switchAlternativeRooms.isChecked = true
+            triplet.alternativeRooms.forEach { room ->
+                addAlternativeRoomField(room)
+            }
+        }
+
+        updateAlternativeRoomsVisibility()
 
         AlertDialog.Builder(this)
             .setTitle("Fach bearbeiten")
@@ -408,13 +397,15 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 val teacherText = editTextTeacher.text.toString().trim().ifEmpty { "UNKNOWN" }
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
 
+                val alternativeRooms = if (switchAlternativeRooms.isChecked) {
+                    alternativeRoomEditTexts.map { it.text.toString().trim() }
+                        .filter { it.isNotBlank() && it != "UNKNOWN" }
+                } else {
+                    emptyList()
+                }
+
                 if (subjectText.isNotEmpty()) {
-                    val alternativeRooms = alternativeRoomEditTexts
-                        .mapNotNull { it.text.toString().trim().takeIf { room -> room.isNotEmpty() && room != "UNKNOWN" } }
-
-                    setAlternativeRoomsForSubject(subjectText, alternativeRooms)
-
-                    updateSubject(triplet, subjectText, teacherText, roomText)
+                    updateSubject(triplet, subjectText, teacherText, roomText, alternativeRooms)
                 } else {
                     Toast.makeText(this, "Gebe bitte mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
                 }
@@ -423,7 +414,7 @@ class SubjectSelectionActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun updateSubject(originalTriplet: SubjectTriplet, newSubject: String, newTeacher: String, newRoom: String) {
+    private fun updateSubject(originalTriplet: SubjectTriplet, newSubject: String, newTeacher: String, newRoom: String, alternativeRooms: List<String>) {
         if (newSubject.length < 2) {
             Toast.makeText(this, "Fach muss mindestens 2 Zeichen lang sein", Toast.LENGTH_LONG).show()
             return
@@ -431,7 +422,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
 
         val index = allSubjectTriplets.indexOf(originalTriplet)
         if (index != -1) {
-            // check if the new subject name conflicts with another (exclude current)
             val conflictingTriplet = allSubjectTriplets.find {
                 it != originalTriplet && it.subject.equals(newSubject, ignoreCase = true)
             }
@@ -441,27 +431,29 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 return
             }
 
-            L.d(TAG, "Before update - Original triplet: '${originalTriplet.subject}' -> '${originalTriplet.teacher}' -> '${originalTriplet.room}'")
-            L.d(TAG, "Before update - New values: '$newSubject' -> '$newTeacher' -> '$newRoom'")
-
             val wasSelected = selectedSubjects.contains(originalTriplet.subject)
             if (wasSelected && originalTriplet.subject != newSubject) {
                 selectedSubjects.remove(originalTriplet.subject)
                 selectedSubjects.add(newSubject)
             }
 
-            // create new instance instead just replacing to update triplet
-            val updatedTriplet = SubjectTriplet(newSubject, newTeacher, newRoom)
+            val updatedTriplet = SubjectTriplet(newSubject, newTeacher, newRoom, alternativeRooms)
             allSubjectTriplets[index] = updatedTriplet
-
-            L.d(TAG, "After update at index $index: '${allSubjectTriplets[index].subject}' -> '${allSubjectTriplets[index].teacher}' -> '${allSubjectTriplets[index].room}'")
 
             allSubjectTriplets.sortBy { it.subject }
 
-            L.d(TAG, "After sorting - All triplets:")
-            allSubjectTriplets.forEachIndexed { i, triplet ->
-                L.d(TAG, "Index $i: '${triplet.subject}' -> '${triplet.teacher}' -> '${triplet.room}'")
+            val alternativeRoomsMap = loadAlternativeRoomsFromPrefs().toMutableMap()
+            if (alternativeRooms.isNotEmpty()) {
+                alternativeRoomsMap[newSubject] = alternativeRooms
+            } else {
+                alternativeRoomsMap.remove(newSubject)
             }
+
+            if (originalTriplet.subject != newSubject) {
+                alternativeRoomsMap.remove(originalTriplet.subject)
+            }
+
+            saveAlternativeRoomsToPrefs(alternativeRoomsMap)
 
             syncDataToSources()
 
@@ -469,7 +461,7 @@ class SubjectSelectionActivity : AppCompatActivity() {
             filterSubjects(currentSearch)
 
             Toast.makeText(this, "Fach wurde aktualisiert", Toast.LENGTH_SHORT).show()
-            L.d(TAG, "Successfully updated subject: '$newSubject' -> '$newTeacher' -> '$newRoom'")
+            L.d(TAG, "Successfully updated subject: '$newSubject' -> '$newTeacher' -> '$newRoom' + ${alternativeRooms.size} alt rooms")
         } else {
             L.e(TAG, "Failed to find original triplet for update!")
         }
@@ -574,10 +566,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
         val alternativeRoomsContainer = dialogView.findViewById<LinearLayout>(R.id.alternativeRoomsContainer)
         val btnAddAlternativeRoom = dialogView.findViewById<Button>(R.id.btnAddAlternativeRoom)
 
-        editTextSubject.hint = "Fach (erforderlich)"
-        editTextTeacher.hint = "Lehrer (optional)"
-        editTextRoom.hint = "Raum (optional)"
-
         val alternativeRoomEditTexts = mutableListOf<EditText>()
 
         fun addAlternativeRoomField(text: String = "") {
@@ -595,7 +583,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 hint = "Alternativer Raum"
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
-                setPadding(16, 16, 16, 16)
             }
             alternativeRoomEditTexts.add(editText)
 
@@ -608,41 +595,43 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 setOnClickListener {
                     alternativeRoomsContainer.removeView(roomLayout)
                     alternativeRoomEditTexts.remove(editText)
-
-                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
-                        View.VISIBLE
-                    } else {
-                        View.GONE
-                    }
+                    btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) View.VISIBLE else View.GONE
                 }
             }
 
             roomLayout.addView(editText)
             roomLayout.addView(removeButton)
+            alternativeRoomsContainer.addView(roomLayout, alternativeRoomsContainer.childCount - 1)
 
-            val addButtonIndex = alternativeRoomsContainer.indexOfChild(btnAddAlternativeRoom)
-            alternativeRoomsContainer.addView(roomLayout, addButtonIndex)
+            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) View.VISIBLE else View.GONE
+        }
 
-            btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) {
-                View.VISIBLE
-            } else {
-                View.GONE
+        fun updateAlternativeRoomsVisibility() {
+            val mainRoom = editTextRoom.text.toString().trim()
+            val hasValidMainRoom = mainRoom.isNotBlank() && mainRoom != "UNKNOWN"
+            val switchEnabled = switchAlternativeRooms.isChecked && hasValidMainRoom
+
+            alternativeRoomsContainer.visibility = if (switchEnabled) View.VISIBLE else View.GONE
+            switchAlternativeRooms.isEnabled = hasValidMainRoom
+
+            if (!hasValidMainRoom) {
+                switchAlternativeRooms.isChecked = false
+                alternativeRoomsContainer.removeAllViews()
+                alternativeRoomsContainer.addView(btnAddAlternativeRoom)
+                alternativeRoomEditTexts.clear()
             }
         }
 
+        editTextRoom.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                updateAlternativeRoomsVisibility()
+            }
+        })
+
         switchAlternativeRooms.setOnCheckedChangeListener { _, isChecked ->
             alternativeRoomsContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
-
-            if (isChecked && alternativeRoomEditTexts.isEmpty()) {
-                addAlternativeRoomField()
-            }
-
-            val mainRoom = editTextRoom.text.toString().trim()
-            if (isChecked && (mainRoom.isEmpty() || mainRoom == "UNKNOWN")) {
-                switchAlternativeRooms.isChecked = false
-                alternativeRoomsContainer.visibility = View.GONE
-                Toast.makeText(this, "Hauptraum muss angegeben werden für alternative Räume", Toast.LENGTH_SHORT).show()
-            }
         }
 
         btnAddAlternativeRoom.setOnClickListener {
@@ -657,15 +646,15 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 val teacherText = editTextTeacher.text.toString().trim().ifEmpty { "UNKNOWN" }
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
 
+                val alternativeRooms = if (switchAlternativeRooms.isChecked) {
+                    alternativeRoomEditTexts.map { it.text.toString().trim() }
+                        .filter { it.isNotBlank() && it != "UNKNOWN" }
+                } else {
+                    emptyList()
+                }
+
                 if (subjectText.isNotEmpty()) {
-                    // Collect alternative rooms
-                    val alternativeRooms = alternativeRoomEditTexts
-                        .mapNotNull { it.text.toString().trim().takeIf { room -> room.isNotEmpty() && room != "UNKNOWN" } }
-
-                    // Save alternative rooms
-                    setAlternativeRoomsForSubject(subjectText, alternativeRooms)
-
-                    addManualSubject(subjectText, teacherText, roomText)
+                    addManualSubject(subjectText, teacherText, roomText, alternativeRooms)
                 } else {
                     Toast.makeText(this, "Bitte gebe mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
                 }
@@ -674,23 +663,19 @@ class SubjectSelectionActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun addManualSubject(subjectText: String, teacherText: String, roomText: String) {
+    private fun addManualSubject(subjectText: String, teacherText: String, roomText: String, alternativeRooms: List<String>) {
         if (subjectText.length < 2) {
             Toast.makeText(this, "Fach muss mindestens 2 Zeichen lang sein", Toast.LENGTH_LONG).show()
             return
         }
 
-        // check if subject already exists -> overwrite
         val existingIndex = allSubjectTriplets.indexOfFirst { it.subject.equals(subjectText, ignoreCase = true) }
 
         if (existingIndex != -1) {
-            // check for differences
             val existingTriplet = allSubjectTriplets[existingIndex]
-            if (existingTriplet.teacher != teacherText || existingTriplet.room != roomText) {
-                // overwrite whole triplet (WHOLE triplet important!)
-                allSubjectTriplets[existingIndex] = SubjectTriplet(subjectText, teacherText, roomText)
+            if (existingTriplet.teacher != teacherText || existingTriplet.room != roomText || existingTriplet.alternativeRooms != alternativeRooms) {
+                allSubjectTriplets[existingIndex] = SubjectTriplet(subjectText, teacherText, roomText, alternativeRooms)
                 Toast.makeText(this, "Fach '$subjectText' wurde aktualisiert", Toast.LENGTH_SHORT).show()
-                L.d(TAG, "Overwritten existing subject: '$subjectText' -> '$teacherText' -> '$roomText'")
             } else {
                 Toast.makeText(this, "Fach '$subjectText' mit identischen Daten existiert bereits", Toast.LENGTH_SHORT).show()
             }
@@ -699,24 +684,27 @@ class SubjectSelectionActivity : AppCompatActivity() {
                 selectedSubjects.add(subjectText)
             }
         } else {
-            val newTriplet = SubjectTriplet(subjectText, teacherText, roomText)
+            val newTriplet = SubjectTriplet(subjectText, teacherText, roomText, alternativeRooms)
             allSubjectTriplets.add(newTriplet)
-            allSubjectTriplets.sortBy { it.subject } // keep sorted
+            allSubjectTriplets.sortBy { it.subject }
 
             selectedSubjects.add(subjectText)
 
             Toast.makeText(this, "Fach '$subjectText' hinzugefügt und ausgewählt", Toast.LENGTH_SHORT).show()
-            L.d(TAG, "Successfully added manual subject: '$subjectText' -> '$teacherText' -> '$roomText'")
         }
+
+        val alternativeRoomsMap = loadAlternativeRoomsFromPrefs().toMutableMap()
+        if (alternativeRooms.isNotEmpty()) {
+            alternativeRoomsMap[subjectText] = alternativeRooms
+        } else {
+            alternativeRoomsMap.remove(subjectText)
+        }
+        saveAlternativeRoomsToPrefs(alternativeRoomsMap)
 
         syncDataToSources()
 
-        // reset current filter to update display
         val currentSearch = searchEditText.text.toString().trim()
-        L.d(TAG, "Re-applying filter after manual add with search: '$currentSearch'")
         filterSubjects(currentSearch)
-
-        L.d(TAG, "Total subjects now: ${allSubjectTriplets.size}")
     }
 
     private fun syncDataToSources() {
@@ -773,41 +761,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun getAlternativeRoomsForSubject(subject: String): List<String> {
-        val json = sharedPreferences.getString("alternative_rooms", "{}")
-        return try {
-            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
-            val allRooms: MutableMap<String, List<String>> = com.google.gson.Gson().fromJson(json, type) ?: mutableMapOf()
-            allRooms[subject] ?: emptyList()
-        } catch (e: Exception) {
-            L.e(TAG, "Error loading alternative rooms for subject", e)
-            emptyList()
-        }
-    }
-
-    private fun setAlternativeRoomsForSubject(subject: String, rooms: List<String>) {
-        val json = sharedPreferences.getString("alternative_rooms", "{}")
-        val allRooms = try {
-            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<String>>>() {}.type
-            com.google.gson.Gson().fromJson<MutableMap<String, List<String>>>(json, type) ?: mutableMapOf()
-        } catch (e: Exception) {
-            mutableMapOf()
-        }
-
-        if (rooms.isEmpty()) {
-            allRooms.remove(subject)
-        } else {
-            allRooms[subject] = rooms
-        }
-
-        val newJson = com.google.gson.Gson().toJson(allRooms)
-        sharedPreferences.edit()
-            .putString("alternative_rooms", newJson)
-            .apply()
-
-        L.d(TAG, "Alternative rooms updated for subject: $subject -> $rooms")
-    }
-
     private fun updateCounters() {
         tvSelectionCount.text = selectedSubjects.size.toString()
         tvTotalCount.text = filteredSubjectTriplets.size.toString()
@@ -854,8 +807,8 @@ class SubjectSelectionActivity : AppCompatActivity() {
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val checkBox: CheckBox = view.findViewById(R.id.checkBoxSubject)
             val textSubject: TextView = view.findViewById(R.id.textSubject)
-            val btnEdit: Button = view.findViewById(R.id.btnEdit)
-            val btnDelete: Button = view.findViewById(R.id.btnDelete)
+            val btnEdit: ImageButton = view.findViewById(R.id.btnEdit)
+            val btnDelete: ImageButton = view.findViewById(R.id.btnDelete)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -868,7 +821,8 @@ class SubjectSelectionActivity : AppCompatActivity() {
             val triplet = subjectTriplets[position]
             val subject = triplet.subject
 
-            holder.textSubject.text = triplet.getDisplayTextWithAlternatives(holder.itemView.context)
+            // show the full display text (subject | teacher | room)
+            holder.textSubject.text = triplet.getDisplayText()
             holder.checkBox.isChecked = selectedItems.contains(subject)
 
             val selectionClickListener = View.OnClickListener {

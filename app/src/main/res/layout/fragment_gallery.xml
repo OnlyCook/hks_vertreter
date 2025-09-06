@@ -102,28 +102,41 @@
     </LinearLayout>
 
     <!-- main calendar content -->
-    <ScrollView
-        android:id="@+id/calendarScrollView"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true"
-        android:background="@android:color/background_light">
+        android:layout_weight="1">
 
-        <HorizontalScrollView
+        <com.thecooker.vertretungsplaner.ui.gallery.SwipeInterceptorLayout
+            android:id="@+id/swipeInterceptor"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="match_parent">
 
-            <TableLayout
-                android:id="@+id/calendarGrid"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:padding="8dp"
-                android:stretchColumns="*" />
+            <ScrollView
+                android:id="@+id/calendarScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="true"
+                android:background="@android:color/background_light">
 
-        </HorizontalScrollView>
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
 
-    </ScrollView>
+                    <TableLayout
+                        android:id="@+id/calendarGrid"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:padding="8dp"
+                        android:stretchColumns="*" />
+
+                </HorizontalScrollView>
+
+            </ScrollView>
+
+        </com.thecooker.vertretungsplaner.ui.gallery.SwipeInterceptorLayout>
+
+    </FrameLayout>
 
     <!-- color legend -->
     <LinearLayout

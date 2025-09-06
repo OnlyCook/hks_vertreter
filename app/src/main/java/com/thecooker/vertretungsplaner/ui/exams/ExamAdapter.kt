@@ -11,6 +11,7 @@ import com.thecooker.vertretungsplaner.R
 import android.text.SpannableString
 import android.text.style.StyleSpan
 import android.graphics.Typeface
+import android.widget.ImageButton
 
 class ExamAdapter(
     private val examList: MutableList<ExamFragment.ExamEntry>,
@@ -22,8 +23,8 @@ class ExamAdapter(
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val textExamInfo: TextView = view.findViewById(R.id.textExamInfo)
         val textExamNote: TextView = view.findViewById(R.id.textExamNote)
-        val btnEdit: Button = view.findViewById(R.id.btnEditExam)
-        val btnDelete: Button = view.findViewById(R.id.btnDeleteExam)
+        val btnEdit: ImageButton = view.findViewById(R.id.btnEditExam)
+        val btnDelete: ImageButton = view.findViewById(R.id.btnDeleteExam)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {

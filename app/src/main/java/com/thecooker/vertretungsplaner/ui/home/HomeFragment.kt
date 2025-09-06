@@ -1,10 +1,12 @@
 package com.thecooker.vertretungsplaner.ui.home
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.util.AttributeSet
 import com.thecooker.vertretungsplaner.L
 import android.view.LayoutInflater
 import android.view.View
@@ -14,6 +16,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.preference.PreferenceManager
 import com.google.android.material.snackbar.Snackbar
+import com.thecooker.vertretungsplaner.R
 import com.thecooker.vertretungsplaner.databinding.FragmentHomeBinding
 import kotlinx.coroutines.*
 import org.json.JSONArray
@@ -24,6 +27,18 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+
+class TouchScrollView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : ScrollView(context, attrs, defStyleAttr) {
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+}
 
 class HomeFragment : Fragment() {
 
@@ -59,6 +74,10 @@ class HomeFragment : Fragment() {
 
     // color blind support
     private var colorBlindMode = "none"
+
+    // scroll to refresh
+    private var refreshContainer: LinearLayout? = null
+    private var refreshIcon: ImageView? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -136,6 +155,10 @@ class HomeFragment : Fragment() {
         loadColorBlindSettings()
         updateTemporaryFilterButtonVisibility()
 
+        if (::temporaryFilterButton.isInitialized) {
+            reorganizeHeaderLayout()
+        }
+
         if (isInitialized && _binding != null) {
             val startupPageIndex = sharedPreferences.getInt("startup_page_index", 0)
             if (startupPageIndex == 1) {
@@ -159,7 +182,6 @@ class HomeFragment : Fragment() {
         if (::temporaryFilterButton.isInitialized) {
             val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
             val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
-
             val shouldShowButton = hasScannedDocument && filterEnabled
 
             temporaryFilterButton.visibility = if (shouldShowButton) {
@@ -170,9 +192,9 @@ class HomeFragment : Fragment() {
 
             if (::invisibleLeftButton.isInitialized) {
                 invisibleLeftButton.visibility = if (shouldShowButton) {
-                    View.INVISIBLE  // Takes up space but not visible
+                    View.INVISIBLE
                 } else {
-                    View.GONE       // Doesn't take up any space
+                    View.GONE
                 }
             }
 
@@ -261,6 +283,8 @@ class HomeFragment : Fragment() {
         super.onDestroyView()
         L.d("HomeFragment", "onDestroyView called - cancelling scope")
 
+        cleanupRefreshIndicator()
+
         scope?.cancel()
         scope = null
         isInitialized = false
@@ -273,6 +297,7 @@ class HomeFragment : Fragment() {
         L.d("HomeFragment", "onDetach called")
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupUI() {
         val constraintLayout = binding.root as androidx.constraintlayout.widget.ConstraintLayout
         constraintLayout.removeAllViews()
@@ -326,22 +351,54 @@ class HomeFragment : Fragment() {
             )
         }
 
-        // invisible left button (spacer  for temp filter btn)
         val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
         val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
         val shouldShowButtons = hasScannedDocument && filterEnabled
+        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
 
+        // invisible left button (spacer  for temp filter btn)
         invisibleLeftButton = ImageButton(requireContext()).apply {
             setImageResource(android.R.drawable.ic_menu_view)
             background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
             setPadding(16, 16, 16, 16)
-            visibility = if (shouldShowButtons) View.INVISIBLE else View.GONE
             isEnabled = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 setMargins(0, 0, 16, 0)
+            }
+        }
+
+        temporaryFilterButton = ImageButton(requireContext()).apply {
+            setImageResource(R.drawable.ic_eye_closed)
+            background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
+            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(16, 0, 0, 0)
+            }
+
+            setOnTouchListener { view, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        setImageResource(R.drawable.ic_eye_open)
+                        L.d("HomeFragment", "Temporary filter button pressed - lifting filter")
+                        isTemporaryFilterDisabled = true
+                        displaySubstitutePlan(getCurrentJsonData())
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        setImageResource(R.drawable.ic_eye_closed)
+                        L.d("HomeFragment", "Temporary filter button released - restoring filter")
+                        isTemporaryFilterDisabled = false
+                        displaySubstitutePlan(getCurrentJsonData())
+                        true
+                    }
+                    else -> false
+                }
             }
         }
 
@@ -354,40 +411,30 @@ class HomeFragment : Fragment() {
             )
         }
 
-        temporaryFilterButton = ImageButton(requireContext()).apply {
-            setImageResource(android.R.drawable.ic_menu_view)
-            background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
-            setPadding(16, 16, 16, 16)
-            visibility = if (shouldShowButtons) View.VISIBLE else View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(16, 0, 0, 0)
+        // filter lift button views based on filter lift pos
+        if (!leftFilterLift) {
+            if (shouldShowButtons) {
+                temporaryFilterButton.visibility = View.VISIBLE
+                invisibleLeftButton.visibility = View.INVISIBLE
+            } else {
+                temporaryFilterButton.visibility = View.GONE
+                invisibleLeftButton.visibility = View.GONE
             }
-
-            setOnTouchListener { _, event ->
-                when (event.action) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        L.d("HomeFragment", "Temporary filter button pressed - lifting filter")
-                        isTemporaryFilterDisabled = true
-                        displaySubstitutePlan(getCurrentJsonData())
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        L.d("HomeFragment", "Temporary filter button released - restoring filter")
-                        isTemporaryFilterDisabled = false
-                        displaySubstitutePlan(getCurrentJsonData())
-                        true
-                    }
-                    else -> false
-                }
+            topRowLayout.addView(temporaryFilterButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(invisibleLeftButton)
+        } else {
+            if (shouldShowButtons) {
+                temporaryFilterButton.visibility = View.VISIBLE
+                invisibleLeftButton.visibility = View.INVISIBLE
+            } else {
+                temporaryFilterButton.visibility = View.GONE
+                invisibleLeftButton.visibility = View.GONE
             }
+            topRowLayout.addView(invisibleLeftButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(temporaryFilterButton)
         }
-
-        topRowLayout.addView(invisibleLeftButton)
-        topRowLayout.addView(classText)
-        topRowLayout.addView(temporaryFilterButton)
 
         headerLayout.addView(topRowLayout)
         headerLayout.addView(lastUpdateText)
@@ -426,6 +473,8 @@ class HomeFragment : Fragment() {
 
         constraintLayout.addView(headerLayout, headerParams)
         constraintLayout.addView(contentScrollView, scrollParams)
+
+        setupPullToRefresh()
 
         L.d("HomeFragment", "UI setup completed")
     }
@@ -1096,5 +1145,268 @@ class HomeFragment : Fragment() {
 
     private fun getCurrentJsonData(): JSONObject {
         return currentJsonData ?: JSONObject()
+    }
+
+    private fun reorganizeHeaderLayout() {
+        if (!::temporaryFilterButton.isInitialized || !::invisibleLeftButton.isInitialized || !::classText.isInitialized) {
+            return
+        }
+
+        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+        val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+        val shouldShowButtons = hasScannedDocument && filterEnabled
+        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
+
+        val topRowLayout = headerLayout.getChildAt(0) as LinearLayout
+
+        topRowLayout.removeAllViews()
+
+        if (shouldShowButtons) {
+            temporaryFilterButton.visibility = View.VISIBLE
+            invisibleLeftButton.visibility = View.INVISIBLE
+        } else {
+            temporaryFilterButton.visibility = View.GONE
+            invisibleLeftButton.visibility = View.GONE
+        }
+
+        if (!leftFilterLift) {
+            topRowLayout.addView(temporaryFilterButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(invisibleLeftButton)
+        } else {
+            topRowLayout.addView(invisibleLeftButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(temporaryFilterButton)
+        }
+
+        L.d("HomeFragment", "Header layout reorganized - leftFilterLift: $leftFilterLift")
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupPullToRefresh() {
+        var initialY = 0f
+        var isPulling = false
+        var hasTriggeredRefresh = false
+        val maxPullDistance = 400f
+        val triggerDistance = 300f
+
+        contentScrollView.setOnTouchListener { view, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    initialY = event.rawY
+                    isPulling = false
+                    hasTriggeredRefresh = false
+
+                    if (contentScrollView.scrollY == 0) {
+                        cleanupRefreshIndicator()
+                        createRefreshIndicator()
+                    }
+                    false
+                }
+
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (contentScrollView.scrollY == 0 && refreshContainer != null && !hasTriggeredRefresh) {
+                        val currentY = event.rawY
+                        val deltaY = currentY - initialY
+
+                        if (deltaY > 0) {
+                            isPulling = true
+                            val constrainedDeltaY = deltaY.coerceAtMost(maxPullDistance)
+                            updateRefreshIndicator(constrainedDeltaY, maxPullDistance, triggerDistance)
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (isPulling && refreshContainer != null && !hasTriggeredRefresh) {
+                        val currentY = event.rawY
+                        val deltaY = currentY - initialY
+
+                        if (deltaY >= triggerDistance) {
+                            hasTriggeredRefresh = true
+                            triggerRefresh()
+                        } else {
+                            animateRefreshContainerAway()
+                        }
+                        view.performClick()
+                    }
+                    isPulling = false
+                    false
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun createRefreshIndicator() {
+        refreshContainer = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0
+            )
+        }
+
+        refreshIcon = ImageView(requireContext()).apply {
+            setImageResource(R.drawable.ic_refresh)
+            layoutParams = LinearLayout.LayoutParams(
+                72,
+                72
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+                setMargins(0, 20, 0, 20)
+            }
+            alpha = 0f
+            scaleX = 0.5f
+            scaleY = 0.5f
+            rotation = 0f
+            clearColorFilter()
+        }
+
+        refreshContainer?.addView(refreshIcon)
+        contentLayout.addView(refreshContainer, 0)
+    }
+
+    private fun updateRefreshIndicator(deltaY: Float, maxPullDistance: Float, triggerDistance: Float) {
+        refreshContainer?.let { container ->
+            refreshIcon?.let { icon ->
+                // calculate pull progress (0 to 1)
+                val pullProgress = (deltaY / maxPullDistance).coerceAtMost(1f)
+                val triggerProgress = (deltaY / triggerDistance).coerceAtMost(1f)
+
+                val newHeight = (deltaY * 0.4f).toInt()
+                val layoutParams = container.layoutParams as LinearLayout.LayoutParams
+                layoutParams.height = newHeight
+                container.layoutParams = layoutParams
+
+                icon.alpha = pullProgress.coerceAtMost(1f)
+                icon.rotation = pullProgress * 270f
+
+                val scale = 0.6f + (pullProgress * 0.4f)
+                icon.scaleX = scale
+                icon.scaleY = scale
+
+                if (triggerProgress >= 1f) {
+                    icon.setColorFilter(resources.getColor(android.R.color.holo_blue_dark, null))
+                    // val vibrator = context?.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                    // vibrator?.vibrate(50)
+                } else {
+                    icon.setColorFilter(resources.getColor(android.R.color.darker_gray, null))
+                }
+            }
+        }
+    }
+
+    private fun triggerRefresh() {
+        refreshIcon?.let { icon ->
+            icon.clearAnimation()
+            icon.alpha = 1f
+            icon.setColorFilter(resources.getColor(android.R.color.holo_blue_dark, null))
+
+            val rotateAnimation = android.view.animation.RotateAnimation(
+                0f, 360f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+            ).apply {
+                duration = 800
+                repeatCount = android.view.animation.Animation.INFINITE
+                interpolator = android.view.animation.LinearInterpolator()
+            }
+            icon.startAnimation(rotateAnimation)
+        }
+
+        L.d("HomeFragment", "Pull-to-refresh triggered")
+
+        scope?.launch {
+            try {
+                isFirstLoad = true
+                lastLoadTime = 0
+                loadSubstitutePlan()
+                lastLoadTime = System.currentTimeMillis()
+                isFirstLoad = false
+
+                delay(800)
+            } finally {
+                if (isAdded && _binding != null) {
+                    animateRefreshContainerAway()
+                }
+            }
+        }
+    }
+
+    private fun animateRefreshContainerAway() {
+        refreshContainer?.let { container ->
+            refreshIcon?.let { icon ->
+                icon.clearAnimation()
+            }
+
+            val currentHeight = container.layoutParams.height.coerceAtLeast(1)
+            val animator = android.animation.ValueAnimator.ofInt(currentHeight, 0)
+            animator.duration = 250
+            animator.interpolator = android.view.animation.AccelerateInterpolator()
+
+            animator.addUpdateListener { animation ->
+                refreshContainer?.let {
+                    val animatedValue = animation.animatedValue as Int
+                    val layoutParams = container.layoutParams as LinearLayout.LayoutParams
+                    layoutParams.height = animatedValue
+                    container.layoutParams = layoutParams
+
+                    val progress = if (currentHeight > 0) {
+                        1f - (animatedValue.toFloat() / currentHeight.toFloat())
+                    } else {
+                        1f
+                    }
+                    refreshIcon?.alpha = (1f - progress).coerceAtLeast(0f)
+                }
+            }
+
+            animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    cleanupRefreshIndicator()
+                }
+
+                override fun onAnimationCancel(animation: android.animation.Animator) {
+                    cleanupRefreshIndicator()
+                }
+            })
+
+            animator.start()
+        } ?: run {
+            cleanupRefreshIndicator()
+        }
+    }
+
+    private fun cleanupRefreshIndicator() {
+        refreshIcon?.let { icon ->
+            icon.clearAnimation()
+            icon.clearColorFilter()
+        }
+
+        refreshContainer?.let { container ->
+            try {
+                if (container.parent == contentLayout) {
+                    contentLayout.removeView(container)
+                }
+            } catch (e: Exception) {
+                L.w("HomeFragment", "Error removing refresh container: ${e.message}")
+            }
+        }
+
+        refreshContainer = null
+        refreshIcon = null
+    }
+
+    override fun onPause() {
+        super.onPause()
+        cleanupRefreshIndicator()
     }
 }

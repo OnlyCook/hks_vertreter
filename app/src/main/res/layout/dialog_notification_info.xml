@@ -129,7 +129,7 @@
             android:id="@+id/btnNotificationSettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Benachrichtigungs-Einstellungen öffnen"
+            android:text="Benachrichtigungs-\nEinstellungen öffnen"
             android:textColor="@android:color/white"
             android:background="?attr/colorPrimary"
             android:layout_marginBottom="8dp"

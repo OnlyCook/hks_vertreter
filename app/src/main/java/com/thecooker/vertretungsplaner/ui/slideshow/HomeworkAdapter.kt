@@ -11,6 +11,9 @@ import com.thecooker.vertretungsplaner.R
 import android.text.SpannableString
 import android.text.style.StyleSpan
 import android.graphics.Typeface
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.TextView
 
 class HomeworkAdapter(
     private val homeworkList: MutableList<SlideshowFragment.HomeworkEntry>,
@@ -21,6 +24,9 @@ class HomeworkAdapter(
     private val onChecklistItemToggled: (SlideshowFragment.HomeworkEntry, SlideshowFragment.ChecklistItem, Boolean) -> Unit
 ) : RecyclerView.Adapter<HomeworkAdapter.ViewHolder>() {
 
+    private var filteredHomeworkList: List<SlideshowFragment.HomeworkEntry> = homeworkList
+    private var currentFilter: String = ""
+
     companion object {
         private const val VIEW_TYPE_NORMAL = 0
         private const val VIEW_TYPE_OVERDUE = 1
@@ -28,13 +34,14 @@ class HomeworkAdapter(
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val checkBox: CheckBox = view.findViewById(R.id.checkBoxHomework)
-        val btnView: Button = view.findViewById(R.id.btnView)
-        val btnEdit: Button = view.findViewById(R.id.btnEdit)
-        val btnDelete: Button = view.findViewById(R.id.btnDelete)
+        val checkboxArea: FrameLayout = view.findViewById(R.id.checkboxArea)
+        val textHomeworkDetails: TextView = view.findViewById(R.id.textHomeworkDetails)
+        val btnEdit: ImageButton = view.findViewById(R.id.btnEdit)
+        val btnDelete: ImageButton = view.findViewById(R.id.btnDelete)
     }
 
     override fun getItemViewType(position: Int): Int {
-        val homework = homeworkList[position]
+        val homework = filteredHomeworkList[position]
         return if (homework.isOverdueForUI() && !homework.isCompleted) {
             VIEW_TYPE_OVERDUE
         } else {
@@ -55,9 +62,11 @@ class HomeworkAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val homework = homeworkList[position]
+        val homework = filteredHomeworkList[position]
 
         holder.checkBox.setOnCheckedChangeListener(null)
+        holder.checkboxArea.setOnClickListener(null)
+        holder.textHomeworkDetails.setOnClickListener(null)
 
         val checkboxText = "${homework.subject} | ${homework.getDueDateString()}"
         val spannableString = SpannableString(checkboxText)
@@ -67,9 +76,12 @@ class HomeworkAdapter(
             homework.subject.length,
             SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
         )
-        holder.checkBox.text = spannableString
+        holder.textHomeworkDetails.text = spannableString
 
-        if (getItemViewType(position) == VIEW_TYPE_OVERDUE) {
+        val isOverdueAndCompleted = homework.isCompleted && homework.isOverdueForUI()
+
+        if (getItemViewType(position) == VIEW_TYPE_OVERDUE && !homework.isCompleted) {
+            // normal overdue (not completed)
             holder.checkBox.isEnabled = false
             holder.checkBox.alpha = 0.6f
             holder.checkBox.isChecked = false
@@ -78,10 +90,26 @@ class HomeworkAdapter(
                 ContextCompat.getColor(holder.itemView.context, android.R.color.darker_gray)
             )
 
-            holder.checkBox.setOnCheckedChangeListener(null)
-            holder.itemView.setOnClickListener(null)
+            holder.textHomeworkDetails.setOnClickListener {
+                onHomeworkViewed(homework)
+            }
+
+        } else if (isOverdueAndCompleted) {
+            // completed but overdue
+            holder.checkBox.isEnabled = false
+            holder.checkBox.alpha = 1.0f
+            holder.checkBox.isChecked = true
+
+            holder.itemView.setBackgroundColor(
+                ContextCompat.getColor(holder.itemView.context, android.R.color.holo_green_light)
+            )
+
+            holder.textHomeworkDetails.setOnClickListener {
+                onHomeworkViewed(homework)
+            }
+
         } else {
-            // normal
+            // normal homework (not overdue or completed but not overdue🗣️)
             holder.checkBox.isEnabled = true
             holder.checkBox.alpha = 1.0f
             holder.checkBox.isChecked = homework.isCompleted
@@ -97,17 +125,17 @@ class HomeworkAdapter(
                 )
             }
 
-            holder.checkBox.setOnCheckedChangeListener { _, isChecked ->
-                onHomeworkToggled(homework, isChecked)
+            // checkbox area (left side) for checking/unchecking
+            holder.checkboxArea.setOnClickListener {
+                val newState = !holder.checkBox.isChecked
+                holder.checkBox.isChecked = newState
+                onHomeworkToggled(homework, newState)
             }
 
-            holder.itemView.setOnClickListener {
-                holder.checkBox.toggle()
+            // text area (middle area) for viewing details
+            holder.textHomeworkDetails.setOnClickListener {
+                onHomeworkViewed(homework)
             }
-        }
-
-        holder.btnView.setOnClickListener {
-            onHomeworkViewed(homework)
         }
 
         holder.btnEdit.setOnClickListener {
@@ -119,5 +147,29 @@ class HomeworkAdapter(
         }
     }
 
-    override fun getItemCount(): Int = homeworkList.size
+    private fun setupClickListeners(holder: ViewHolder, homework: SlideshowFragment.HomeworkEntry, allowToggle: Boolean) {
+        holder.checkBox.setOnClickListener {
+            if (allowToggle && holder.checkBox.isEnabled) {
+                holder.checkBox.toggle()
+            }
+        }
+
+        holder.itemView.setOnClickListener {
+            onHomeworkViewed(homework)
+        }
+    }
+
+    fun filter(query: String) {
+        currentFilter = query
+        filteredHomeworkList = if (query.isEmpty()) {
+            homeworkList
+        } else {
+            homeworkList.filter { homework ->
+                homework.subject.contains(query, ignoreCase = true)
+            }
+        }
+        notifyDataSetChanged()
+    }
+
+    override fun getItemCount(): Int = filteredHomeworkList.size
 }

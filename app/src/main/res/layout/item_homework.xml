@@ -9,15 +9,33 @@
     android:background="@drawable/rounded_background"
     android:elevation="2dp">
 
-    <CheckBox
-        android:id="@+id/checkBoxHomework"
+    <!-- Checkbox area (for checking/unchecking) -->
+    <FrameLayout
+        android:id="@+id/checkboxArea"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:padding="8dp">
+
+        <CheckBox
+            android:id="@+id/checkBoxHomework"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:clickable="false"
+            android:focusable="false"/>
+    </FrameLayout>
+
+    <!-- Text area (for viewing details) -->
+    <TextView
+        android:id="@+id/textHomeworkDetails"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:layout_gravity="center_vertical"
-        android:text="Mathe - heute fällig"
+        android:text="Mathe | heute fällig"
         android:textSize="16sp"
-        android:padding="8dp" />
+        android:padding="8dp"
+        android:background="?android:attr/selectableItemBackground"/>
 
     <LinearLayout
         android:layout_width="wrap_content"
@@ -25,40 +43,26 @@
         android:orientation="horizontal"
         android:layout_gravity="center_vertical">
 
-        <Button
-            android:id="@+id/btnView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Anzeigen"
-            android:textSize="12sp"
-            android:backgroundTint="@android:color/holo_blue_light"
-            android:layout_marginEnd="4dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:padding="8dp"
-            style="@style/Widget.AppCompat.Button" />
-
-        <Button
+        <ImageButton
             android:id="@+id/btnEdit"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✎"
-            android:textSize="14sp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_pencil"
             android:backgroundTint="@android:color/holo_orange_light"
             android:layout_marginEnd="4dp"
-            android:minWidth="36dp"
-            android:minHeight="36dp"
+            android:scaleType="centerInside"
+            android:contentDescription="Edit"
             style="@style/Widget.AppCompat.Button" />
 
-        <Button
+
+        <ImageButton
             android:id="@+id/btnDelete"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✖"
-            android:textSize="14sp"
-            android:backgroundTint="@android:color/holo_red_light"
-            android:minWidth="36dp"
-            android:minHeight="36dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_trash_can"
+            android:backgroundTint="@android:color/holo_red_dark"
+            android:scaleType="centerInside"
+            android:contentDescription="Delete"
             style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>

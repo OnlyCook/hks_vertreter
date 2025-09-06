@@ -70,8 +70,8 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 📬 Kontakt & Support
 
-**Entwickler**: Nikodem Karol Jastrzab
-**E-Mail**: theactualcooker@gmail.com
+**Entwickler**: Nikodem Karol Jastrzab  
+**E-Mail**: theactualcooker@gmail.com  
 
 ### Wann kontaktieren?
 - 🐛 Fehlerberichte
@@ -82,16 +82,16 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschrän
 
 ## 🏫 Schul-Information
 
-**Heinrich-Kleyer-Schule**
-Kühhornshofweg 27
-60320 Frankfurt am Main
+**Heinrich-Kleyer-Schule**  
+Kühhornshofweg 27  
+60320 Frankfurt am Main  
 
 ## ⚖️ Rechtliches & Disclaimer
 
 ### Haftungsausschluss
 - Die App kann Fehler oder falsche Informationen enthalten
 - Algorithmen sind nicht 100% fehlerfrei
-- Die Schule kann Fehler bei der Veröffentlichung des Vertretungsplans machen
+- Die Schule kann das Format des Vertretungsplans, Stundenplans oder Klausurplans ändern
 - **Nutzung auf eigene Verantwortung**
 
 ### Logo-Nutzung
