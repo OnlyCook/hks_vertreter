@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- spinner -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Anzahl Ferienwochen:"
+        android:textColor="@android:color/black"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <Spinner
+        android:id="@+id/spinner_weeks"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- remove vacation switch -->
+    <Switch
+        android:id="@+id/switch_remove_vacation"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ferien entfernen"
+        android:textSize="16sp"
+        android:layout_marginBottom="12dp"
+        android:paddingVertical="8dp" />
+
+    <!-- buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="8dp">
+
+        <!-- auto mark -->
+        <Button
+            android:id="@+id/btn_auto_mark"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ferien automatisch markieren"
+            android:backgroundTint="@android:color/holo_blue_light"
+            android:padding="12dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:minHeight="0dp"
+            android:layout_marginBottom="12dp"
+            style="@style/Widget.AppCompat.Button" />
+
+        <!-- clear all vacations -->
+        <Button
+            android:id="@+id/btn_clear_all"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Alle Ferien löschen"
+            android:backgroundTint="@android:color/holo_red_light"
+            android:padding="12dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:minHeight="0dp"
+            style="@style/Widget.AppCompat.Button" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -34,7 +34,7 @@
             android:id="@+id/btnAddExam"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="+"
+            android:text="＋"
             android:textSize="18sp"
             android:textStyle="bold"
             android:backgroundTint="@android:color/holo_green_light"

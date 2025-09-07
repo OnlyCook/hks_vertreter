@@ -2,4 +2,11 @@
 <resources>
     <item name="swipe_icon" type="id" />
     <item name="swipe_text" type="id" />
+
+    <item name="action_today" type="id"/>
+    <item name="action_edit_timetable" type="id"/>
+    <item name="action_vacation" type="id"/>
+    <item name="action_statistics" type="id"/>
+    <item name="action_export" type="id"/>
+    <item name="action_import" type="id"/>
 </resources>

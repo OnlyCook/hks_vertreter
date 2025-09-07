@@ -38,11 +38,13 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.os.Build
 import android.provider.Settings
+import android.view.ViewGroup
 import androidx.core.app.NotificationManagerCompat
 import android.widget.ImageView
 import com.thecooker.vertretungsplaner.ui.slideshow.HomeworkUtils
 import android.widget.AdapterView
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContentProviderCompat.requireContext
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONObject
 import kotlin.system.exitProcess
@@ -179,9 +181,26 @@ class SettingsActivity : AppCompatActivity() {
         tvScannedDocument = findViewById(R.id.tvScannedDocument)
         switchFilterSubjects = findViewById(R.id.switchFilterSubjects)
         btnTimetableOptions = findViewById(R.id.btnTimetableOptions)
+
         btnEditTimetable = findViewById(R.id.btnEditTimetable)
         btnExportTimetable = findViewById(R.id.btnExportTimetable)
         btnImportTimetable = findViewById(R.id.btnImportTimetable)
+
+        btnEditTimetable.apply {
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_pencil, 0, 0, 0)
+            compoundDrawablePadding = 32
+        }
+
+        btnExportTimetable.apply {
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_export, 0, 0, 0)
+            compoundDrawablePadding = 32
+        }
+
+        btnImportTimetable.apply {
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_import, 0, 0, 0)
+            compoundDrawablePadding = 32
+        }
+
         layoutTimetableOptions = findViewById(R.id.layoutTimetableOptions)
         btnStartupPage = findViewById(R.id.btnStartupPage)
         switchAutoUpdate = findViewById(R.id.switchAutoUpdate)
@@ -1300,8 +1319,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         try {
-            val exportContent = generateExportContent()
-            showExportOptions(exportContent)
+            showExportOptions()
         } catch (e: Exception) {
             L.e(TAG, "Error exporting timetable", e)
             Toast.makeText(this, "Fehler beim Exportieren: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1358,12 +1376,29 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun showExportOptions(content: String) {
-        val options = arrayOf("Als Datei speichern", "In Zwischenablage kopieren")
-
+    private fun showExportOptions() {
+        val content = generateExportContent()
+        val options = listOf(
+            Pair("Als Datei speichern", R.drawable.ic_export_file),
+            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+        )
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            this,
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("Stundenplan exportieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
@@ -1402,11 +1437,27 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showImportOptions() {
-        val options = arrayOf("Aus Datei importieren", "Aus Zwischenablage einfügen")
-
+        val options = listOf(
+            Pair("Aus Datei importieren", R.drawable.ic_import_file),
+            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+        )
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            this,
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("Stundenplan importieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFile()
                     1 -> importFromClipboard()

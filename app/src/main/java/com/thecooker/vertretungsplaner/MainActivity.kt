@@ -138,6 +138,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main, menu)
+        menu.findItem(R.id.action_settings)?.setIcon(R.drawable.ic_gear)
         return true
     }
 

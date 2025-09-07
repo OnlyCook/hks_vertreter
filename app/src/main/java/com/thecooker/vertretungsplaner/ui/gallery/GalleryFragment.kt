@@ -57,7 +57,7 @@ import kotlin.math.abs
 import android.view.ViewGroup
 import android.view.Gravity
 import android.widget.LinearLayout
-import kotlin.math.min
+import androidx.appcompat.content.res.AppCompatResources
 
 data class CalendarPeriodData(
     val date: Date,
@@ -470,17 +470,7 @@ class GalleryFragment : Fragment() {
             showHamburgerMenu(it)
         }
 
-        binding.root.findViewById<Button>(R.id.btnPreviousWeek).apply {
-            text = ""
-            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_arrow_left, 0, 0, 0)
-            contentDescription = "Vorherige Woche"
-        }
-
-        binding.root.findViewById<Button>(R.id.btnNextWeek).apply {
-            text = ""
-            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_arrow_right, 0, 0, 0)
-            contentDescription = "Nächste Woche"
-        }
+        setupWeekButtons()
 
         setupSearchBar()
 
@@ -577,54 +567,75 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun showHamburgerMenu(view: View) {
-        val popup = PopupMenu(requireContext(), view)
-        popup.menuInflater.inflate(R.menu.menu_gallery, popup.menu)
+    private fun showHamburgerMenu(anchor: View) {
+        val popupMenu = PopupMenu(requireContext(), anchor)
 
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
+        popupMenu.menu.add(0, R.id.action_today, 0, "Heute").apply {
+            setIcon(R.drawable.ic_today)
+        }
+        popupMenu.menu.add(0, R.id.action_edit_timetable, 1, "Stundenplan bearbeiten").apply {
+            setIcon(R.drawable.ic_pencil)
+        }
+        popupMenu.menu.add(0, R.id.action_vacation, 2, "Ferien markieren").apply {
+            setIcon(R.drawable.ic_vacation)
+        }
+        popupMenu.menu.add(0, R.id.action_statistics, 3, "Statistiken").apply {
+            setIcon(R.drawable.ic_statistics)
+        }
+        popupMenu.menu.add(0, R.id.action_export, 4, "Exportieren").apply {
+            setIcon(R.drawable.ic_export)
+        }
+        popupMenu.menu.add(0, R.id.action_import, 5, "Importieren").apply {
+            setIcon(R.drawable.ic_import)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popupMenu)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Could not force show icons", e)
+        }
+
+        popupMenu.setOnMenuItemClickListener { menuItem ->
+            when (menuItem.itemId) {
                 R.id.action_today -> {
                     goToCurrentWeek()
                     true
                 }
-
                 R.id.action_edit_timetable -> {
                     toggleEditMode()
                     true
                 }
-
+                R.id.action_vacation -> {
+                    showMarkVacationDialog()
+                    true
+                }
                 R.id.action_statistics -> {
                     showStatistics()
                     true
                 }
-
-                R.id.action_vacation -> {
-                    if (!isDayView) showMarkVacationDialog()
-                    true
-                }
-
                 R.id.action_export -> {
                     showExportOptions()
                     true
                 }
-
                 R.id.action_import -> {
                     showImportOptions()
                     true
                 }
-
                 else -> false
             }
         }
-        popup.show()
+
+        popupMenu.show()
     }
 
     private fun showStatistics() {
         val stats = calculateStatistics()
         val message = buildString {
-            appendLine("Kalender Statistiken")
-            appendLine()
-
             appendLine("Nächste Termine:")
             appendLine("• Bis nächste Klausur: ${if (stats.daysUntilNextExam == -1) "Keine geplant" else "${stats.daysUntilNextExam} Tage"}")
             appendLine("• Bis nächste Hausaufgabe: ${if (stats.daysUntilNextHomework == -1) "Keine geplant" else "${stats.daysUntilNextHomework} Tage"}")
@@ -709,19 +720,35 @@ class GalleryFragment : Fragment() {
             }
 
             // check holidays
+            var isHoliday = false
+
+            // check manual user occasions
+            val userOccasions = getUserSpecialOccasionsForDate(checkDate.time)
+            userOccasions.forEach { occasion ->
+                if (occasion.contains("Feiertag", ignoreCase = true) ||
+                    occasion.contains("Ferientag", ignoreCase = true) ||
+                    occasion.contains("Bew. Feiertag", ignoreCase = true) ||
+                    occasion.contains("Bew. Ferientag", ignoreCase = true)) {
+                    isHoliday = true
+                }
+            }
+
+            // check calendar manager holidays
             calendarInfo?.let { info ->
-                if (info.isSpecialDay && (info.specialNote.contains(
-                        "Feiertag",
-                        ignoreCase = true
-                    ) ||
-                            info.specialNote.contains("Ferientag", ignoreCase = true))
-                ) {
-                    if (dayOffset >= 0 && daysUntilNextHoliday == Int.MAX_VALUE) {  // include today
-                        daysUntilNextHoliday = dayOffset
-                    }
-                    if (checkDate.get(Calendar.MONTH) == currentMonth && checkDate.get(Calendar.YEAR) == currentYear) {
-                        holidaysThisMonth++
-                    }
+                if (info.isSpecialDay && (info.specialNote.contains("Feiertag", ignoreCase = true) ||
+                            info.specialNote.contains("Ferientag", ignoreCase = true) ||
+                            info.specialNote.contains("Bew. Feiertag", ignoreCase = true) ||
+                            info.specialNote.contains("Bew. Ferientag", ignoreCase = true))) {
+                    isHoliday = true
+                }
+            }
+
+            if (isHoliday) {
+                if (dayOffset >= 0 && daysUntilNextHoliday == Int.MAX_VALUE) {
+                    daysUntilNextHoliday = dayOffset
+                }
+                if (checkDate.get(Calendar.MONTH) == currentMonth && checkDate.get(Calendar.YEAR) == currentYear) {
+                    holidaysThisMonth++
                 }
             }
 
@@ -766,74 +793,30 @@ class GalleryFragment : Fragment() {
     )
 
     private fun showMarkVacationDialog() {
-        val container = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-        }
+        val dialogView = layoutInflater.inflate(R.layout.dialog_mark_vacation, null)
 
-        val weeksSpinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(
-                requireContext(), android.R.layout.simple_spinner_item,
-                (1..8).map {
-                    when (it) {
-                        1 -> "1 Woche"
-                        else -> "$it Wochen"
-                    }
-                }).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val weeksSpinner = dialogView.findViewById<Spinner>(R.id.spinner_weeks)
+        val removeSwitch = dialogView.findViewById<Switch>(R.id.switch_remove_vacation)
+        val autoMarkButton = dialogView.findViewById<Button>(R.id.btn_auto_mark)
+        val clearAllButton = dialogView.findViewById<Button>(R.id.btn_clear_all)
+
+        weeksSpinner.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item,
+            (1..8).map {
+                when (it) {
+                    1 -> "1 Woche"
+                    else -> "$it Wochen"
+                }
             }
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
-
-        val removeSwitch = Switch(requireContext()).apply {
-            text = "Ferien entfernen"
-            textSize = 16f
-            setPadding(0, 16, 0, 16)
-        }
-
-        val buttonContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 32, 0, 16)
-        }
-
-        val autoMarkButton = Button(requireContext()).apply {
-            text = "Ferien automatisch markieren"
-            setPadding(24, 16, 24, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 16)
-            }
-        }
-
-        val clearAllButton = Button(requireContext()).apply {
-            text = "Alle Ferien löschen"
-            setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_light))
-            setTextColor(Color.WHITE)
-            setPadding(24, 16, 24, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        container.addView(TextView(requireContext()).apply {
-            text = "Anzahl Ferienwochen:"
-            textSize = 14f
-            setTextColor(Color.BLACK)
-        })
-        container.addView(weeksSpinner)
-        container.addView(removeSwitch)
-
-        buttonContainer.addView(autoMarkButton)
-        buttonContainer.addView(clearAllButton)
-        container.addView(buttonContainer)
 
         val mainDialog = AlertDialog.Builder(requireContext())
             .setTitle("Ferien verwalten")
             .setMessage("Markiert/entfernt Ferien ab der aktuellen Woche")
-            .setView(container)
-            .setPositiveButton("Markieren") { dialog, _ ->
+            .setView(dialogView)
+            .setPositiveButton("MARKIEREN") { dialog, _ ->
                 val weeksCount = weeksSpinner.selectedItemPosition + 1
                 if (removeSwitch.isChecked) {
                     removeVacationWeeks(weeksCount)
@@ -842,21 +825,26 @@ class GalleryFragment : Fragment() {
                 }
                 dialog.dismiss()
             }
-            .setNegativeButton("Abbrechen") { dialog, _ ->
+            .setNegativeButton("ABBRECHEN") { dialog, _ ->
                 dialog.dismiss()
             }
             .create()
+
+        removeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            val positiveButton = mainDialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            positiveButton.text = if (isChecked) "ENTFERNEN" else "MARKIEREN"
+        }
 
         clearAllButton.setOnClickListener {
             AlertDialog.Builder(requireContext())
                 .setTitle("Alle Ferien löschen")
                 .setMessage("Möchten Sie wirklich alle markierten Ferien löschen?")
-                .setPositiveButton("Ja") { innerDialog, _ ->
+                .setPositiveButton("JA") { innerDialog, _ ->
                     clearAllVacations()
                     innerDialog.dismiss()
-                    mainDialog.dismiss() // also close main dialog
+                    mainDialog.dismiss()
                 }
-                .setNegativeButton("Nein") { innerDialog, _ ->
+                .setNegativeButton("NEIN") { innerDialog, _ ->
                     innerDialog.dismiss()
                 }
                 .show()
@@ -1455,7 +1443,6 @@ class GalleryFragment : Fragment() {
 
         // lesson/time column header
         val timeHeader = createStyledCell("Stunde", isHeader = true, isLessonColumn = true, isDayView = true)
-        timeHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
         timeHeader.setOnClickListener { showAllLessonTimes() }
         headerRow.addView(timeHeader)
 
@@ -1478,16 +1465,14 @@ class GalleryFragment : Fragment() {
 
         val dayDate = SimpleDateFormat("dd.MM", Locale.GERMANY).format(currentDay.time)
         val dayHeader = createStyledCell("$dayName\n$dayDate", isHeader = true, isDayView = true)
-        dayHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
 
-        // check for today
+        // check for today and override styling after createStyledCell
         val today = Calendar.getInstance()
         val isToday = isSameDay(currentDay.time, today.time)
 
         if (isToday) {
-            dayHeader.setBackgroundColor(Color.YELLOW)
-        } else {
-            dayHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
+            dayHeader.background = createRoundedDrawable(Color.parseColor("#FFC107"))
+            dayHeader.setTextColor(Color.BLACK)
         }
 
         // check for notes and mark with asterisk
@@ -1523,20 +1508,28 @@ class GalleryFragment : Fragment() {
                 )
             }
 
-            // time column (lessons)
             val lessonStartTime = lessonTimes[lesson] ?: ""
             val lessonEndTime = lessonEndTimes[lesson] ?: ""
-            val timeText = "$lesson.\n$lessonStartTime - $lessonEndTime"
 
-            val timeCell = createStyledCell(timeText, isLessonColumn = true, isDayView = true)
-            timeCell.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
+            val timeCell = createStyledCell("", isLessonColumn = true, isDayView = true).apply {
+                val timeText = "$lesson.\n$lessonStartTime - $lessonEndTime"
+                val spannableText = SpannableString(timeText)
+                val lessonNumberEnd = timeText.indexOf('.') + 1
+                spannableText.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    0,
+                    lessonNumberEnd,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = spannableText
+            }
 
             if (isCurrentDay && isCurrentLesson(lesson, currentTime)) {
-                timeCell.setBackgroundColor(Color.YELLOW)
+                timeCell.background = createFlatRoundedDrawable("#FFC107")
+                timeCell.setTextColor(Color.BLACK)
             }
 
             timeCell.setOnClickListener { showLessonTimeDetails(lesson) }
-
             lessonRow.addView(timeCell)
 
             // day column
@@ -1774,6 +1767,10 @@ class GalleryFragment : Fragment() {
                     cell.text = cellText
                 }
             }
+        } else if (isEditMode) {
+            cellText = "＋"
+            cell.setTextColor(Color.GRAY)
+            cell.text = cellText
         }
 
         if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
@@ -1926,14 +1923,14 @@ class GalleryFragment : Fragment() {
             )
         }
 
-        // lesson number column header
-        val lessonHeader = createStyledCell("Std.", isHeader = true, isLessonColumn = true)
-        lessonHeader.setTypeface(null, Typeface.BOLD)
-        lessonHeader.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
-        lessonHeader.setOnClickListener { showAllLessonTimes() }
+        val lessonHeader = createStyledCell("Std.", isHeader = true, isLessonColumn = true).apply {
+            setTypeface(null, Typeface.BOLD)
+            background = createFlatRoundedDrawable("#0f5293")
+            setTextColor(Color.WHITE)
+            setOnClickListener { showAllLessonTimes() }
+        }
         headerRow.addView(lessonHeader)
 
-        // day headers with current day indicator
         val today = Calendar.getInstance()
 
         for (i in weekdays.indices) {
@@ -1943,16 +1940,18 @@ class GalleryFragment : Fragment() {
             }
 
             val dayHeader = createStyledCell(weekdaysShort[i], isHeader = true).apply {
-                setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_blue_bright))
-
                 setTypeface(null, Typeface.BOLD)
 
                 val isToday = isSameDay(currentWeekDay.time, today.time) &&
                         isSameWeek(currentWeekStart.time, today.time)
 
-                if (isToday) {
-                    setBackgroundColor(Color.YELLOW)
+                background = if (isToday) {
+                    createFlatRoundedDrawable("#FFC107")
+                } else {
+                    createFlatRoundedDrawable("#0f5293")
                 }
+
+                setTextColor(if (isToday) Color.BLACK else Color.WHITE)
 
                 var displayText = weekdaysShort[i]
                 if (shouldShowAsterisk(currentWeekDay.time)) {
@@ -2019,12 +2018,16 @@ class GalleryFragment : Fragment() {
             }
             occasionEditTexts.add(editText)
 
-            val removeButton = Button(requireContext()).apply {
-                setText("×")
+            val removeButton = ImageButton(requireContext()).apply {
+                setImageResource(R.drawable.ic_trash_can)
+                setColorFilter(Color.RED)
+                background = null
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                )
+                ).apply {
+                    marginStart = 8
+                }
                 setOnClickListener {
                     occasionsContainer.removeView(occasionLayout)
                     occasionEditTexts.remove(editText)
@@ -2179,7 +2182,6 @@ class GalleryFragment : Fragment() {
         val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
 
         for (lesson in 1..maxLessons) {
-            // break row if needed
             val breakMinutes = breakTimes[lesson - 1]
             if (breakMinutes != null && lesson > 1) {
                 createBreakRow(breakMinutes, isCurrentWeek, currentTime, lesson - 1)
@@ -2192,17 +2194,23 @@ class GalleryFragment : Fragment() {
                 )
             }
 
-            // lesson number column
-            val timeCell = createStyledCell("$lesson", isLessonColumn = true)
-            timeCell.setTypeface(null, Typeface.BOLD)
-            timeCell.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.darker_gray))
+            val timeCell = createStyledCell("$lesson", isLessonColumn = true).apply {
+                setTypeface(null, Typeface.BOLD)
 
-            // check for current lesson and highlight
-            if (isCurrentWeek && isCurrentLesson(lesson, currentTime) && !isCurrentBreakTime(lesson - 1, currentTime)) {
-                timeCell.setBackgroundColor(Color.YELLOW)
+                val isCurrentLessonTime = isCurrentWeek &&
+                        isCurrentLesson(lesson, currentTime) &&
+                        !isCurrentBreakTime(lesson - 1, currentTime)
+
+                background = if (isCurrentLessonTime) {
+                    createFlatRoundedDrawable("#FFC107")
+                } else {
+                    createFlatRoundedDrawable("#ECEFF1")
+                }
+
+                setTextColor(if (isCurrentLessonTime) Color.BLACK else Color.parseColor("#37474F"))
+
+                setOnClickListener { showLessonTimeDetails(lesson) }
             }
-
-            timeCell.setOnClickListener { showLessonTimeDetails(lesson) }
             lessonRow.addView(timeCell)
 
             // day columns
@@ -2317,7 +2325,7 @@ class GalleryFragment : Fragment() {
                 )
             )
         } else if (isEditMode) {
-            cellText = "+"
+            cellText = "＋"
             cell.setTextColor(Color.GRAY)
         }
 
@@ -2479,8 +2487,8 @@ class GalleryFragment : Fragment() {
             Pair("Klausur", examColor),
             Pair("Feiertag/Ferien", Color.LTGRAY),
             Pair("Entfällt", getColorBlindFriendlyColor("red")),
+            Pair("Betreuung", getColorBlindFriendlyColor("orange")),
             Pair("Vertretung", getColorBlindFriendlyColor("green")),
-            Pair("Betreuung", getColorBlindFriendlyColor("orange"))
         )
 
         val firstRow = LinearLayout(requireContext()).apply {
@@ -2739,22 +2747,25 @@ class GalleryFragment : Fragment() {
     ): TextView {
         return TextView(requireContext()).apply {
             this.text = text
-            textSize = if (isHeader) 14f else if (isDayView) 12f else if (isLessonColumn) 13f else 10f
+            textSize = if (isHeader) 14f else if (isDayView) 12f else 10f
             gravity = Gravity.CENTER
-
             if (isDayView) {
                 if (isHeader && isLessonColumn) {
+                    // "Zeit"
                     setPadding(16, 24, 16, 24)
-                    textSize = 13f
+                    textSize = 12f
                     setTypeface(null, Typeface.BOLD)
                 } else if (isHeader) {
+                    // day name header
                     setPadding(20, 24, 20, 24)
-                    textSize = 13f
+                    textSize = 12f
                     setTypeface(null, Typeface.BOLD)
                 } else if (isLessonColumn) {
+                    // time cells on left
                     setPadding(12, 24, 12, 24)
-                    textSize = 12f
+                    textSize = 11f
                 } else {
+                    // main subject content cells
                     setPadding(16, 24, 16, 24)
                     textSize = 12f
                 }
@@ -2762,43 +2773,44 @@ class GalleryFragment : Fragment() {
                 setPadding(8, 16, 8, 16)
             }
 
-            setTextColor(if (isHeader) Color.WHITE else Color.parseColor("#212121"))
-
-            val drawable = if (isHeader) {
-                createModernHeaderDrawable()
+            if (isHeader) {
+                background = createRoundedDrawable(Color.parseColor("#0f5293"))
+                setTextColor(Color.WHITE)
+            } else if (isLessonColumn) {
+                background = createRoundedDrawable(Color.parseColor("#ECEFF1"))
+                setTextColor(Color.parseColor("#37474F"))
             } else {
-                createModernCellDrawable()
-            }
-            background = drawable
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                elevation = if (isHeader) 6f else 2f
+                background = createRoundedDrawable(Color.WHITE)
+                setTextColor(Color.parseColor("#212121"))
             }
 
             if (isDayView) {
                 if (isLessonColumn) {
                     if (isHeader) {
+                        // "Zeit"
                         width = 160
                         height = 160
                     } else {
+                        // lesson/time cells
                         width = 160
                         height = 150
                     }
                 } else {
                     if (isHeader) {
+                        // day header
                         width = 500
                         height = 160
                     } else {
+                        // subject cells
                         width = 500
                         height = 150
                     }
                 }
-
                 layoutParams = TableRow.LayoutParams(
                     if (isLessonColumn) 160 else 500,
                     if (isHeader) 160 else 150
                 ).apply {
-                    setMargins(4, 4, 4, 4)
+                    setMargins(3, 3, 3, 3)
                     gravity = Gravity.CENTER_VERTICAL
                 }
             } else {
@@ -2809,34 +2821,18 @@ class GalleryFragment : Fragment() {
                     width = cellWidth
                     height = if (isHeader) 80 else cellHeight
                 }
-
                 layoutParams = TableRow.LayoutParams().apply {
-                    setMargins(4, 4, 4, 4)
+                    setMargins(3, 3, 3, 3)
                     if (!isLessonColumn) weight = 1f
                 }
             }
         }
     }
 
-    private fun createModernHeaderDrawable(): GradientDrawable {
+    private fun createFlatRoundedDrawable(colorHex: String): GradientDrawable {
         return GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            colors = intArrayOf(
-                Color.parseColor("#1976D2"),
-                Color.parseColor("#1565C0")
-            )
-            orientation = GradientDrawable.Orientation.TOP_BOTTOM
-            cornerRadius = 16f
-            setStroke(0, Color.TRANSPARENT)
-        }
-    }
-
-    private fun createModernCellDrawable(): GradientDrawable {
-        return GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(Color.WHITE)
-            cornerRadius = 12f
-            setStroke(1, Color.parseColor("#E0E0E0"))
+            setColor(Color.parseColor(colorHex))
+            cornerRadius = 8f
         }
     }
 
@@ -3372,11 +3368,30 @@ class GalleryFragment : Fragment() {
 
     private fun showExportOptions() {
         val content = exportTimetableData()
-        val options = arrayOf("Als Datei speichern", "In Zwischenablage kopieren")
+
+        val options = listOf(
+            Pair("Als Datei speichern", R.drawable.ic_export_file),
+            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+        )
+
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
 
         AlertDialog.Builder(requireContext())
             .setTitle("Stundenplan exportieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
@@ -3387,11 +3402,29 @@ class GalleryFragment : Fragment() {
     }
 
     private fun showImportOptions() {
-        val options = arrayOf("Aus Datei importieren", "Aus Zwischenablage einfügen")
+        val options = listOf(
+            Pair("Aus Datei importieren", R.drawable.ic_import_file),
+            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+        )
+
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
 
         AlertDialog.Builder(requireContext())
             .setTitle("Stundenplan importieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFile()
                     1 -> importFromClipboard()
@@ -4110,12 +4143,28 @@ class GalleryFragment : Fragment() {
             val textView = indicator as TextView
 
             val text = if (isRightSwipe) {
-                if (isDayView) "← Vorheriger Tag" else "← Vorherige Woche"
+                if (isDayView) "Vorheriger Tag" else "Vorherige Woche"
             } else {
-                if (isDayView) "Nächster Tag →" else "Nächste Woche →"
+                if (isDayView) "Nächster Tag" else "Nächste Woche"
             }
 
             textView.text = text
+
+            val arrowIcon = if (isRightSwipe) {
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_back)
+            } else {
+                ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_forward)
+            }
+
+            arrowIcon?.setTint(Color.parseColor("#0f5293"))
+
+            if (isRightSwipe) {
+                textView.setCompoundDrawablesWithIntrinsicBounds(arrowIcon, null, null, null)
+            } else {
+                textView.setCompoundDrawablesWithIntrinsicBounds(null, null, arrowIcon, null)
+            }
+
+            textView.compoundDrawablePadding = 16
 
             val scale = 0.7f + (scaledProgress * 0.3f)
             indicator.scaleX = scale
@@ -4161,7 +4210,7 @@ class GalleryFragment : Fragment() {
 
         val indicator = TextView(requireContext()).apply {
             textSize = 18f
-            setTextColor(Color.parseColor("#1976D2"))
+            setTextColor(Color.parseColor("#0f5293"))
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(40, 20, 40, 20)
@@ -4174,7 +4223,7 @@ class GalleryFragment : Fragment() {
                 shape = GradientDrawable.RECTANGLE
                 setColor(Color.parseColor("#F0FFFFFF"))
                 cornerRadius = 35f
-                setStroke(4, Color.parseColor("#1976D2"))
+                setStroke(4, Color.parseColor("#0f5293"))
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                     elevation = 15f
                 }
@@ -4254,6 +4303,32 @@ class GalleryFragment : Fragment() {
         binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor).setOnTouchListener { _, event ->
             gestureDetector?.onTouchEvent(event) ?: false
         }
+    }
+
+    private fun setupWeekButtons() {
+        val prevButton = binding.root.findViewById<Button>(R.id.btnPreviousWeek)
+        val nextButton = binding.root.findViewById<Button>(R.id.btnNextWeek)
+
+        fun setArrow(button: Button, iconRes: Int, sizeDp: Int, paddingDp: Int) {
+            val drawable = AppCompatResources.getDrawable(requireContext(), iconRes)
+            val sizePx = (sizeDp * resources.displayMetrics.density).toInt()
+            drawable?.setBounds(0, 0, sizePx, sizePx)
+
+            button.text = ""
+            button.setCompoundDrawables(
+                if (iconRes == R.drawable.ic_arrow_left) drawable else null,
+                null,
+                if (iconRes == R.drawable.ic_arrow_right) drawable else null,
+                null
+            )
+            button.compoundDrawablePadding = (-paddingDp * resources.displayMetrics.density).toInt()
+        }
+
+        setArrow(prevButton, R.drawable.ic_arrow_left, sizeDp = 32, paddingDp = 0)
+        prevButton.contentDescription = "Vorherige Woche"
+
+        setArrow(nextButton, R.drawable.ic_arrow_right, sizeDp = 32, paddingDp = 0)
+        nextButton.contentDescription = "Nächste Woche"
     }
 
     override fun onResume() {

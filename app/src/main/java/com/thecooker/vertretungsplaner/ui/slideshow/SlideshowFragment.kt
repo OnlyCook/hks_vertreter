@@ -445,8 +445,23 @@ class SlideshowFragment : Fragment() {
 
     private fun showMenuPopup() {
         val popup = PopupMenu(requireContext(), btnMenu)
-        popup.menu.add(0, 1, 0, "Exportieren")
-        popup.menu.add(0, 2, 0, "Importieren")
+        popup.menu.add(0, 1, 0, "Exportieren").apply {
+            setIcon(R.drawable.ic_export)
+        }
+        popup.menu.add(0, 2, 0, "Importieren").apply {
+            setIcon(R.drawable.ic_import)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Could not force show icons", e)
+        }
 
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -1109,11 +1124,30 @@ class SlideshowFragment : Fragment() {
 
     private fun showExportOptions() {
         val content = exportHomeworkData()
-        val options = arrayOf("Als Datei speichern", "In Zwischenablage kopieren")
+
+        val options = listOf(
+            Pair("Als Datei speichern", R.drawable.ic_export_file),
+            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+        )
+
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
 
         AlertDialog.Builder(requireContext())
             .setTitle("Hausaufgaben exportieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
@@ -1124,11 +1158,29 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun showImportOptions() {
-        val options = arrayOf("Aus Datei importieren", "Aus Zwischenablage importieren")
+        val options = listOf(
+            Pair("Aus Datei importieren", R.drawable.ic_import_file),
+            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+        )
+
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
 
         AlertDialog.Builder(requireContext())
             .setTitle("Hausaufgaben importieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFilePicker()
                     1 -> importFromClipboard()
