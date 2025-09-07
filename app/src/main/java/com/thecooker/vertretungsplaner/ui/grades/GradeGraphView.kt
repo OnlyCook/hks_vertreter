@@ -3,11 +3,9 @@ package com.thecooker.vertretungsplaner.ui.grades
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
-import android.util.Log
 import android.view.View
 import java.text.DecimalFormat
 import kotlin.math.max
-import kotlin.math.min
 
 class GradeGraphView @JvmOverloads constructor(
     context: Context,
@@ -122,10 +120,10 @@ class GradeGraphView @JvmOverloads constructor(
         canvas.drawPath(path, linePaint)
 
         // Draw month labels with intelligent spacing
-        drawMonthLabels(canvas, width, height, graphWidth)
+        drawMonthLabels(canvas, height, graphWidth)
     }
 
-    private fun drawMonthLabels(canvas: Canvas, width: Float, height: Float, graphWidth: Float) {
+    private fun drawMonthLabels(canvas: Canvas, height: Float, graphWidth: Float) {
         if (gradeHistory.isEmpty()) return
 
         val labelsToShow = getLabelsToShow()
@@ -164,14 +162,12 @@ class GradeGraphView @JvmOverloads constructor(
 
         // Always show first and last
         indicesToShow.add(0)
-        if (totalEntries > 1) {
-            indicesToShow.add(totalEntries - 1)
-        }
+        indicesToShow.add(totalEntries - 1)
 
         // Calculate how many more we can add (we already have first and last)
         val remainingSlots = maxLabels - indicesToShow.size
 
-        if (remainingSlots > 0 && totalEntries > 2) {
+        if (remainingSlots > 0) {
             // Distribute the remaining slots evenly across the middle entries
             val step = (totalEntries - 1).toFloat() / (maxLabels - 1)
 

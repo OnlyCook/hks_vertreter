@@ -2,13 +2,14 @@ package com.thecooker.vertretungsplaner
 
 import android.content.Intent
 import android.content.SharedPreferences
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
+import androidx.core.net.toUri
+import androidx.core.content.edit
 
 class SetupActivity : AppCompatActivity() {
     private lateinit var spinnerBildungsgang: Spinner
@@ -179,7 +180,7 @@ class SetupActivity : AppCompatActivity() {
 
     private fun openEmailClient() {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:theactualcooker@gmail.com")
+            data = "mailto:theactualcooker@gmail.com".toUri()
             putExtra(Intent.EXTRA_SUBJECT, "HKS Vertreter - Fehlender Bildungsgang/Klasse")
             putExtra(Intent.EXTRA_TEXT, "Hallo,\n\nmir fehlt folgender Bildungsgang/Klasse in der App:\n\n" +
                     "Bildungsgang: \nKlasse: ")
@@ -187,7 +188,7 @@ class SetupActivity : AppCompatActivity() {
 
         try {
             startActivity(Intent.createChooser(emailIntent, "E-Mail-App auswählen"))
-        } catch (ex: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Keine E-Mail-App gefunden", Toast.LENGTH_SHORT).show()
         }
     }
@@ -196,11 +197,11 @@ class SetupActivity : AppCompatActivity() {
         val selectedBildungsgang = spinnerBildungsgang.selectedItem.toString()
         val selectedKlasse = spinnerKlasse.selectedItem.toString()
 
-        val editor = sharedPreferences.edit()
-        editor.putBoolean("setup_completed", true)
-        editor.putString("selected_bildungsgang", selectedBildungsgang)
-        editor.putString("selected_klasse", selectedKlasse)
-        editor.apply()
+        sharedPreferences.edit {
+            putBoolean("setup_completed", true)
+            putString("selected_bildungsgang", selectedBildungsgang)
+            putString("selected_klasse", selectedKlasse)
+        }
 
         Toast.makeText(this, "Auswahl gespeichert: $selectedBildungsgang - $selectedKlasse", Toast.LENGTH_SHORT).show()
     }

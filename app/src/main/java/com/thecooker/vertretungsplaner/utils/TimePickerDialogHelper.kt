@@ -3,7 +3,6 @@ package com.thecooker.vertretungsplaner.utils
 import android.app.TimePickerDialog
 import android.content.Context
 import android.widget.TimePicker
-import java.util.*
 
 object TimePickerDialogHelper {
 
@@ -61,7 +60,7 @@ object TimePickerDialogHelper {
         return try {
             val parts = timeString.split(":")
             Pair(parts[0].toInt(), parts[1].toInt())
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Pair(6, 0) // default to 6:00
         }
     }

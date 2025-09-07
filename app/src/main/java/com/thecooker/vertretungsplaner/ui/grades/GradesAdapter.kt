@@ -3,7 +3,6 @@ package com.thecooker.vertretungsplaner.ui.grades
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -39,10 +38,10 @@ class GradesAdapter(
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
         val useComplexGrading = bildungsgang == "BG" && sharedPreferences.getBoolean("use_simple_grading", false).not()
 
-        holder.textSubjectInfo.text = "${grade.subject} | Lehrer: ${grade.teacher}"
+        "${grade.subject} | Lehrer: ${grade.teacher}".also { holder.textSubjectInfo.text = it }
 
-        holder.textOralGrade.text = "MN: ${grade.getFormattedOralGrade(currentHalfyear)}"
-        holder.textWrittenGrade.text = "SN: ${grade.getFormattedWrittenAverage(currentHalfyear)}"
+        "MN: ${grade.getFormattedOralGrade(currentHalfyear)}".also { holder.textOralGrade.text = it }
+        "SN: ${grade.getFormattedWrittenAverage(currentHalfyear)}".also { holder.textWrittenGrade.text = it }
 
         val finalGradeText = if (useComplexGrading) {
             val requirements = getSubjectRequirements(grade.subject)
@@ -51,7 +50,7 @@ class GradesAdapter(
             val simpleFinalGrade = grade.getSimpleFinalGrade(currentHalfyear)
             if (simpleFinalGrade != null) DecimalFormat("0.0").format(simpleFinalGrade) else "-"
         }
-        holder.textFinalGrade.text = "Endgültig: $finalGradeText"
+        "Endgültig: $finalGradeText".also { holder.textFinalGrade.text = it }
 
         val goalGrade = sharedPreferences.getFloat("goal_grade", 0f)
         val actualFinalGrade = if (useComplexGrading) {
@@ -102,7 +101,7 @@ class ExamGradesAdapter(
         val exam = examList[position]
 
         val dateFormat = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.GERMANY)
-        holder.textExamInfo.text = "${exam.subject} | ${dateFormat.format(exam.date)}"
+        "${exam.subject} | ${dateFormat.format(exam.date)}".also { holder.textExamInfo.text = it }
 
         val gradeText = if (exam.mark != null) {
             "${exam.mark} Pkt (${exam.getGradeFromMark()})"

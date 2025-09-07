@@ -13,7 +13,6 @@ import androidx.work.WorkerParameters
 import com.thecooker.vertretungsplaner.MainActivity
 import com.thecooker.vertretungsplaner.R
 import com.thecooker.vertretungsplaner.ui.slideshow.SlideshowFragment
-import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -67,7 +66,7 @@ class HomeworkReminderWorker(
         val upcomingHomework = getUpcomingHomework(homeworkList, reminderHours)
 
         if (upcomingHomework.isNotEmpty()) {
-            showDueDateNotification(upcomingHomework, reminderHours)
+            showDueDateNotification(upcomingHomework)
         } else {
             L.d(TAG, "No upcoming homework found for due date reminder")
         }
@@ -138,8 +137,7 @@ class HomeworkReminderWorker(
     }
 
     private fun showDueDateNotification(
-        homework: List<SlideshowFragment.HomeworkEntry>,
-        reminderHours: Int
+        homework: List<SlideshowFragment.HomeworkEntry>
     ) {
         createNotificationChannel(CHANNEL_ID_DUE_DATE, "Hausaufgaben Fälligkeitserinnerung", "Erinnerungen vor Fälligkeit")
 

@@ -7,9 +7,10 @@ import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.core.content.edit
 
 // singleton class to manage calendar data
-class CalendarDataManager private constructor(private val context: Context) {
+class CalendarDataManager private constructor(context: Context) {
 
     companion object {
         @Volatile
@@ -45,22 +46,6 @@ class CalendarDataManager private constructor(private val context: Context) {
             val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
             return format.format(date)
         }
-
-        fun getDisplayDateWithWeekday(): String {
-            val format = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY)
-            return format.format(date)
-        }
-
-        fun getShortWeekday(): String {
-            val format = SimpleDateFormat("EEE", Locale.GERMANY)
-            return format.format(date)
-        }
-
-        fun hasExams(): Boolean = exams.isNotEmpty()
-
-        fun hasSpecialEvent(): Boolean = isSpecialDay
-
-        fun hasAnyEvent(): Boolean = hasExams() || hasSpecialEvent()
     }
 
     init {
@@ -78,123 +63,22 @@ class CalendarDataManager private constructor(private val context: Context) {
         Log.d(TAG, "Added calendar day: ${dayInfo.getDisplayDate()}")
     }
 
-    fun updateExamsForDay(date: Date, exams: List<ExamFragment.ExamEntry>) {
-        val dateKey = SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date)
-        val existingDay = calendarData[dateKey]
-
-        if (existingDay != null) {
-            val updatedDay = existingDay.copy(exams = exams)
-            calendarData[dateKey] = updatedDay
-            saveCalendarData()
-            Log.d(TAG, "Updated exams for ${existingDay.getDisplayDate()}: ${exams.size} exams")
-        }
-    }
-
     fun getCalendarInfoForDate(date: Date): CalendarDayInfo? {
         val format = SimpleDateFormat("yyyyMMdd", Locale.GERMANY)
         val dateKey = format.format(date)
         return calendarData[dateKey]
     }
 
-    fun getCalendarInfoForDateString(dateString: String): CalendarDayInfo? {
-        try {
-            val inputFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-            val date = inputFormat.parse(dateString) ?: return null
-            return getCalendarInfoForDate(date)
-        } catch (e: Exception) {
-            Log.w(TAG, "Error parsing date string: $dateString", e)
-            return null
-        }
-    }
-
     fun getAllCalendarDays(): List<CalendarDayInfo> {
         return calendarData.values.sortedBy { it.date }
-    }
-
-    fun getCalendarDataForWeek(targetDate: Date): List<CalendarDayInfo> {
-        val calendar = Calendar.getInstance(Locale.GERMANY)
-        calendar.time = targetDate
-
-        // get monday of this week
-        calendar.firstDayOfWeek = Calendar.MONDAY
-        calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-        val weekStart = calendar.time
-
-        // get sunday of this week
-        calendar.add(Calendar.DAY_OF_WEEK, 6)
-        val weekEnd = calendar.time
-
-        return getCalendarDataForRange(weekStart, weekEnd)
-    }
-
-    fun getCurrentWeekData(): List<CalendarDayInfo> {
-        return getCalendarDataForWeek(Date())
-    }
-
-    fun getCalendarDataForRange(startDate: Date, endDate: Date): List<CalendarDayInfo> {
-        return calendarData.values.filter { dayInfo ->
-            val dayStart = Calendar.getInstance().apply {
-                time = dayInfo.date
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.time
-
-            val rangeStart = Calendar.getInstance().apply {
-                time = startDate
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.time
-
-            val rangeEnd = Calendar.getInstance().apply {
-                time = endDate
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-                set(Calendar.SECOND, 59)
-                set(Calendar.MILLISECOND, 999)
-            }.time
-
-            dayStart >= rangeStart && dayStart <= rangeEnd
-        }.sortedBy { it.date }
-    }
-
-    fun getExamsForDateRange(startDate: Date, endDate: Date): List<CalendarDayInfo> {
-        return getCalendarDataForRange(startDate, endDate).filter { it.hasExams() }
-    }
-
-    fun getSpecialDaysForRange(startDate: Date, endDate: Date): List<CalendarDayInfo> {
-        return getCalendarDataForRange(startDate, endDate).filter { it.hasSpecialEvent() }
-    }
-
-    fun getUpcomingExams(daysAhead: Int = 30): List<CalendarDayInfo> {
-        val today = Date()
-        val calendar = Calendar.getInstance()
-        calendar.time = today
-        calendar.add(Calendar.DAY_OF_YEAR, daysAhead)
-        val futureDate = calendar.time
-
-        return getExamsForDateRange(today, futureDate)
-    }
-
-    fun getTodaysExams(): CalendarDayInfo? {
-        val today = Date()
-        val dayInfo = getCalendarInfoForDate(today)
-        return if (dayInfo?.hasExams() == true) dayInfo else null
-    }
-
-    fun hasEventsOnDate(date: Date): Boolean {
-        return getCalendarInfoForDate(date)?.hasAnyEvent() ?: false
     }
 
     fun saveCalendarData() {
         try {
             val json = Gson().toJson(calendarData)
-            sharedPreferences.edit()
-                .putString("calendar_data", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("calendar_data", json)
+            }
             Log.d(TAG, "Calendar data saved successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error saving calendar data", e)
@@ -213,23 +97,6 @@ class CalendarDataManager private constructor(private val context: Context) {
             Log.e(TAG, "Error loading calendar data", e)
             calendarData.clear()
         }
-    }
-
-    fun exportCalendarData(): String {
-        val sb = StringBuilder()
-        sb.appendLine("# Calendar Data Export")
-        sb.appendLine("# Format: Date|DayOfWeek|Month|Year|Content|IsSpecialDay|SpecialNote")
-
-        for (dayInfo in getAllCalendarDays()) {
-            val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(dayInfo.date)
-            val contentStr = dayInfo.content.replace("\n", "\\n").replace("|", "\\|")
-            val specialNoteStr = dayInfo.specialNote.replace("\n", "\\n").replace("|", "\\|")
-            val isSpecialStr = if (dayInfo.isSpecialDay) "1" else "0"
-
-            sb.appendLine("$dateStr|${dayInfo.dayOfWeek}|${dayInfo.month}|${dayInfo.year}|$contentStr|$isSpecialStr|$specialNoteStr")
-        }
-
-        return sb.toString()
     }
 
     fun importCalendarData(content: String) {
@@ -288,17 +155,5 @@ class CalendarDataManager private constructor(private val context: Context) {
         val dateKey = SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date)
         calendarData.remove(dateKey)
         Log.d(TAG, "Removed calendar day: ${SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(date)}")
-    }
-
-    fun getCalendarStats(): Map<String, Int> {
-        val stats = mutableMapOf<String, Int>()
-        val allDays = getAllCalendarDays()
-
-        stats["total_days"] = allDays.size
-        stats["exam_days"] = allDays.count { it.hasExams() }
-        stats["special_days"] = allDays.count { it.hasSpecialEvent() }
-        stats["total_exams"] = allDays.sumOf { it.exams.size }
-
-        return stats
     }
 }

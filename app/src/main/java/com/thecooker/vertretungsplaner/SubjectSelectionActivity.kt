@@ -1,20 +1,26 @@
 package com.thecooker.vertretungsplaner
 
-import android.app.Activity
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import com.thecooker.vertretungsplaner.L
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -237,9 +243,9 @@ class SubjectSelectionActivity : AppCompatActivity() {
 
     private fun saveAlternativeRoomsToPrefs(alternativeRoomsMap: Map<String, List<String>>) {
         val json = com.google.gson.Gson().toJson(alternativeRoomsMap)
-        sharedPreferences.edit()
-            .putString("alternative_rooms", json)
-            .apply()
+        sharedPreferences.edit {
+            putString("alternative_rooms", json)
+        }
         L.d(TAG, "Saved alternative rooms: $json")
     }
 
@@ -504,13 +510,11 @@ class SubjectSelectionActivity : AppCompatActivity() {
         updateCounters()
     }
 
-    private fun updateSearchResults(searchText: String) {
-        if (searchText.isEmpty()) {
-            tvSearchResults.visibility = View.GONE
-        } else {
-            tvSearchResults.visibility = View.VISIBLE
-            tvSearchResults.text = "${filteredSubjectTriplets.size} Ergebnisse für '$searchText'"
-        }
+    private fun updateSearchResults(searchText: String) = if (searchText.isEmpty()) {
+        tvSearchResults.visibility = View.GONE
+    } else {
+        tvSearchResults.visibility = View.VISIBLE
+        "${filteredSubjectTriplets.size} Ergebnisse für '$searchText'".also { tvSearchResults.text = it }
     }
 
     private fun setupListeners() {
@@ -551,7 +555,7 @@ class SubjectSelectionActivity : AppCompatActivity() {
 
         btnCancel.setOnClickListener {
             L.d(TAG, "Selection cancelled by user")
-            setResult(Activity.RESULT_CANCELED)
+            setResult(RESULT_CANCELED)
             finish()
         }
     }
@@ -757,7 +761,7 @@ class SubjectSelectionActivity : AppCompatActivity() {
             putExtra(EXTRA_TEACHERS, teachers)
             putExtra(EXTRA_ROOMS, rooms)
         }
-        setResult(Activity.RESULT_OK, intent)
+        setResult(RESULT_OK, intent)
         finish()
     }
 

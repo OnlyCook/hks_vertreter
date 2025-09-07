@@ -7,22 +7,16 @@ import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 object ExamManager {
     private val examList = mutableListOf<ExamFragment.ExamEntry>()
 
-    fun addExam(exam: ExamFragment.ExamEntry) {
-        examList.add(exam)
-    }
-
     fun setExams(exams: List<ExamFragment.ExamEntry>) {
         examList.clear()
         examList.addAll(exams)
     }
 
-    fun getExams(): List<ExamFragment.ExamEntry> = examList.toList()
-
     private fun parseDateFromString(dateStr: String): Date? {
         return try {
             val sdf = SimpleDateFormat("yyyyMMdd", Locale.GERMANY)
             sdf.parse(dateStr)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

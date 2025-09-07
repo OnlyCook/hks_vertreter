@@ -1,5 +1,6 @@
 package com.thecooker.vertretungsplaner.ui.slideshow
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.ClipData
@@ -26,13 +27,13 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.R
 import java.io.File
-import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.core.content.edit
 
 class SlideshowFragment : Fragment() {
 
@@ -65,7 +66,6 @@ class SlideshowFragment : Fragment() {
 
     // file pickers for import and export
     private lateinit var filePickerLauncher: ActivityResultLauncher<Intent>
-    private lateinit var exportLauncher: ActivityResultLauncher<Intent>
 
     private val lessonTimes = mapOf(
         1 to "07:30", 2 to "08:15", 3 to "09:30", 4 to "10:15", 5 to "11:15",
@@ -86,8 +86,8 @@ class SlideshowFragment : Fragment() {
         var hasTextContent: Boolean = false
     ) {
         fun getDueDateString(): String {
-            val now = Calendar.getInstance()
-            val dueCalendar = Calendar.getInstance().apply { time = dueDate }
+            Calendar.getInstance()
+            Calendar.getInstance().apply { time = dueDate }
 
             val daysDiff = TimeUnit.MILLISECONDS.toDays(
                 Calendar.getInstance().apply {
@@ -132,13 +132,12 @@ class SlideshowFragment : Fragment() {
                 daysDiff == -1L -> "gestern fällig"
                 daysDiff > 1 -> {
                     val weeks = daysDiff / 7
-                    if (weeks > 0) "fällig in ${weeks} Woche${if (weeks > 1) "n" else ""}"
-                    else "fällig in ${daysDiff} Tag${if (daysDiff > 1) "en" else ""}"
+                    if (weeks > 0) "fällig in $weeks Woche${if (weeks > 1) "n" else ""}"
+                    else "fällig in $daysDiff Tag${"en"}"
                 }
                 else -> {
                     val daysPast = -daysDiff
-                    if (daysPast == 1L) "gestern fällig"
-                    else "vor ${daysPast} Tag${if (daysPast > 1) "en" else ""} fällig"
+                    "vor $daysPast Tag${if (daysPast > 1) "en" else ""} fällig"
                 }
             }
 
@@ -304,6 +303,7 @@ class SlideshowFragment : Fragment() {
         return view
     }
 
+    @SuppressLint("InflateParams")
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -345,6 +345,7 @@ class SlideshowFragment : Fragment() {
         cleanupHandler.removeCallbacks(cleanupRunnable)
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -352,7 +353,7 @@ class SlideshowFragment : Fragment() {
             data?.data?.let { uri ->
                 val content = sharedPreferences.getString("temp_export_content", "") ?: ""
                 saveToSelectedFile(uri, content)
-                sharedPreferences.edit().remove("temp_export_content").apply()
+                sharedPreferences.edit { remove("temp_export_content") }
             }
         }
     }
@@ -413,19 +414,6 @@ class SlideshowFragment : Fragment() {
             },
             onHomeworkViewed = { homework ->
                 showHomeworkDetailDialog(homework)
-            },
-            onChecklistItemToggled = { homework, item, isCompleted ->
-                item.isCompleted = isCompleted
-                val wasAutoCompleted = homework.updateChecklistCompletion()
-                if (wasAutoCompleted) {
-                    recyclerView.post {
-                        val position = homeworkList.indexOf(homework)
-                        if (position != -1) {
-                            adapter.notifyItemChanged(position)
-                        }
-                    }
-                }
-                saveHomework()
             }
         )
 
@@ -493,7 +481,7 @@ class SlideshowFragment : Fragment() {
         var selectedDate = editHomework?.dueDate ?: Date()
         var selectedLessonNumber: Int? = editHomework?.lessonNumber
 
-        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+        sharedPreferences.getBoolean("has_scanned_document", false)
         val availableSubjects = getAvailableSubjects()
         val hasTimetableData = availableSubjects.isNotEmpty()
 
@@ -549,7 +537,7 @@ class SlideshowFragment : Fragment() {
         switchAutoHomework.setOnCheckedChangeListener { _, isChecked ->
             // save preference only when creating new hw and auto fill disabled
             if (editHomework == null && switchAutoHomework.isEnabled) {
-                sharedPreferences.edit().putBoolean(PREFS_AUTO_HOMEWORK, isChecked).apply()
+                sharedPreferences.edit { putBoolean(PREFS_AUTO_HOMEWORK, isChecked) }
             }
 
             if (isChecked && switchAutoHomework.isEnabled) {
@@ -736,7 +724,7 @@ class SlideshowFragment : Fragment() {
                     // confirmation for recommended lesson
                     AlertDialog.Builder(requireContext())
                         .setTitle("Stunde vorschlagen")
-                        .setMessage("Du hast ${selectedSubject} an diesem Tag in der ${suggestedLesson}. Stunde. Soll diese automatisch ausgewählt werden?")
+                        .setMessage("Du hast $selectedSubject an diesem Tag in der ${suggestedLesson}. Stunde. Soll diese automatisch ausgewählt werden?")
                         .setPositiveButton("Ja") { _, _ ->
                             onDateSelected(newDate, suggestedLesson)
                         }
@@ -755,10 +743,10 @@ class SlideshowFragment : Fragment() {
 
         // if able show days with today marked in []
         if (subjectSchedule.isNotEmpty()) {
-            val availableDays = subjectSchedule.keys.map { dayIndex ->
+            val availableDays = subjectSchedule.keys.joinToString(", ") { dayIndex ->
                 val dayName = getWeekdayName(dayIndex)
                 if (dayIndex == todayIndex) "[$dayName]" else dayName
-            }.joinToString(", ")
+            }
             datePickerDialog.setTitle("$selectedSubject: $availableDays")
         }
 
@@ -840,23 +828,6 @@ class SlideshowFragment : Fragment() {
         val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
         button.text = format.format(date)
         button.visibility = View.VISIBLE
-    }
-
-    private fun showDatePicker(currentDate: Date, onDateSelected: (Date) -> Unit) {
-        val calendar = Calendar.getInstance().apply { time = currentDate }
-
-        DatePickerDialog(
-            requireContext(),
-            { _, year, month, day ->
-                val newDate = Calendar.getInstance().apply {
-                    set(year, month, day)
-                }.time
-                onDateSelected(newDate)
-            },
-            calendar.get(Calendar.YEAR),
-            calendar.get(Calendar.MONTH),
-            calendar.get(Calendar.DAY_OF_MONTH)
-        ).show()
     }
 
     private fun addHomework(subject: String, dueDate: Date, lessonNumber: Int?, content: String) {
@@ -1073,15 +1044,15 @@ class SlideshowFragment : Fragment() {
 
     private fun saveHomework() {
         val json = Gson().toJson(homeworkList)
-        sharedPreferences.edit()
-            .putString(PREFS_HOMEWORK_LIST, json)
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_HOMEWORK_LIST, json)
+        }
     }
 
     private fun loadHomework() {
         val json = sharedPreferences.getString(PREFS_HOMEWORK_LIST, "[]")
         val type = object : TypeToken<MutableList<HomeworkEntry>>() {}.type
-        val loadedList: MutableList<HomeworkEntry> = Gson().fromJson(json, type) ?: mutableListOf<HomeworkEntry>()
+        val loadedList: MutableList<HomeworkEntry> = Gson().fromJson(json, type) ?: mutableListOf()
 
         homeworkList.clear()
         homeworkList.addAll(loadedList)
@@ -1096,7 +1067,7 @@ class SlideshowFragment : Fragment() {
     private fun updateHomeworkCount() {
         val uncompletedCount = homeworkList.count { !it.isCompleted }
         val totalCount = homeworkList.size
-        tvHomeworkCount.text = "$uncompletedCount / $totalCount Hausaufgaben"
+        "$uncompletedCount / $totalCount Hausaufgaben".also { tvHomeworkCount.text = it }
     }
 
     private fun cleanupCompletedAndOverdueHomework() {
@@ -1203,11 +1174,11 @@ class SlideshowFragment : Fragment() {
             type = "text/plain"
             putExtra(Intent.EXTRA_TITLE, filename)
         }
-        sharedPreferences.edit().putString("temp_export_content", content).apply()
+        sharedPreferences.edit { putString("temp_export_content", content) }
 
         try {
             startActivityForResult(intent, EXPORT_FILE_REQUEST_CODE)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1335,7 +1306,7 @@ class SlideshowFragment : Fragment() {
         if (schedule.isEmpty()) return null
 
         val today = Calendar.getInstance()
-        val todayIndex = when (today.get(Calendar.DAY_OF_WEEK)) {
+        when (today.get(Calendar.DAY_OF_WEEK)) {
             Calendar.MONDAY -> 0
             Calendar.TUESDAY -> 1
             Calendar.WEDNESDAY -> 2
@@ -1424,7 +1395,8 @@ class SlideshowFragment : Fragment() {
 
                     if (startDate != null && endDate != null) {
                         if (date.after(startDate) && date.before(endDate) ||
-                            date.equals(startDate) || date.equals(endDate)) {
+                            date == startDate || date == endDate
+                        ) {
                             L.d(TAG, "Date $dateStr is in vacation period")
                             return true
                         }

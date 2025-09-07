@@ -1,38 +1,41 @@
 package com.thecooker.vertretungsplaner.ui.grades
 
+import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
+import android.text.InputFilter
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.PopupMenu
+import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.R
-import com.thecooker.vertretungsplaner.data.ExamManager
-import com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.round
 import kotlin.collections.filter
 import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
-import android.R.attr.gravity
 import androidx.core.content.ContextCompat
 import com.thecooker.vertretungsplaner.L
 import com.thecooker.vertretungsplaner.utils.BackupManager
+import androidx.core.content.edit
 
 class GradesFragment : Fragment() {
 
@@ -191,7 +194,6 @@ class GradesFragment : Fragment() {
     )
 
     companion object {
-        private const val TAG = "GradesFragment"
         private const val PREFS_ORAL_GRADES = "oral_grades"
         private const val PREFS_ORAL_GRADES_HISTORY = "oral_grades_history"
         private const val PREFS_WRITTEN_GRADES_HISTORY = "written_grades_history"
@@ -243,17 +245,18 @@ class GradesFragment : Fragment() {
         return view
     }
 
+    @SuppressLint("InflateParams")
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
         val loadingText = loadingView.findViewById<TextView>(android.R.id.text1)
         loadingText.apply {
-            text = "Noten werden geladen..."
+            "Noten werden geladen...".also { text = it }
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
             setTextColor(resources.getColor(android.R.color.black))
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTypeface(null, Typeface.BOLD)
         }
 
         recyclerView.visibility = View.GONE
@@ -292,12 +295,12 @@ class GradesFragment : Fragment() {
 
     private fun setupExportLauncher() {
         exportLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
+            if (result.resultCode == Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
                     val tempContent = sharedPreferences.getString("temp_export_content", "")
                     if (tempContent?.isNotEmpty() == true) {
                         saveToSelectedFile(uri, tempContent)
-                        sharedPreferences.edit().remove("temp_export_content").apply()
+                        sharedPreferences.edit { remove("temp_export_content") }
                     } else {
                         try {
                             requireContext().contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -315,7 +318,7 @@ class GradesFragment : Fragment() {
 
     private fun showNoTimetableMessage(view: View) {
         val messageView = TextView(requireContext()).apply {
-            text = "Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen."
+            "Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.".also { text = it }
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -448,9 +451,9 @@ class GradesFragment : Fragment() {
         val useSimple = sharedPreferences.getBoolean(PREFS_USE_SIMPLE_GRADING, false)
         val newValue = !useSimple
 
-        sharedPreferences.edit()
-            .putBoolean(PREFS_USE_SIMPLE_GRADING, newValue)
-            .apply()
+        sharedPreferences.edit {
+            putBoolean(PREFS_USE_SIMPLE_GRADING, newValue)
+        }
 
         val message = if (newValue) "Einfacher Modus aktiviert" else "Abitur-Modus aktiviert"
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
@@ -494,10 +497,10 @@ class GradesFragment : Fragment() {
             isTextVisible = !isTextVisible
             if (isTextVisible) {
                 scrollViewTextData.visibility = View.VISIBLE
-                btnShowTextData.text = "Textdaten ausblenden"
+                "Textdaten ausblenden".also { btnShowTextData.text = it }
             } else {
                 scrollViewTextData.visibility = View.GONE
-                btnShowTextData.text = "Textdaten anzeigen"
+                "Textdaten anzeigen".also { btnShowTextData.text = it }
             }
         }
 
@@ -539,7 +542,7 @@ class GradesFragment : Fragment() {
         val oralGradesHistoryType = object : TypeToken<Map<String, Map<Int, Double>>>() {}.type
         val oralGradesHistoryLoaded: Map<String, Map<Int, Double>> = try {
             Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -547,7 +550,7 @@ class GradesFragment : Fragment() {
         val writtenGradesHistoryType = object : TypeToken<Map<String, Map<Int, List<Double>>>>() {}.type
         val writtenGradesHistoryLoaded: Map<String, Map<Int, List<Double>>> = try {
             Gson().fromJson(writtenGradesHistoryJson, writtenGradesHistoryType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -555,7 +558,7 @@ class GradesFragment : Fragment() {
         val ratiosType = object : TypeToken<Map<String, Pair<Int, Int>>>() {}.type
         val ratios: Map<String, Pair<Int, Int>> = try {
             Gson().fromJson(ratiosJson, ratiosType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -563,7 +566,7 @@ class GradesFragment : Fragment() {
         val pruefungsfaecherType = object : TypeToken<Map<String, Boolean>>() {}.type
         val pruefungsfaecher: Map<String, Boolean> = try {
             Gson().fromJson(pruefungsfaecherJson, pruefungsfaecherType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -571,7 +574,7 @@ class GradesFragment : Fragment() {
         val pruefungsergebnisseType = object : TypeToken<Map<String, Double>>() {}.type
         val pruefungsergebnisse: Map<String, Double> = try {
             Gson().fromJson(pruefungsergebnisseJson, pruefungsergebnisseType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -579,7 +582,7 @@ class GradesFragment : Fragment() {
         val selectedHalfYearsType = object : TypeToken<Map<String, Int>>() {}.type
         val selectedHalfYears: Map<String, Int> = try {
             Gson().fromJson(selectedHalfYearsJson, selectedHalfYearsType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -587,7 +590,7 @@ class GradesFragment : Fragment() {
         val examType = object : TypeToken<List<ExamFragment.ExamEntry>>() {}.type
         val examList: List<ExamFragment.ExamEntry> = try {
             Gson().fromJson(examJson, examType) ?: emptyList()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
 
@@ -660,7 +663,7 @@ class GradesFragment : Fragment() {
             val requirements = getSubjectRequirements(it.subject)
             it.getFinalGrade(requirements, currentHalfyear) != null
         }
-        tvGradeCount.text = "$subjectsWithGrades / $totalSubjects Fächer benotet"
+        "$subjectsWithGrades / $totalSubjects Fächer benotet".also { tvGradeCount.text = it }
     }
 
     private fun updateFinalGrade() {
@@ -696,7 +699,7 @@ class GradesFragment : Fragment() {
                     "$totalCourseCount/44 Kurse (ÜBERSCHRITTEN!)"
                 }
 
-                tvFinalGrade.text = "Gesamtnote: ${DecimalFormat("0.0").format(average)} ($courseCountText)"
+                "Gesamtnote: ${DecimalFormat("0.0").format(average)} ($courseCountText)".also { tvFinalGrade.text = it }
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
@@ -707,7 +710,7 @@ class GradesFragment : Fragment() {
                 }
                 tvFinalGrade.setTextColor(resources.getColor(color))
             } else {
-                tvFinalGrade.text = "Gesamtnote: -"
+                "Gesamtnote: -".also { tvFinalGrade.text = it }
                 tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
             }
         } else { // simple grading logic
@@ -735,7 +738,7 @@ class GradesFragment : Fragment() {
 
             if (currentGrades.isNotEmpty()) {
                 val average = currentGrades.average()
-                tvFinalGrade.text = "Gesamtnote: ${DecimalFormat("0.0").format(average)}"
+                "Gesamtnote: ${DecimalFormat("0.0").format(average)}".also { tvFinalGrade.text = it }
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
@@ -745,7 +748,7 @@ class GradesFragment : Fragment() {
                 }
                 tvFinalGrade.setTextColor(resources.getColor(color))
             } else {
-                tvFinalGrade.text = "Gesamtnote: -"
+                "Gesamtnote: -".also { tvFinalGrade.text = it }
                 tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
             }
         }
@@ -766,11 +769,11 @@ class GradesFragment : Fragment() {
         val recyclerExamGrades = dialogView.findViewById<RecyclerView>(R.id.recyclerExamGrades)
 
         tvSubjectName.text = subject.subject
-        tvTeacher.text = "Lehrer: ${subject.teacher}"
-        tvOralGrade.text = "Mündlich: ${subject.getFormattedOralGrade(currentHalfyear)}"
-        tvWrittenAverage.text = "Schriftlich: ${subject.getFormattedWrittenAverage(currentHalfyear)}"
-        tvRatio.text = "Verhältnis: ${subject.ratio.first}% : ${subject.ratio.second}%"
-        tvFinalGrade.text = "Endnote: ${subject.getFormattedFinalGrade(requirements, currentHalfyear)}"
+        "Lehrer: ${subject.teacher}".also { tvTeacher.text = it }
+        "Mündlich: ${subject.getFormattedOralGrade(currentHalfyear)}".also { tvOralGrade.text = it }
+        "Schriftlich: ${subject.getFormattedWrittenAverage(currentHalfyear)}".also { tvWrittenAverage.text = it }
+        "Verhältnis: ${subject.ratio.first}% : ${subject.ratio.second}%".also { tvRatio.text = it }
+        "Endnote: ${subject.getFormattedFinalGrade(requirements, currentHalfyear)}".also { tvFinalGrade.text = it }
 
         val examJson = sharedPreferences.getString("exam_list", "[]")
         val examType = object : TypeToken<List<ExamFragment.ExamEntry>>() {}.type
@@ -846,11 +849,11 @@ class GradesFragment : Fragment() {
             tvHalfYearsCount.visibility = View.GONE
 
             val pruefungsfachCard =
-                dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardPruefungsfach)
+                dialogView.findViewById<CardView>(R.id.cardPruefungsfach)
             pruefungsfachCard?.visibility = View.GONE
 
             val halfYearsCard =
-                dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardHalfYears)
+                dialogView.findViewById<CardView>(R.id.cardHalfYears)
             halfYearsCard?.visibility = View.GONE
         }
 
@@ -872,7 +875,7 @@ class GradesFragment : Fragment() {
         val gradeSystemSwitchesType = object : TypeToken<Map<String, Boolean>>() {}.type
         val gradeSystemSwitches: Map<String, Boolean> = try {
             Gson().fromJson(gradeSystemSwitchesJson, gradeSystemSwitchesType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -880,7 +883,7 @@ class GradesFragment : Fragment() {
         val gradeRangeSwitchesType = object : TypeToken<Map<String, Boolean>>() {}.type
         val gradeRangeSwitches: Map<String, Boolean> = try {
             Gson().fromJson(gradeRangeSwitchesJson, gradeRangeSwitchesType) ?: emptyMap()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyMap()
         }
 
@@ -903,8 +906,8 @@ class GradesFragment : Fragment() {
         val originalOralDecimal = currentOralGrade?.let { snapToValidGrade(it) }
         val originalPruefungDecimal = currentPruefungsergebnis?.let { snapToValidGrade(it) }
 
-        var currentOralDisplayValue: String = ""
-        var currentPruefungDisplayValue: String = ""
+        var currentOralDisplayValue: String
+        var currentPruefungDisplayValue: String
 
         seekBarOral.max = 100
         seekBarWritten.max = 100
@@ -931,11 +934,11 @@ class GradesFragment : Fragment() {
             if (useComplexGrading) {
                 if (requirements.mustCountAllHalfYears) {
                     val allGrades = subject.getHalfYearGrades(currentHalfyear)
-                    tvHalfYearsCount.text = "Alle Halbjahre zählen (${allGrades.size})"
+                    "Alle Halbjahre zählen (${allGrades.size})".also { tvHalfYearsCount.text = it }
                 } else {
                     val minHalfYears = requirements.minRequiredHalfYears
                     val count = maxOf(minHalfYears, seekBarHalfYears.progress)
-                    tvHalfYearsCount.text = "$count beste Halbjahre zählen"
+                    "$count beste Halbjahre zählen".also { tvHalfYearsCount.text = it }
                 }
             }
         }
@@ -953,27 +956,27 @@ class GradesFragment : Fragment() {
             if (isPointSystem) {
                 // points mode -> max 2 characters, no commas
                 editOralGrade.filters = arrayOf(
-                    android.text.InputFilter.LengthFilter(2),
-                    android.text.InputFilter { source, _, _, _, _, _ ->
+                    InputFilter.LengthFilter(2),
+                    InputFilter { source, _, _, _, _, _ ->
                         if (source.contains(",") || source.contains(".")) "" else null
                     }
                 )
-                editOralGrade.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                editOralGrade.inputType = InputType.TYPE_CLASS_NUMBER
 
                 if (useComplexGrading) {
                     editPruefungsergebnis.filters = arrayOf(
-                        android.text.InputFilter.LengthFilter(2),
-                        android.text.InputFilter { source, _, _, _, _, _ ->
+                        InputFilter.LengthFilter(2),
+                        InputFilter { source, _, _, _, _, _ ->
                             if (source.contains(",") || source.contains(".")) "" else null
                         }
                     )
-                    editPruefungsergebnis.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                    editPruefungsergebnis.inputType = InputType.TYPE_CLASS_NUMBER
                 }
             } else {
                 // decimal mode -> max 4 characters, only one comma/dot allowed
                 editOralGrade.filters = arrayOf(
-                    android.text.InputFilter.LengthFilter(4),
-                    android.text.InputFilter { source, start, end, dest, dstart, dend ->
+                    InputFilter.LengthFilter(4),
+                    InputFilter { source, start, end, dest, dstart, dend ->
                         val input = source.subSequence(start, end).toString()
                         val existing = dest.subSequence(0, dstart).toString() +
                                 dest.subSequence(dend, dest.length).toString()
@@ -997,12 +1000,12 @@ class GradesFragment : Fragment() {
                     }
                 )
                 editOralGrade.inputType =
-                    android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
 
                 if (useComplexGrading) {
                     editPruefungsergebnis.filters = arrayOf(
-                        android.text.InputFilter.LengthFilter(4),
-                        android.text.InputFilter { source, start, end, dest, dstart, dend ->
+                        InputFilter.LengthFilter(4),
+                        InputFilter { source, start, end, dest, dstart, dend ->
                             val input = source.subSequence(start, end).toString()
                             val existing = dest.subSequence(0, dstart).toString() +
                                     dest.subSequence(dend, dest.length).toString()
@@ -1027,7 +1030,7 @@ class GradesFragment : Fragment() {
                         }
                     )
                     editPruefungsergebnis.inputType =
-                        android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
                 }
             }
         }
@@ -1057,7 +1060,7 @@ class GradesFragment : Fragment() {
         val updateRatioDisplay = {
             val oral = seekBarOral.progress
             val written = seekBarWritten.progress
-            tvRatioDisplay.text = "Verhältnis: $oral% : $written%"
+            "Verhältnis: $oral% : $written%".also { tvRatioDisplay.text = it }
         }
         updateRatioDisplay()
 
@@ -1104,9 +1107,9 @@ class GradesFragment : Fragment() {
                         val nextBetterPoints = (currentPoints + 1).coerceAtMost(15)
 
                         if (nextBetterPoints != currentPoints) {
-                            tvGradeRange.text = "≈ $currentPoints-$nextBetterPoints Punkte"
+                            "≈ $currentPoints-$nextBetterPoints Punkte".also { tvGradeRange.text = it }
                         } else {
-                            tvGradeRange.text = "≈ $currentPoints Punkte"
+                            "≈ $currentPoints Punkte".also { tvGradeRange.text = it }
                         }
                         tvGradeRange.visibility = View.VISIBLE
                     } else {
@@ -1117,13 +1120,13 @@ class GradesFragment : Fragment() {
                         val betterGrade = if (nextBetterPoints <= 15) convertPointsToGrade(nextBetterPoints) else snappedGrade
 
                         if (betterGrade != snappedGrade) {
-                            tvGradeRange.text = "≈ ${DecimalFormat("0.0").format(snappedGrade)}-${DecimalFormat("0.0").format(betterGrade)}"
+                            "≈ ${DecimalFormat("0.0").format(snappedGrade)}-${DecimalFormat("0.0").format(betterGrade)}".also { tvGradeRange.text = it }
                         } else {
-                            tvGradeRange.text = "≈ ${DecimalFormat("0.0").format(snappedGrade)}"
+                            "≈ ${DecimalFormat("0.0").format(snappedGrade)}".also { tvGradeRange.text = it }
                         }
                         tvGradeRange.visibility = View.VISIBLE
                     }
-                } catch (e: NumberFormatException) {
+                } catch (_: NumberFormatException) {
                     tvGradeRange.visibility = View.GONE
                 }
             } else {
@@ -1134,15 +1137,15 @@ class GradesFragment : Fragment() {
         val saveSwitchStates = {
             val updatedGradeSystemSwitches = gradeSystemSwitches.toMutableMap()
             updatedGradeSystemSwitches[subject.subject] = isPointSystem
-            sharedPreferences.edit()
-                .putString(PREFS_SUBJECT_GRADE_SYSTEM, Gson().toJson(updatedGradeSystemSwitches))
-                .apply()
+            sharedPreferences.edit {
+                putString(PREFS_SUBJECT_GRADE_SYSTEM, Gson().toJson(updatedGradeSystemSwitches))
+            }
 
             val updatedGradeRangeSwitches = gradeRangeSwitches.toMutableMap()
             updatedGradeRangeSwitches[subject.subject] = isRangeMode
-            sharedPreferences.edit()
-                .putString(PREFS_SUBJECT_RANGE_MODE, Gson().toJson(updatedGradeRangeSwitches))
-                .apply()
+            sharedPreferences.edit {
+                putString(PREFS_SUBJECT_RANGE_MODE, Gson().toJson(updatedGradeRangeSwitches))
+            }
         }
 
         val updateHints = {
@@ -1287,7 +1290,7 @@ class GradesFragment : Fragment() {
                                 newOralGrade = snapToValidGrade(grade)
                             }
                         }
-                    } catch (e: NumberFormatException) {
+                    } catch (_: NumberFormatException) {
                         newOralGrade = null
                     }
                 }
@@ -1305,7 +1308,7 @@ class GradesFragment : Fragment() {
                                 newPruefungsergebnis = snapToValidGrade(grade)
                             }
                         }
-                    } catch (e: NumberFormatException) {
+                    } catch (_: NumberFormatException) {
                         newPruefungsergebnis = null
                     }
                 }
@@ -1352,7 +1355,7 @@ class GradesFragment : Fragment() {
         val oralGradesHistoryType = object : TypeToken<MutableMap<String, MutableMap<Int, Double?>>>() {}.type
         val oralGradesHistory: MutableMap<String, MutableMap<Int, Double?>> = try {
             Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1370,7 +1373,7 @@ class GradesFragment : Fragment() {
         val ratiosType = object : TypeToken<MutableMap<String, Pair<Int, Int>>>() {}.type
         val ratios: MutableMap<String, Pair<Int, Int>> = try {
             Gson().fromJson(ratiosJson, ratiosType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1380,7 +1383,7 @@ class GradesFragment : Fragment() {
         val pruefungsfaecherType = object : TypeToken<MutableMap<String, Boolean>>() {}.type
         val pruefungsfaecher: MutableMap<String, Boolean> = try {
             Gson().fromJson(pruefungsfaecherJson, pruefungsfaecherType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1390,7 +1393,7 @@ class GradesFragment : Fragment() {
         val pruefungsergebnisseType = object : TypeToken<MutableMap<String, Double>>() {}.type
         val pruefungsergebnisse: MutableMap<String, Double> = try {
             Gson().fromJson(pruefungsergebnisseJson, pruefungsergebnisseType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1404,19 +1407,19 @@ class GradesFragment : Fragment() {
         val selectedHalfYearsType = object : TypeToken<MutableMap<String, Int>>() {}.type
         val selectedHalfYearsMap: MutableMap<String, Int> = try {
             Gson().fromJson(selectedHalfYearsJson, selectedHalfYearsType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
         selectedHalfYearsMap[subject] = selectedHalfYears
 
-        sharedPreferences.edit()
-            .putString(PREFS_ORAL_GRADES_HISTORY, Gson().toJson(oralGradesHistory))
-            .putString(PREFS_GRADE_RATIOS, Gson().toJson(ratios))
-            .putString(PREFS_PRUEFUNGSFAECHER, Gson().toJson(pruefungsfaecher))
-            .putString(PREFS_PRUEFUNGSERGEBNISSE, Gson().toJson(pruefungsergebnisse))
-            .putString(PREFS_SELECTED_HALF_YEARS, Gson().toJson(selectedHalfYearsMap))
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_ORAL_GRADES_HISTORY, Gson().toJson(oralGradesHistory))
+                .putString(PREFS_GRADE_RATIOS, Gson().toJson(ratios))
+                .putString(PREFS_PRUEFUNGSFAECHER, Gson().toJson(pruefungsfaecher))
+                .putString(PREFS_PRUEFUNGSERGEBNISSE, Gson().toJson(pruefungsergebnisse))
+                .putString(PREFS_SELECTED_HALF_YEARS, Gson().toJson(selectedHalfYearsMap))
+        }
     }
 
     private fun showStartNewHalfyearDialog() {
@@ -1476,7 +1479,7 @@ class GradesFragment : Fragment() {
         val oralGradesHistoryType = object : TypeToken<MutableMap<String, MutableMap<Int, Double?>>>() {}.type
         val oralGradesHistory: MutableMap<String, MutableMap<Int, Double?>> = try {
             Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1484,7 +1487,7 @@ class GradesFragment : Fragment() {
         val writtenGradesHistoryType = object : TypeToken<MutableMap<String, MutableMap<Int, List<Double>>>>() {}.type
         val writtenGradesHistory: MutableMap<String, MutableMap<Int, List<Double>>> = try {
             Gson().fromJson(writtenGradesHistoryJson, writtenGradesHistoryType) ?: mutableMapOf()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             mutableMapOf()
         }
 
@@ -1514,23 +1517,23 @@ class GradesFragment : Fragment() {
             }
         }
 
-        sharedPreferences.edit()
-            .putString(PREFS_ORAL_GRADES_HISTORY, Gson().toJson(oralGradesHistory))
-            .putString(PREFS_WRITTEN_GRADES_HISTORY, Gson().toJson(writtenGradesHistory))
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_ORAL_GRADES_HISTORY, Gson().toJson(oralGradesHistory))
+                .putString(PREFS_WRITTEN_GRADES_HISTORY, Gson().toJson(writtenGradesHistory))
+        }
 
-        sharedPreferences.edit()
-            .remove(PREFS_ORAL_GRADES)
-            .apply()
+        sharedPreferences.edit {
+            remove(PREFS_ORAL_GRADES)
+        }
 
         val newHalfyear = currentHalfyear + 1
-        sharedPreferences.edit()
-            .putInt(PREFS_CURRENT_HALFYEAR, newHalfyear)
-            .apply()
+        sharedPreferences.edit {
+            putInt(PREFS_CURRENT_HALFYEAR, newHalfyear)
+        }
 
-        sharedPreferences.edit()
-            .remove("exam_list")
-            .apply()
+        sharedPreferences.edit {
+            remove("exam_list")
+        }
 
         loadGrades()
         updateFinalGrade()
@@ -1561,9 +1564,9 @@ class GradesFragment : Fragment() {
             }
         }
 
-        sharedPreferences.edit()
-            .putString(PREFS_GRADE_HISTORY, Gson().toJson(history))
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_GRADE_HISTORY, Gson().toJson(history))
+        }
     }
 
     private fun showSetGoalGradeDialog() {
@@ -1571,7 +1574,7 @@ class GradesFragment : Fragment() {
 
         val editText = EditText(requireContext()).apply {
             setText(DecimalFormat("0.0").format(currentGoal))
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             hint = "1.0 - 6.0"
         }
 
@@ -1583,15 +1586,15 @@ class GradesFragment : Fragment() {
                 try {
                     val goalGrade = editText.text.toString().replace(",", ".").toFloat()
                     if (goalGrade >= 1.0f && goalGrade <= 6.0f) {
-                        sharedPreferences.edit()
-                            .putFloat(PREFS_GOAL_GRADE, goalGrade)
-                            .apply()
+                        sharedPreferences.edit {
+                            putFloat(PREFS_GOAL_GRADE, goalGrade)
+                        }
                         updateFinalGrade()
                         Toast.makeText(requireContext(), "Ziel-Note gespeichert", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(requireContext(), "Bitte gib eine Note zwischen 1.0 und 6.0 ein", Toast.LENGTH_SHORT).show()
                     }
-                } catch (e: NumberFormatException) {
+                } catch (_: NumberFormatException) {
                     Toast.makeText(requireContext(), "Ungültige Eingabe", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -1604,9 +1607,9 @@ class GradesFragment : Fragment() {
             .setTitle("Graph zurücksetzen")
             .setMessage("WARNUNG: Dies wird alle deine gespeicherten Notenverlaufsdaten permanent löschen. Diese Aktion kann nicht rückgängig gemacht werden!")
             .setPositiveButton("Ja, Graph löschen") { _, _ ->
-                sharedPreferences.edit()
-                    .remove(PREFS_GRADE_HISTORY)
-                    .apply()
+                sharedPreferences.edit {
+                    remove(PREFS_GRADE_HISTORY)
+                }
                 Toast.makeText(requireContext(), "Graph wurde zurückgesetzt", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Abbrechen", null)
@@ -1728,11 +1731,11 @@ class GradesFragment : Fragment() {
             putExtra(Intent.EXTRA_TITLE, filename)
         }
 
-        sharedPreferences.edit().putString("temp_export_content", content).apply()
+        sharedPreferences.edit {putString("temp_export_content", content) }
 
         try {
             exportLauncher.launch(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1743,7 +1746,7 @@ class GradesFragment : Fragment() {
                 outputStream.write(content.toByteArray())
             }
             Toast.makeText(requireContext(), "Export erfolgreich gespeichert", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(requireContext(), "Fehler beim Speichern der Datei", Toast.LENGTH_LONG).show()
         }
     }
@@ -1858,11 +1861,11 @@ class GradesFragment : Fragment() {
         val currentTeachers = sharedPreferences.getString("student_teachers", "") ?: ""
         val currentRooms = sharedPreferences.getString("student_rooms", "") ?: ""
 
-        sharedPreferences.edit()
-            .putString(PREFS_GRADES_SUBJECTS, currentSubjects)
-            .putString(PREFS_GRADES_TEACHERS, currentTeachers)
-            .putString(PREFS_GRADES_ROOMS, currentRooms)
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_GRADES_SUBJECTS, currentSubjects)
+                .putString(PREFS_GRADES_TEACHERS, currentTeachers)
+                .putString(PREFS_GRADES_ROOMS, currentRooms)
+        }
     }
 
     private fun showSubjectChangeWarning() {
@@ -1916,11 +1919,11 @@ class GradesFragment : Fragment() {
         val gradesTeachers = sharedPreferences.getString(PREFS_GRADES_TEACHERS, "") ?: ""
         val gradesRooms = sharedPreferences.getString(PREFS_GRADES_ROOMS, "") ?: ""
 
-        sharedPreferences.edit()
-            .putString("student_subjects", gradesSubjects)
-            .putString("student_teachers", gradesTeachers)
-            .putString("student_rooms", gradesRooms)
-            .apply()
+        sharedPreferences.edit {
+            putString("student_subjects", gradesSubjects)
+                .putString("student_teachers", gradesTeachers)
+                .putString("student_rooms", gradesRooms)
+        }
 
         hasSubjectChanges = false
         hideSubjectChangeWarning()
@@ -1928,17 +1931,17 @@ class GradesFragment : Fragment() {
     }
 
     private fun clearAllGradeData() {
-        sharedPreferences.edit()
-            .remove(PREFS_ORAL_GRADES_HISTORY)
-            .remove(PREFS_WRITTEN_GRADES_HISTORY)
-            .remove(PREFS_GRADE_RATIOS)
-            .remove(PREFS_PRUEFUNGSFAECHER)
-            .remove(PREFS_PRUEFUNGSERGEBNISSE)
-            .remove(PREFS_SELECTED_HALF_YEARS)
-            .remove(PREFS_GOAL_GRADE)
-            .remove(PREFS_GRADE_HISTORY)
-            .remove(PREFS_ORAL_GRADES)
-            .apply()
+        sharedPreferences.edit {
+            remove(PREFS_ORAL_GRADES_HISTORY)
+                .remove(PREFS_WRITTEN_GRADES_HISTORY)
+                .remove(PREFS_GRADE_RATIOS)
+                .remove(PREFS_PRUEFUNGSFAECHER)
+                .remove(PREFS_PRUEFUNGSERGEBNISSE)
+                .remove(PREFS_SELECTED_HALF_YEARS)
+                .remove(PREFS_GOAL_GRADE)
+                .remove(PREFS_GRADE_HISTORY)
+                .remove(PREFS_ORAL_GRADES)
+        }
     }
 
     private fun getGradesSubjects(): List<String> {

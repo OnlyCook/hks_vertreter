@@ -144,7 +144,7 @@ object WorkScheduler {
         return try {
             val parts = timeString.split(":")
             Pair(parts[0].toInt(), parts[1].toInt())
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             L.w(TAG, "Failed to parse time: $timeString, using default 06:00")
             Pair(6, 0) // Default to 6:00 AM
         }
@@ -316,52 +316,5 @@ object WorkScheduler {
     fun cancelExamReminder(context: Context) {
         L.d(TAG, "Canceling exam reminder work")
         WorkManager.getInstance(context).cancelUniqueWork(ExamReminderWorker.WORK_NAME_EXAM_REMINDER)
-    }
-
-    // Update the cancelAllWork function to include exam reminders
-    fun cancelAllWork(context: Context) {
-        L.d(TAG, "Canceling all background work")
-        WorkManager.getInstance(context).cancelAllWork()
-    }
-
-    // Update the getWorkStatus function to include exam reminder status
-    fun getWorkStatus(context: Context): Triple<Boolean, Boolean, Boolean> {
-        val workManager = WorkManager.getInstance(context)
-
-        val autoUpdateInfo = try {
-            workManager.getWorkInfosForUniqueWork(AutoUpdateWorker.WORK_NAME).get()
-        } catch (e: Exception) {
-            L.w(TAG, "Could not get auto update work info", e)
-            emptyList()
-        }
-
-        val changeNotificationInfo = try {
-            workManager.getWorkInfosForUniqueWork(AutoUpdateWorker.CHANGE_NOTIFICATION_WORK).get()
-        } catch (e: Exception) {
-            L.w(TAG, "Could not get change notification work info", e)
-            emptyList()
-        }
-
-        val examReminderInfo = try {
-            workManager.getWorkInfosForUniqueWork(ExamReminderWorker.WORK_NAME_EXAM_REMINDER).get()
-        } catch (e: Exception) {
-            L.w(TAG, "Could not get exam reminder work info", e)
-            emptyList()
-        }
-
-        val autoUpdateRunning = autoUpdateInfo.any {
-            it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-        }
-
-        val changeNotificationRunning = changeNotificationInfo.any {
-            it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-        }
-
-        val examReminderRunning = examReminderInfo.any {
-            it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-        }
-
-        L.d(TAG, "Work status - Auto update: $autoUpdateRunning, Change notification: $changeNotificationRunning, Exam reminder: $examReminderRunning")
-        return Triple(autoUpdateRunning, changeNotificationRunning, examReminderRunning)
     }
 }

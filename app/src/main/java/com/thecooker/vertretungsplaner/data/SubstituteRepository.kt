@@ -2,11 +2,8 @@ package com.thecooker.vertretungsplaner.data
 
 import android.content.Context
 import android.util.Log
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.*
 
 object SubstituteRepository {
     private const val TAG = "SubstituteRepository"
@@ -32,17 +29,6 @@ object SubstituteRepository {
 
     fun getSubstituteEntriesByDate(context: Context, targetDate: String): List<SubstituteEntry> {
         return getSubstituteEntries(context).filter { it.date == targetDate }
-    }
-
-    fun getSubstituteEntriesForToday(context: Context): List<SubstituteEntry> {
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        return getSubstituteEntriesByDate(context, today)
-    }
-
-    fun getSubstituteEntriesForDateRange(context: Context, startDate: String, endDate: String): List<SubstituteEntry> {
-        return getSubstituteEntries(context).filter { entry ->
-            entry.date >= startDate && entry.date <= endDate
-        }
     }
 
     private fun getSelectedClass(context: Context): String {
@@ -89,14 +75,5 @@ object SubstituteRepository {
         }
 
         return entries
-    }
-
-    // "2025.08.25" -> "2025-08-25"
-    fun normalizeDate(date: String): String {
-        return if (date.contains('.')) {
-            date.replace('.', '-')
-        } else {
-            date
-        }
     }
 }

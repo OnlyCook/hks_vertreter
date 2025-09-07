@@ -3,11 +3,8 @@ package com.thecooker.vertretungsplaner
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
-import com.thecooker.vertretungsplaner.L
 import android.view.Menu
 import android.view.MenuItem
-import androidx.appcompat.app.AlertDialog
-import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.navigation.NavigationView
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
@@ -18,7 +15,6 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.thecooker.vertretungsplaner.databinding.ActivityMainBinding
 import androidx.appcompat.app.AppCompatDelegate
-import android.content.Context
 import android.os.Build
 import android.content.pm.ActivityInfo
 

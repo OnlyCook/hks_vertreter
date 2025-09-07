@@ -5,28 +5,11 @@ import android.content.SharedPreferences
 import com.thecooker.vertretungsplaner.L
 import java.text.SimpleDateFormat
 import java.util.*
-
-//settings
-//import com.thecooker.vertretungsplaner.SettingsActivity
-
-// calendar
-import com.thecooker.vertretungsplaner.ui.gallery.GalleryFragment
-
-// exams
-import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
-import com.thecooker.vertretungsplaner.data.ExamManager
-import java.util.*
-
-// homework
-import com.thecooker.vertretungsplaner.ui.slideshow.SlideshowFragment
-import java.util.concurrent.TimeUnit
-
-// grades
-import com.thecooker.vertretungsplaner.ui.grades.GradesFragment
 import java.text.DecimalFormat
+import androidx.core.content.edit
 
 
 class BackupManager(private val context: Context) {
@@ -226,26 +209,73 @@ class BackupManager(private val context: Context) {
 
     private fun importTimetableData(content: String) {
         val lines = content.lines()
-        val editor = sharedPreferences.edit()
+        sharedPreferences.edit {
 
-        lines.forEach { line ->
-            when {
-                line.startsWith("KLASSE=") -> editor.putString("selected_klasse", line.substringAfter("="))
-                line.startsWith("BILDUNGSGANG=") -> editor.putString("selected_bildungsgang", line.substringAfter("="))
-                line.startsWith("HAS_SCANNED=") -> editor.putBoolean("has_scanned_document", line.substringAfter("=").toBoolean())
-                line.startsWith("DOCUMENT_INFO=") -> editor.putString("scanned_document_info", line.substringAfter("="))
-                line.startsWith("STUDENT_SUBJECTS=") -> editor.putString("student_subjects", line.substringAfter("="))
-                line.startsWith("STUDENT_TEACHERS=") -> editor.putString("student_teachers", line.substringAfter("="))
-                line.startsWith("STUDENT_ROOMS=") -> editor.putString("student_rooms", line.substringAfter("="))
-                line.startsWith("ALL_SUBJECTS=") -> editor.putString("all_extracted_subjects", line.substringAfter("="))
-                line.startsWith("ALL_TEACHERS=") -> editor.putString("all_extracted_teachers", line.substringAfter("="))
-                line.startsWith("ALL_ROOMS=") -> editor.putString("all_extracted_rooms", line.substringAfter("="))
-                line.startsWith("ALTERNATIVE_ROOMS=") -> editor.putString("alternative_rooms", line.substringAfter("="))
-                line.startsWith("FILTER_SUBJECTS=") -> editor.putBoolean("filter_only_my_subjects", line.substringAfter("=").toBoolean())
+            lines.forEach { line ->
+                when {
+                    line.startsWith("KLASSE=") -> putString(
+                        "selected_klasse",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("BILDUNGSGANG=") -> putString(
+                        "selected_bildungsgang",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("HAS_SCANNED=") -> putBoolean(
+                        "has_scanned_document",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("DOCUMENT_INFO=") -> putString(
+                        "scanned_document_info",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("STUDENT_SUBJECTS=") -> putString(
+                        "student_subjects",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("STUDENT_TEACHERS=") -> putString(
+                        "student_teachers",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("STUDENT_ROOMS=") -> putString(
+                        "student_rooms",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("ALL_SUBJECTS=") -> putString(
+                        "all_extracted_subjects",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("ALL_TEACHERS=") -> putString(
+                        "all_extracted_teachers",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("ALL_ROOMS=") -> putString(
+                        "all_extracted_rooms",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("ALTERNATIVE_ROOMS=") -> putString(
+                        "alternative_rooms",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("FILTER_SUBJECTS=") -> putBoolean(
+                        "filter_only_my_subjects",
+                        line.substringAfter("=").toBoolean()
+                    )
+                }
             }
-        }
 
-        editor.apply()
+        }
     }
 
     private fun exportAppSettings(): String {
@@ -261,7 +291,7 @@ class BackupManager(private val context: Context) {
         val landscape = sharedPreferences.getBoolean("landscape_mode_enabled", true)
         val colorblindMode = sharedPreferences.getString("colorblind_mode", "none") ?: ""
         val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
-        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false);
+        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -282,27 +312,77 @@ class BackupManager(private val context: Context) {
 
     private fun importAppSettings(content: String) {
         val lines = content.lines()
-        val editor = sharedPreferences.edit()
+        sharedPreferences.edit {
 
-        lines.forEach { line ->
-            when {
-                line.startsWith("STARTUP_PAGE=") -> editor.putInt("startup_page_index", line.substringAfter("=").toIntOrNull() ?: 0)
-                line.startsWith("AUTO_UPDATE=") -> editor.putBoolean("auto_update_enabled", line.substringAfter("=").toBoolean())
-                line.startsWith("UPDATE_TIME=") -> editor.putString("auto_update_time", line.substringAfter("="))
-                line.startsWith("WIFI_ONLY=") -> editor.putBoolean("update_wifi_only", line.substringAfter("=").toBoolean())
-                line.startsWith("SHOW_NOTIFICATIONS=") -> editor.putBoolean("show_update_notifications", line.substringAfter("=").toBoolean())
-                line.startsWith("CHANGE_NOTIFICATION=") -> editor.putBoolean("change_notification_enabled", line.substringAfter("=").toBoolean())
-                line.startsWith("CHANGE_INTERVAL=") -> editor.putInt("change_notification_interval", line.substringAfter("=").toIntOrNull() ?: 15)
-                line.startsWith("CHANGE_TYPE=") -> editor.putString("change_notification_type", line.substringAfter("="))
-                line.startsWith("DARK_MODE=") -> editor.putBoolean("dark_mode_enabled", line.substringAfter("=").toBoolean())
-                line.startsWith("LANDSCAPE_MODE=") -> editor.putBoolean("landscape_mode_enabled", line.substringAfter("=").toBoolean())
-                line.startsWith("COLORBLIND_MODE=") -> editor.putString("colorblind_mode", line.substringAfter("="))
-                line.startsWith("REMOVE_COOLDOWN=") -> editor.putBoolean("remove_update_cooldown", line.substringAfter("=").toBoolean())
-                line.startsWith("LEFT_FILTER_LIFT=") -> editor.putBoolean("left_filter_lift", line.substringAfter("=").toBoolean())
+            lines.forEach { line ->
+                when {
+                    line.startsWith("STARTUP_PAGE=") -> putInt(
+                        "startup_page_index",
+                        line.substringAfter("=").toIntOrNull() ?: 0
+                    )
+
+                    line.startsWith("AUTO_UPDATE=") -> putBoolean(
+                        "auto_update_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("UPDATE_TIME=") -> putString(
+                        "auto_update_time",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("WIFI_ONLY=") -> putBoolean(
+                        "update_wifi_only",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("SHOW_NOTIFICATIONS=") -> putBoolean(
+                        "show_update_notifications",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("CHANGE_NOTIFICATION=") -> putBoolean(
+                        "change_notification_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("CHANGE_INTERVAL=") -> putInt(
+                        "change_notification_interval",
+                        line.substringAfter("=").toIntOrNull() ?: 15
+                    )
+
+                    line.startsWith("CHANGE_TYPE=") -> putString(
+                        "change_notification_type",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("DARK_MODE=") -> putBoolean(
+                        "dark_mode_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("LANDSCAPE_MODE=") -> putBoolean(
+                        "landscape_mode_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("COLORBLIND_MODE=") -> putString(
+                        "colorblind_mode",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("REMOVE_COOLDOWN=") -> putBoolean(
+                        "remove_update_cooldown",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("LEFT_FILTER_LIFT=") -> putBoolean(
+                        "left_filter_lift",
+                        line.substringAfter("=").toBoolean()
+                    )
+                }
             }
         }
-
-        editor.apply()
     }
 
     data class ExamEntry(
@@ -434,9 +514,9 @@ class BackupManager(private val context: Context) {
             }
 
             val json = Gson().toJson(examList)
-            sharedPreferences.edit()
-                .putString("exam_list", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("exam_list", json)
+            }
 
             L.d(TAG, "Imported $importedExamCount exams successfully")
 
@@ -608,7 +688,7 @@ class BackupManager(private val context: Context) {
     private fun exportUserDayData(sb: StringBuilder) {
         val allKeys = sharedPreferences.all.keys
         val noteKeys = allKeys.filter { it.startsWith("user_notes_") }
-        val occasionKeys = allKeys.filter { it.startsWith("user_special_occasions_") }
+        allKeys.filter { it.startsWith("user_special_occasions_") }
 
         val processedDates = mutableSetOf<String>()
 
@@ -622,8 +702,8 @@ class BackupManager(private val context: Context) {
                 val occasions = try {
                     val type = object : TypeToken<List<String>>() {}.type
                     Gson().fromJson<List<String>>(occasionsJson, type) ?: emptyList()
-                } catch (e: Exception) {
-                    emptyList<String>()
+                } catch (_: Exception) {
+                    emptyList()
                 }
 
                 if (notes.isNotBlank() || occasions.isNotEmpty()) {
@@ -651,8 +731,8 @@ class BackupManager(private val context: Context) {
             val occasions = try {
                 val type = object : TypeToken<List<String>>() {}.type
                 Gson().fromJson<List<String>>(occasionsJson, type) ?: emptyList()
-            } catch (e: Exception) {
-                emptyList<String>()
+            } catch (_: Exception) {
+                emptyList()
             }
 
             if (notes.isNotBlank() || occasions.isNotEmpty()) {
@@ -708,7 +788,7 @@ class BackupManager(private val context: Context) {
                             val importedVacations: MutableMap<String, VacationWeek> = Gson().fromJson(jsonData, newType)
                             saveVacationDataToPrefs(importedVacations)
                             vacationImported = true
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             try {
                                 val oldType = object : TypeToken<MutableSet<String>>() {}.type
                                 val importedVacationsOld: MutableSet<String> = Gson().fromJson(jsonData, oldType)
@@ -735,15 +815,15 @@ class BackupManager(private val context: Context) {
 
                             importedUserData.forEach { (dateStr, userData) ->
                                 if (userData.notes.isNotBlank()) {
-                                    sharedPreferences.edit()
-                                        .putString("user_notes_$dateStr", userData.notes)
-                                        .apply()
+                                    sharedPreferences.edit {
+                                        putString("user_notes_$dateStr", userData.notes)
+                                    }
                                 }
                                 if (userData.specialOccasions.isNotEmpty()) {
                                     val occasionsJson = Gson().toJson(userData.specialOccasions)
-                                    sharedPreferences.edit()
-                                        .putString("user_special_occasions_$dateStr", occasionsJson)
-                                        .apply()
+                                    sharedPreferences.edit {
+                                        putString("user_special_occasions_$dateStr", occasionsJson)
+                                    }
                                 }
                             }
                             userDayDataImported = true
@@ -791,7 +871,7 @@ class BackupManager(private val context: Context) {
                 if (lesson != null && timetableData[dayKey]?.containsKey(lesson) == true) {
                     val existingEntry = timetableData[dayKey]!![lesson]!!
                     if (existingEntry.subject == subject) {
-                        val (teacher, _) = getTeacherAndRoomForSubject(subject)
+                        val (_, _) = getTeacherAndRoomForSubject(subject)
                         timetableData[dayKey]!![lesson] = existingEntry.copy(
                             room = alternativeRoom,
                             useAlternativeRoom = true
@@ -806,15 +886,15 @@ class BackupManager(private val context: Context) {
 
     private fun clearAllUserDayData() {
         val allKeys = sharedPreferences.all.keys.toList()
-        val editor = sharedPreferences.edit()
+        sharedPreferences.edit {
 
-        allKeys.forEach { key ->
-            if (key.startsWith("user_notes_") || key.startsWith("user_special_occasions_")) {
-                editor.remove(key)
+            allKeys.forEach { key ->
+                if (key.startsWith("user_notes_") || key.startsWith("user_special_occasions_")) {
+                    remove(key)
+                }
             }
-        }
 
-        editor.apply()
+        }
     }
 
     data class UserDayData(
@@ -836,9 +916,9 @@ class BackupManager(private val context: Context) {
     private fun saveTimetableDataToPrefs(data: MutableMap<String, MutableMap<Int, TimetableEntry>>) {
         try {
             val json = Gson().toJson(data)
-            sharedPreferences.edit()
-                .putString("timetable_data", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("timetable_data", json)
+            }
         } catch (e: Exception) {
             L.e(TAG, "Error saving timetable data to preferences", e)
         }
@@ -854,7 +934,7 @@ class BackupManager(private val context: Context) {
             try {
                 val type = object : TypeToken<MutableMap<String, VacationWeek>>() {}.type
                 Gson().fromJson(json, type) ?: mutableMapOf()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 val oldType = object : TypeToken<MutableSet<String>>() {}.type
                 val oldData: MutableSet<String> = Gson().fromJson(json, oldType) ?: mutableSetOf()
                 val convertedData = mutableMapOf<String, VacationWeek>()
@@ -872,9 +952,9 @@ class BackupManager(private val context: Context) {
     private fun saveVacationDataToPrefs(data: MutableMap<String, VacationWeek>) {
         try {
             val json = Gson().toJson(data)
-            sharedPreferences.edit()
-                .putString("vacation_data", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("vacation_data", json)
+            }
         } catch (e: Exception) {
             L.e(TAG, "Error saving vacation data to preferences", e)
         }
@@ -929,7 +1009,6 @@ class BackupManager(private val context: Context) {
 
     enum class VacationSource {
         MANUAL,
-        AUTO_KULTUS
     }
 
     fun exportHomeworkData(): String {
@@ -1015,9 +1094,9 @@ class BackupManager(private val context: Context) {
 
             if (importedCount > 0) {
                 val json = Gson().toJson(homeworkList)
-                sharedPreferences.edit()
-                    .putString("homework_list", json)
-                    .apply()
+                sharedPreferences.edit {
+                    putString("homework_list", json)
+                }
 
                 L.d(TAG, "Imported $importedCount homework entries successfully")
             } else {
@@ -1085,7 +1164,7 @@ class BackupManager(private val context: Context) {
             val oralGradesHistoryType = object : TypeToken<Map<String, Map<Int, Double>>>() {}.type
             val oralGradesHistory: Map<String, Map<Int, Double>> = try {
                 Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1093,7 +1172,7 @@ class BackupManager(private val context: Context) {
             val ratiosType = object : TypeToken<Map<String, Pair<Int, Int>>>() {}.type
             val ratios: Map<String, Pair<Int, Int>> = try {
                 Gson().fromJson(ratiosJson, ratiosType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1101,7 +1180,7 @@ class BackupManager(private val context: Context) {
             val pruefungsfaecherType = object : TypeToken<Map<String, Boolean>>() {}.type
             val pruefungsfaecher: Map<String, Boolean> = try {
                 Gson().fromJson(pruefungsfaecherJson, pruefungsfaecherType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1109,7 +1188,7 @@ class BackupManager(private val context: Context) {
             val pruefungsergebnisseType = object : TypeToken<Map<String, Double>>() {}.type
             val pruefungsergebnisse: Map<String, Double> = try {
                 Gson().fromJson(pruefungsergebnisseJson, pruefungsergebnisseType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1117,7 +1196,7 @@ class BackupManager(private val context: Context) {
             val selectedHalfYearsType = object : TypeToken<Map<String, Int>>() {}.type
             val selectedHalfYears: Map<String, Int> = try {
                 Gson().fromJson(selectedHalfYearsJson, selectedHalfYearsType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1125,7 +1204,7 @@ class BackupManager(private val context: Context) {
             val subjectGradeSystemType = object : TypeToken<Map<String, Boolean>>() {}.type
             val subjectGradeSystems: Map<String, Boolean> = try {
                 Gson().fromJson(subjectGradeSystemJson, subjectGradeSystemType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1133,7 +1212,7 @@ class BackupManager(private val context: Context) {
             val subjectRangeModeType = object : TypeToken<Map<String, Boolean>>() {}.type
             val subjectRangeModes: Map<String, Boolean> = try {
                 Gson().fromJson(subjectRangeModeJson, subjectRangeModeType) ?: emptyMap()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
 
@@ -1171,7 +1250,7 @@ class BackupManager(private val context: Context) {
             val historyType = object : TypeToken<List<GradeHistoryEntry>>() {}.type
             val history: List<GradeHistoryEntry> = try {
                 Gson().fromJson(historyJson, historyType) ?: emptyList()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyList()
             }
 
@@ -1307,23 +1386,23 @@ class BackupManager(private val context: Context) {
                     }
                 }
             }
-            val editor = sharedPreferences.edit()
-            editor.putString("oral_grades_history", Gson().toJson(oralGradesAllHalfYears))
-            editor.putString("grade_ratios", Gson().toJson(ratios))
-            editor.putString("grade_history", Gson().toJson(history))
-            editor.putString("pruefungsfaecher", Gson().toJson(pruefungsfaecher))
-            editor.putString("pruefungsergebnisse", Gson().toJson(pruefungsergebnisse))
-            editor.putString("selected_half_years", Gson().toJson(selectedHalfYears))
-            editor.putBoolean("use_simple_grading", !importedComplexGrading)
-            editor.putInt("current_halfyear", importedCurrentHalfyear)
-            editor.putString("subject_grade_system", Gson().toJson(subjectGradeSystems))
-            editor.putString("subject_range_mode", Gson().toJson(subjectRangeModes))
+            sharedPreferences.edit {
+                putString("oral_grades_history", Gson().toJson(oralGradesAllHalfYears))
+                putString("grade_ratios", Gson().toJson(ratios))
+                putString("grade_history", Gson().toJson(history))
+                putString("pruefungsfaecher", Gson().toJson(pruefungsfaecher))
+                putString("pruefungsergebnisse", Gson().toJson(pruefungsergebnisse))
+                putString("selected_half_years", Gson().toJson(selectedHalfYears))
+                putBoolean("use_simple_grading", !importedComplexGrading)
+                putInt("current_halfyear", importedCurrentHalfyear)
+                putString("subject_grade_system", Gson().toJson(subjectGradeSystems))
+                putString("subject_range_mode", Gson().toJson(subjectRangeModes))
 
-            if (goalGrade != null) {
-                editor.putFloat("goal_grade", goalGrade)
+                if (goalGrade != null) {
+                    putFloat("goal_grade", goalGrade)
+                }
+
             }
-
-            editor.apply()
 
             L.d(TAG, "Grade data imported successfully")
 

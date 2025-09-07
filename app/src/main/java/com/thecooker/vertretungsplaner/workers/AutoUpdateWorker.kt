@@ -183,7 +183,7 @@ class AutoUpdateWorker(
         for (entry in currentEntries) {
             try {
                 val entryDate = dateFormat.parse(entry.date)
-                if (entryDate != null && (entryDate.equals(today) || entryDate.after(today))) {
+                if (entryDate != null && (entryDate == today || entryDate.after(today))) {
                     if (!oldEntries.contains(entry)) {
                         newEntries.add(entry)
                     }
@@ -355,7 +355,7 @@ class AutoUpdateWorker(
                 2 -> "übermorgen"
                 else -> outputFormat.format(date)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             dateString
         }
     }
@@ -405,52 +405,6 @@ class AutoUpdateWorker(
         }
     }
 
-    private fun hasAnyClassChanges(oldPlan: JSONObject, newPlan: JSONObject): Boolean {
-        // Simple comparison - check if the JSON content is different
-        return oldPlan.toString() != newPlan.toString()
-    }
-
-    private fun hasMySubjectChanges(oldPlan: JSONObject, newPlan: JSONObject): Boolean {
-        val studentSubjects = getStudentSubjects()
-        if (studentSubjects.isEmpty()) {
-            // If no subjects selected, fall back to all class changes
-            return hasAnyClassChanges(oldPlan, newPlan)
-        }
-
-        // Extract relevant entries for user's subjects from both plans
-        val oldRelevantEntries = extractRelevantEntries(oldPlan, studentSubjects)
-        val newRelevantEntries = extractRelevantEntries(newPlan, studentSubjects)
-
-        return oldRelevantEntries != newRelevantEntries
-    }
-
-    private fun extractRelevantEntries(plan: JSONObject, subjects: List<String>): String {
-        val relevantEntries = mutableListOf<String>()
-        val dates = plan.optJSONArray("dates") ?: return ""
-
-        for (i in 0 until dates.length()) {
-            val dateObj = dates.getJSONObject(i)
-            val entries = dateObj.getJSONArray("entries")
-
-            for (j in 0 until entries.length()) {
-                val entry = entries.getJSONObject(j)
-                val fach = entry.optString("fach", "")
-
-                if (isSubjectRelevant(fach, subjects)) {
-                    relevantEntries.add(entry.toString())
-                }
-            }
-        }
-
-        return relevantEntries.sorted().joinToString("|")
-    }
-
-    private fun isSubjectRelevant(fach: String, subjects: List<String>): Boolean {
-        return subjects.any { subject ->
-            fach.contains(subject, ignoreCase = true)
-        }
-    }
-
     private fun getStudentSubjects(): List<String> {
         val savedSubjects = sharedPreferences.getString("student_subjects", "") ?: ""
         return if (savedSubjects.isNotEmpty()) {
@@ -474,7 +428,7 @@ class AutoUpdateWorker(
         return networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    private suspend fun fetchLastUpdateTime(): String {
+    private fun fetchLastUpdateTime(): String {
         val url = URL("https://www.heinrich-kleyer-schule.de/aktuelles/vertretungsplan/")
         val connection = url.openConnection() as HttpURLConnection
 
@@ -492,7 +446,7 @@ class AutoUpdateWorker(
         }
     }
 
-    private suspend fun fetchSubstitutePlan(klasse: String): JSONObject {
+    private fun fetchSubstitutePlan(klasse: String): JSONObject {
         val url =
             URL("https://www.heinrich-kleyer-schule.de/aktuelles/vertretungsplan/$klasse.json")
         val connection = url.openConnection() as HttpURLConnection

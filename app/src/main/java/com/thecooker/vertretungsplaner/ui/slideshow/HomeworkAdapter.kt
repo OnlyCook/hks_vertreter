@@ -3,7 +3,6 @@ package com.thecooker.vertretungsplaner.ui.slideshow
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.CheckBox
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -20,8 +19,7 @@ class HomeworkAdapter(
     private val onHomeworkToggled: (SlideshowFragment.HomeworkEntry, Boolean) -> Unit,
     private val onHomeworkDeleted: (SlideshowFragment.HomeworkEntry) -> Unit,
     private val onHomeworkEdited: (SlideshowFragment.HomeworkEntry) -> Unit,
-    private val onHomeworkViewed: (SlideshowFragment.HomeworkEntry) -> Unit,
-    private val onChecklistItemToggled: (SlideshowFragment.HomeworkEntry, SlideshowFragment.ChecklistItem, Boolean) -> Unit
+    private val onHomeworkViewed: (SlideshowFragment.HomeworkEntry) -> Unit
 ) : RecyclerView.Adapter<HomeworkAdapter.ViewHolder>() {
 
     private var filteredHomeworkList: List<SlideshowFragment.HomeworkEntry> = homeworkList
@@ -144,18 +142,6 @@ class HomeworkAdapter(
 
         holder.btnDelete.setOnClickListener {
             onHomeworkDeleted(homework)
-        }
-    }
-
-    private fun setupClickListeners(holder: ViewHolder, homework: SlideshowFragment.HomeworkEntry, allowToggle: Boolean) {
-        holder.checkBox.setOnClickListener {
-            if (allowToggle && holder.checkBox.isEnabled) {
-                holder.checkBox.toggle()
-            }
-        }
-
-        holder.itemView.setOnClickListener {
-            onHomeworkViewed(homework)
         }
     }
 

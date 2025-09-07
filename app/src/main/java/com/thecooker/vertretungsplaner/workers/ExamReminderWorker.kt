@@ -55,7 +55,7 @@ class ExamReminderWorker(
         val upcomingExams = getUpcomingExams(examList, reminderDays)
 
         if (upcomingExams.isNotEmpty()) {
-            showExamReminderNotification(upcomingExams, reminderDays)
+            showExamReminderNotification(upcomingExams)
         } else {
             L.d(TAG, "No upcoming exams found for reminder")
         }
@@ -75,7 +75,7 @@ class ExamReminderWorker(
         reminderDays: Int
     ): List<ExamFragment.ExamEntry> {
         val now = Calendar.getInstance()
-        val currentTimeMillis = now.timeInMillis
+        now.timeInMillis
 
         return examList.filter { exam ->
             if (exam.isCompleted) return@filter false
@@ -108,8 +108,7 @@ class ExamReminderWorker(
     }
 
     private fun showExamReminderNotification(
-        exams: List<ExamFragment.ExamEntry>,
-        reminderDays: Int
+        exams: List<ExamFragment.ExamEntry>
     ) {
         createNotificationChannel()
 
@@ -132,9 +131,9 @@ class ExamReminderWorker(
         val content = if (exams.size == 1) {
             val exam = exams.first()
             val daysUntil = exam.getDaysUntilExam()
-            val timeText = when {
-                daysUntil == 0L -> "heute"
-                daysUntil == 1L -> "morgen"
+            val timeText = when (daysUntil) {
+                0L -> "heute"
+                1L -> "morgen"
                 else -> "in $daysUntil Tag${if (daysUntil > 1) "en" else ""}"
             }
             "${exam.subject}: $timeText"

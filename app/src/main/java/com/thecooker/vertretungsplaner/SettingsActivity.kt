@@ -1,11 +1,10 @@
 package com.thecooker.vertretungsplaner
 
-import android.app.Activity
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
-import com.thecooker.vertretungsplaner.L
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
@@ -14,8 +13,6 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
 import kotlinx.coroutines.CoroutineScope
@@ -24,9 +21,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
-import android.os.Environment
-import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
 import android.widget.LinearLayout
@@ -39,15 +33,15 @@ import android.widget.ArrayAdapter
 import android.os.Build
 import android.provider.Settings
 import android.view.ViewGroup
-import androidx.core.app.NotificationManagerCompat
 import android.widget.ImageView
 import com.thecooker.vertretungsplaner.ui.slideshow.HomeworkUtils
 import android.widget.AdapterView
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContentProviderCompat.requireContext
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONObject
 import kotlin.system.exitProcess
+import androidx.core.content.edit
+import androidx.core.net.toUri
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -257,9 +251,9 @@ class SettingsActivity : AppCompatActivity() {
 
         switchFilterSubjects.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit()
-                    .putBoolean("filter_only_my_subjects", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("filter_only_my_subjects", isChecked)
+                }
 
                 switchLeftFilterLift.isEnabled = isChecked
 
@@ -269,9 +263,9 @@ class SettingsActivity : AppCompatActivity() {
                     else "Alle Fächer werden angezeigt",
                     Toast.LENGTH_SHORT).show()
             } else {
-                sharedPreferences.edit()
-                    .putBoolean("filter_only_my_subjects", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("filter_only_my_subjects", isChecked)
+                    }
 
                 switchLeftFilterLift.isEnabled = isChecked
             }
@@ -279,18 +273,18 @@ class SettingsActivity : AppCompatActivity() {
 
         switchRemoveUpdateCooldown.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit()
-                    .putBoolean("remove_update_cooldown", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("remove_update_cooldown", isChecked)
+                }
 
                 Toast.makeText(this,
                     if (isChecked) "Update-Cooldown deaktiviert"
                     else "Update-Cooldown aktiviert",
                     Toast.LENGTH_SHORT).show()
             } else {
-                sharedPreferences.edit()
-                    .putBoolean("remove_update_cooldown", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("remove_update_cooldown", isChecked)
+                }
             }
         }
 
@@ -301,9 +295,9 @@ class SettingsActivity : AppCompatActivity() {
         switchLeftFilterLift.isChecked = sharedPreferences.getBoolean("left_filter_lift", false)
 
         switchLeftFilterLift.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit()
-                .putBoolean("left_filter_lift", isChecked)
-                .apply()
+            sharedPreferences.edit {
+                putBoolean("left_filter_lift", isChecked)
+            }
         }
     }
 
@@ -329,9 +323,9 @@ class SettingsActivity : AppCompatActivity() {
         } else {
             switchFilterSubjects.alpha = 0.5f
             switchFilterSubjects.isChecked = false
-            sharedPreferences.edit()
-                .putBoolean("filter_only_my_subjects", false)
-                .apply()
+            sharedPreferences.edit {
+                putBoolean("filter_only_my_subjects", false)
+            }
         }
     }
 
@@ -451,17 +445,17 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun updateDeleteTimetableData() {
-        val editor = sharedPreferences.edit()
-        editor.remove("has_scanned_document")
-        editor.remove("scanned_document_info")
-        editor.remove("student_subjects")
-        editor.remove("student_teachers")
-        editor.remove("student_rooms")
-        editor.remove("all_extracted_subjects")
-        editor.remove("all_extracted_teachers")
-        editor.remove("all_extracted_rooms")
-        editor.remove("filter_only_my_subjects")
-        editor.apply()
+        sharedPreferences.edit {
+            remove("has_scanned_document")
+            remove("scanned_document_info")
+            remove("student_subjects")
+            remove("student_teachers")
+            remove("student_rooms")
+            remove("all_extracted_subjects")
+            remove("all_extracted_teachers")
+            remove("all_extracted_rooms")
+            remove("filter_only_my_subjects")
+        }
 
         extractedSubjects.clear()
         extractedTeachers.clear()
@@ -473,7 +467,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun updateTimetableButton() {
         if (isDocumentScanned()) {
-            btnScanTimetable.text = "Stundenplan löschen"
+            "Stundenplan löschen".also { btnScanTimetable.text = it }
             val documentInfo = sharedPreferences.getString("scanned_document_info", "")
             val selectedSubjects = sharedPreferences.getString("student_subjects", "")?.split(",") ?: emptyList()
             val alternativeRooms = sharedPreferences.getString("alternative_rooms", "")
@@ -485,10 +479,10 @@ class SettingsActivity : AppCompatActivity() {
             } else {
                 "\nKeine Fächer ausgewählt"
             }
-            tvScannedDocument.text = "Gescanntes Dokument:\n$documentInfo$subjectInfo"
+            "Gescanntes Dokument:\n$documentInfo$subjectInfo".also { tvScannedDocument.text = it }
             tvScannedDocument.visibility = TextView.VISIBLE
         } else {
-            btnScanTimetable.text = "Stundenplan einscannen"
+            "Stundenplan einscannen".also { btnScanTimetable.text = it }
             tvScannedDocument.visibility = TextView.GONE
         }
 
@@ -517,7 +511,7 @@ class SettingsActivity : AppCompatActivity() {
                 Intent.createChooser(intent, "PDF-Datei auswählen"),
                 PDF_PICKER_REQUEST_CODE
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Keine PDF-Reader App gefunden", Toast.LENGTH_SHORT).show()
         }
     }
@@ -527,14 +521,14 @@ class SettingsActivity : AppCompatActivity() {
 
         when (requestCode) {
             PDF_PICKER_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
+                if (resultCode == RESULT_OK) {
                     data?.data?.let { uri ->
                         processPdfFile(uri)
                     }
                 }
             }
             SUBJECT_SELECTION_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
+                if (resultCode == RESULT_OK) {
                     val selectedSubjects = data?.getStringArrayExtra(SubjectSelectionActivity.RESULT_SELECTED_SUBJECTS)?.toList()
 
                     val updatedSubjects = data?.getStringArrayExtra(SubjectSelectionActivity.EXTRA_SUBJECTS)?.toList()
@@ -572,14 +566,14 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             FULL_BACKUP_EXPORT_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
+                if (resultCode == RESULT_OK) {
                     data?.data?.let { uri ->
                         writeFullBackupToFileUri(uri)
                     }
                 }
             }
             FULL_BACKUP_IMPORT_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
+                if (resultCode == RESULT_OK) {
                     data?.data?.let { uri ->
                         readFullBackupFromFileUri(uri)
                     }
@@ -635,7 +629,7 @@ class SettingsActivity : AppCompatActivity() {
                 }
 
                 val rawText = stringBuilder.toString()
-                L.d(TAG, rawText);
+                L.d(TAG, rawText)
                 L.d(TAG, "Raw pdf text length: ${rawText.length}")
 
                 val normalizedText = rawText
@@ -817,7 +811,7 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             // get subjects
-            val subjectStartIndex = i
+            i
             L.d(TAG, "Looking for subjects starting at index $i")
 
             while (i < tokens.size) {
@@ -1231,11 +1225,11 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        sharedPreferences.edit()
-            .putString("all_extracted_subjects", extractedSubjects.joinToString(","))
-            .putString("all_extracted_teachers", extractedTeachers.joinToString(","))
-            .putString("all_extracted_rooms", extractedRooms.joinToString(","))
-            .apply()
+        sharedPreferences.edit {
+            putString("all_extracted_subjects", extractedSubjects.joinToString(","))
+                .putString("all_extracted_teachers", extractedTeachers.joinToString(","))
+                .putString("all_extracted_rooms", extractedRooms.joinToString(","))
+        }
 
         L.d(TAG, "Passing to SubjectSelectionActivity:")
         L.d(TAG, "  Subjects (${extractedSubjects.size}): $extractedSubjects")
@@ -1282,9 +1276,9 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun resetAppData() {
-        val editor = sharedPreferences.edit()
-        editor.clear()
-        editor.apply()
+        sharedPreferences.edit {
+            clear()
+        }
 
         extractedSubjects.clear()
 
@@ -1419,17 +1413,17 @@ class SettingsActivity : AppCompatActivity() {
             putExtra(Intent.EXTRA_TITLE, filename)
         }
 
-        sharedPreferences.edit().putString("temp_export_content", content).apply()
+        sharedPreferences.edit {putString("temp_export_content", content) }
 
         try {
             startActivityForResult(intent, EXPORT_FILE_REQUEST_CODE)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun copyToClipboard(content: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Stundenplan", content)
         clipboard.setPrimaryClip(clip)
 
@@ -1478,13 +1472,13 @@ class SettingsActivity : AppCompatActivity() {
                 Intent.createChooser(intent, "HKS-Datei auswählen"),
                 IMPORT_FILE_REQUEST_CODE
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Keine Datei-Manager App gefunden", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun importFromClipboard() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clipData = clipboard.primaryClip
 
         if (clipData != null && clipData.itemCount > 0) {
@@ -1601,19 +1595,22 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        val editor = sharedPreferences.edit()
-        editor.putBoolean("has_scanned_document", true)
-        editor.putString("student_subjects", importResult.subjects.joinToString(","))
-        editor.putString("student_teachers", importResult.teachers.joinToString(","))
-        editor.putString("student_rooms", importResult.rooms.joinToString(","))
-        editor.putString("all_extracted_subjects", importResult.subjects.joinToString(","))
-        editor.putString("all_extracted_teachers", importResult.teachers.joinToString(","))
-        editor.putString("all_extracted_rooms", importResult.rooms.joinToString(","))
-        editor.putString("scanned_document_info", "Schuljahr ${importResult.schuljahr}\n${importResult.klasse} (Importiert)")
+        sharedPreferences.edit {
+            putBoolean("has_scanned_document", true)
+            putString("student_subjects", importResult.subjects.joinToString(","))
+            putString("student_teachers", importResult.teachers.joinToString(","))
+            putString("student_rooms", importResult.rooms.joinToString(","))
+            putString("all_extracted_subjects", importResult.subjects.joinToString(","))
+            putString("all_extracted_teachers", importResult.teachers.joinToString(","))
+            putString("all_extracted_rooms", importResult.rooms.joinToString(","))
+            putString(
+                "scanned_document_info",
+                "Schuljahr ${importResult.schuljahr}\n${importResult.klasse} (Importiert)"
+            )
 
-        editor.putString("alternative_rooms", importResult.alternativeRooms)
+            putString("alternative_rooms", importResult.alternativeRooms)
 
-        editor.apply()
+        }
 
         updateTimetableButton()
         setupFilterSwitch()
@@ -1686,17 +1683,17 @@ class SettingsActivity : AppCompatActivity() {
         val startupPages = arrayOf("Kalender", "Vertretungsplan (empfohlen)", "Hausaufgaben", "Klausuren", "Noten")
         val currentSelection = sharedPreferences.getInt("startup_page_index", 0)
 
-        btnStartupPage.text = "Startseite: ${startupPages[currentSelection]}"
+        "Startseite: ${startupPages[currentSelection]}".also { btnStartupPage.text = it }
 
         btnStartupPage.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Startseite auswählen")
                 .setSingleChoiceItems(startupPages, currentSelection) { dialog, which ->
-                    sharedPreferences.edit()
-                        .putInt("startup_page_index", which)
-                        .apply()
+                    sharedPreferences.edit {
+                        putInt("startup_page_index", which)
+                    }
 
-                    btnStartupPage.text = "Startseite: ${startupPages[which]}"
+                    "Startseite: ${startupPages[which]}".also { btnStartupPage.text = it }
                     dialog.dismiss()
 
                     Toast.makeText(this,
@@ -1715,14 +1712,14 @@ class SettingsActivity : AppCompatActivity() {
         val showUpdateNotifications = sharedPreferences.getBoolean("show_update_notifications", true)
 
         switchAutoUpdate.isChecked = autoUpdateEnabled
-        btnAutoUpdateTime.text = "Update-Zeit: $autoUpdateTime"
+        "Update-Zeit: $autoUpdateTime".also { btnAutoUpdateTime.text = it }
         switchUpdateWifiOnly.isChecked = updateWifiOnly
         switchShowUpdateNotifications.isChecked = showUpdateNotifications
 
         updateAutoUpdateUI(autoUpdateEnabled)
 
         switchAutoUpdate.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit().putBoolean("auto_update_enabled", isChecked).apply()
+            sharedPreferences.edit { putBoolean("auto_update_enabled", isChecked)}
 
             updateAutoUpdateUI(isChecked)
 
@@ -1737,9 +1734,9 @@ class SettingsActivity : AppCompatActivity() {
 
         btnAutoUpdateTime.setOnClickListener {
             TimePickerDialogHelper.showTimePicker(this, autoUpdateTime) { selectedTime ->
-                sharedPreferences.edit().putString("auto_update_time", selectedTime).apply()
+                sharedPreferences.edit { putString("auto_update_time", selectedTime) }
 
-                btnAutoUpdateTime.text = "Update-Zeit: $selectedTime"
+                "Update-Zeit: $selectedTime".also { btnAutoUpdateTime.text = it }
 
                 if (switchAutoUpdate.isChecked) {
                     WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
@@ -1749,7 +1746,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         switchUpdateWifiOnly.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit().putBoolean("update_wifi_only", isChecked).apply()
+            sharedPreferences.edit { putBoolean("update_wifi_only", isChecked)}
 
             if (switchAutoUpdate.isChecked) {
                 WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
@@ -1765,7 +1762,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         switchShowUpdateNotifications.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit().putBoolean("show_update_notifications", isChecked).apply()
+            sharedPreferences.edit { putBoolean("show_update_notifications", isChecked)}
 
             Toast.makeText(this,
                 if (isChecked) "Update-Benachrichtigungen aktiviert"
@@ -1787,7 +1784,7 @@ class SettingsActivity : AppCompatActivity() {
         updateChangeNotificationUI(changeNotificationEnabled)
 
         switchChangeNotification.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit().putBoolean("change_notification_enabled", isChecked).apply()
+            sharedPreferences.edit { putBoolean("change_notification_enabled", isChecked) }
 
             updateChangeNotificationUI(isChecked)
 
@@ -1802,7 +1799,7 @@ class SettingsActivity : AppCompatActivity() {
 
         btnChangeNotificationInterval.setOnClickListener {
             TimePickerDialogHelper.showIntervalPicker(this, changeNotificationInterval) { selectedInterval ->
-                sharedPreferences.edit().putInt("change_notification_interval", selectedInterval).apply()
+                sharedPreferences.edit {putInt("change_notification_interval", selectedInterval) }
 
                 btnChangeNotificationInterval.text = formatInterval(selectedInterval)
 
@@ -1838,17 +1835,18 @@ class SettingsActivity : AppCompatActivity() {
         val currentIndex = types.indexOf(currentType).let { if (it >= 0) it else 0 }
         spinnerChangeNotificationType.setSelection(currentIndex)
 
-        spinnerChangeNotificationType.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+        spinnerChangeNotificationType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            @SuppressLint("UseKtx")
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selectedType = types[position]
-                sharedPreferences.edit()
-                    .putString("change_notification_type", selectedType)
-                    .apply()
+                sharedPreferences.edit {
+                    putString("change_notification_type", selectedType)
+                }
 
                 L.d(TAG, "Change notification type changed to: $selectedType")
             }
 
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
         spinnerChangeNotificationType.isEnabled = hasScannedDocument && switchChangeNotification.isChecked
@@ -1936,14 +1934,14 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // fallback general settings
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", packageName, null)
                 }
                 startActivity(intent)
-            } catch (ex: Exception) {
+            } catch (_: Exception) {
                 Toast.makeText(this, "Einstellungen konnten nicht geöffnet werden", Toast.LENGTH_SHORT).show()
             }
         }
@@ -1951,21 +1949,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun openBatteryOptimizationSettings() {
         try {
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-            } else {
-                // older versions
-                Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
-            }
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
             startActivity(intent)
-        } catch (e: Exception) {
-            // fallback general
+        } catch (_: Exception) {
             try {
                 val intent = Intent(Settings.ACTION_SETTINGS)
                 startActivity(intent)
-            } catch (ex: Exception) {
+            } catch (_: Exception) {
                 Toast.makeText(this, "Einstellungen konnten nicht geöffnet werden", Toast.LENGTH_SHORT).show()
             }
         }
@@ -1989,7 +1979,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun setupAppVersion() {
-        tvAppVersion = findViewById<TextView>(R.id.tvAppVersion)
+        tvAppVersion = findViewById(R.id.tvAppVersion)
         tvAppVersion.text = BuildConfig.VERSION_NAME
     }
 
@@ -2002,9 +1992,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupHomeworkReminderListeners() {
         switchDueDateReminder.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit()
-                .putBoolean("due_date_reminder_enabled", isChecked)
-                .apply()
+            sharedPreferences.edit {
+                    putBoolean("due_date_reminder_enabled", isChecked)
+                }
 
             if (isChecked) {
                 WorkScheduler.scheduleDueDateReminder(this, sharedPreferences)
@@ -2018,9 +2008,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         switchDailyHomeworkReminder.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit()
-                .putBoolean("daily_homework_reminder_enabled", isChecked)
-                .apply()
+            sharedPreferences.edit {
+                    putBoolean("daily_homework_reminder_enabled", isChecked)
+                }
 
             if (isChecked) {
                 WorkScheduler.scheduleDailyHomeworkReminder(this, sharedPreferences)
@@ -2041,10 +2031,10 @@ class SettingsActivity : AppCompatActivity() {
         val dailyReminderTime = sharedPreferences.getString("daily_homework_reminder_time", "19:00")
 
         switchDueDateReminder.isChecked = dueDateReminderEnabled
-        btnDueDateReminderHours.text = "Erinnerung: $dueDateReminderHours Stunden vorher"
+        "Erinnerung: $dueDateReminderHours Stunden vorher".also { btnDueDateReminderHours.text = it }
 
         switchDailyHomeworkReminder.isChecked = dailyHomeworkReminderEnabled
-        btnDailyReminderTime.text = "Erinnerungszeit: $dailyReminderTime"
+        "Erinnerungszeit: $dailyReminderTime".also { btnDailyReminderTime.text = it }
     }
 
     private fun showDueDateReminderHoursDialog() {
@@ -2058,9 +2048,9 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle("Erinnerung vor Fälligkeit")
             .setSingleChoiceItems(hoursOptions, currentIndex) { dialog, which ->
                 val selectedHours = hoursValues[which]
-                sharedPreferences.edit().putInt("due_date_reminder_hours", selectedHours).apply()
+                sharedPreferences.edit { putInt("due_date_reminder_hours", selectedHours) }
 
-                btnDueDateReminderHours.text = "Erinnerung: $selectedHours Stunden vorher"
+                "Erinnerung: $selectedHours Stunden vorher".also { btnDueDateReminderHours.text = it }
 
                 if (switchDueDateReminder.isChecked) {
                     WorkScheduler.scheduleDueDateReminder(this, sharedPreferences)
@@ -2082,11 +2072,11 @@ class SettingsActivity : AppCompatActivity() {
             this,
             { _, hour, minute ->
                 val timeString = String.format("%02d:%02d", hour, minute)
-                sharedPreferences.edit()
-                    .putString("daily_homework_reminder_time", timeString)
-                    .apply()
+                sharedPreferences.edit {
+                    putString("daily_homework_reminder_time", timeString)
+                }
 
-                btnDailyReminderTime.text = "Erinnerungszeit: $timeString"
+                "Erinnerungszeit: $timeString".also { btnDailyReminderTime.text = it }
 
                 if (switchDailyHomeworkReminder.isChecked) {
                     WorkScheduler.scheduleDailyHomeworkReminder(this, sharedPreferences)
@@ -2107,14 +2097,14 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun openEmailClientFromSettings() {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:theactualcooker@gmail.com")
+            data = "mailto:theactualcooker@gmail.com".toUri()
             putExtra(Intent.EXTRA_SUBJECT, "Heinrich-Kleyer-Schule App - Kontakt")
             putExtra(Intent.EXTRA_TEXT, "Hallo,\n\nich habe eine Frage/ein Problem mit der App:\n\n")
         }
 
         try {
             startActivity(Intent.createChooser(emailIntent, "E-Mail-App auswählen"))
-        } catch (ex: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Keine E-Mail-App gefunden. Bitte kopiere die E-Mail-Adresse manuell: theactualcooker@gmail.com", Toast.LENGTH_LONG).show()
         }
     }
@@ -2146,7 +2136,7 @@ class SettingsActivity : AppCompatActivity() {
         spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 val selectedValue = values[position]
-                sharedPrefs.edit().putString("colorblind_mode", selectedValue).apply()
+                sharedPrefs.edit { putString("colorblind_mode", selectedValue) }
                 L.d("Settings", "Colorblind mode saved to AppPrefs: $selectedValue")
             }
 
@@ -2163,7 +2153,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupExamReminderListeners() {
         switchExamDueDateReminder.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit().putBoolean("exam_due_date_reminder_enabled", isChecked).apply()
+            sharedPreferences.edit { putBoolean("exam_due_date_reminder_enabled", isChecked) }
 
             if (isChecked) {
                 WorkScheduler.scheduleExamReminder(this, sharedPreferences)
@@ -2193,7 +2183,7 @@ class SettingsActivity : AppCompatActivity() {
             21 -> "3 Wochen vorher"
             else -> "$examDueDateReminderDays Tage vorher"
         }
-        btnExamDueDateReminderDays.text = "Erinnerung: $daysText"
+        "Erinnerung: $daysText".also { btnExamDueDateReminderDays.text = it }
         //btnExamDueDateReminderDays.isEnabled = examDueDateReminderEnabled
     }
 
@@ -2211,10 +2201,10 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle("Erinnerung vor Klausur")
             .setSingleChoiceItems(daysOptions, currentIndex) { dialog, which ->
                 val selectedDays = daysValues[which]
-                sharedPreferences.edit().putInt("exam_due_date_reminder_days", selectedDays).apply()
+                sharedPreferences.edit { putInt("exam_due_date_reminder_days", selectedDays) }
 
                 val daysText = daysOptions[which]
-                btnExamDueDateReminderDays.text = "Erinnerung: $daysText"
+                "Erinnerung: $daysText".also { btnExamDueDateReminderDays.text = it }
 
                 if (switchExamDueDateReminder.isChecked) {
                     WorkScheduler.scheduleExamReminder(this, sharedPreferences)
@@ -2236,9 +2226,9 @@ class SettingsActivity : AppCompatActivity() {
 
         switchLandscapeMode.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit()
-                    .putBoolean("landscape_mode_enabled", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("landscape_mode_enabled", isChecked)
+                }
 
                 applyOrientationSetting(isChecked)
 
@@ -2247,9 +2237,9 @@ class SettingsActivity : AppCompatActivity() {
                     else "Querformat deaktiviert",
                     Toast.LENGTH_SHORT).show()
             } else {
-                sharedPreferences.edit()
-                    .putBoolean("landscape_mode_enabled", isChecked)
-                    .apply()
+                sharedPreferences.edit {
+                    putBoolean("landscape_mode_enabled", isChecked)
+                }
             }
         }
     }
@@ -2270,7 +2260,7 @@ class SettingsActivity : AppCompatActivity() {
 
         switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit().putBoolean("dark_mode_enabled", isChecked).apply()
+                sharedPreferences.edit { putBoolean("dark_mode_enabled", isChecked) }
 
                 applyDarkModeSetting(isChecked)
 
@@ -2281,7 +2271,7 @@ class SettingsActivity : AppCompatActivity() {
 
                 recreate()
             } else {
-                sharedPreferences.edit().putBoolean("dark_mode_enabled", isChecked).apply()
+                sharedPreferences.edit { putBoolean("dark_mode_enabled", isChecked) }
             }
         }
     }
@@ -2303,14 +2293,14 @@ class SettingsActivity : AppCompatActivity() {
 
         switchCalendarRealTime.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit().putBoolean("calendar_real_time_enabled", isChecked).apply()
+                sharedPreferences.edit {putBoolean("calendar_real_time_enabled", isChecked) }
 
                 Toast.makeText(this,
                     if (isChecked) "Echtzeit-Kalender aktiviert"
                     else "Echtzeit-Kalender deaktiviert",
                     Toast.LENGTH_SHORT).show()
             } else {
-                sharedPreferences.edit().putBoolean("calendar_real_time_enabled", isChecked).apply()
+                sharedPreferences.edit {putBoolean("calendar_real_time_enabled", isChecked) }
             }
         }
     }
@@ -2321,14 +2311,20 @@ class SettingsActivity : AppCompatActivity() {
 
         switchCalendarWeekend.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit().putBoolean("calendar_include_weekends_dayview", isChecked).apply()
+                sharedPreferences.edit {
+                    putBoolean(
+                        "calendar_include_weekends_dayview",
+                        isChecked
+                    )
+                }
 
                 Toast.makeText(this,
                     if (isChecked) "Wochenenden im Kalender aktiviert"
                     else "Wochenenden im Kalender deaktiviert",
-                    Toast.LENGTH_SHORT).show()
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
-                sharedPreferences.edit().putBoolean("calendar_include_weekends_dayview", isChecked).apply()
+                sharedPreferences.edit {putBoolean("calendar_include_weekends_dayview", isChecked)}
             }
         }
     }
@@ -2380,17 +2376,17 @@ class SettingsActivity : AppCompatActivity() {
             putExtra(Intent.EXTRA_TITLE, filename)
         }
 
-        sharedPreferences.edit().putString("temp_full_backup_content", content).apply()
+        sharedPreferences.edit { putString("temp_full_backup_content", content) }
 
         try {
             startActivityForResult(intent, FULL_BACKUP_EXPORT_REQUEST_CODE)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun copyFullBackupToClipboard(content: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("HKS Vollständige Sicherung", content)
         clipboard.setPrimaryClip(clip)
 
@@ -2423,7 +2419,7 @@ class SettingsActivity : AppCompatActivity() {
                 Intent.createChooser(intent, "HKS-Sicherungsdatei auswählen"),
                 FULL_BACKUP_IMPORT_REQUEST_CODE
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "Keine Datei-Manager App gefunden", Toast.LENGTH_SHORT).show()
         }
     }
@@ -2542,7 +2538,7 @@ class SettingsActivity : AppCompatActivity() {
                 outputStream.write(content.toByteArray())
             }
 
-            sharedPreferences.edit().remove("temp_full_backup_content").apply()
+            sharedPreferences.edit {remove("temp_full_backup_content") }
 
             Toast.makeText(this, "Vollständige Sicherung erfolgreich exportiert", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {

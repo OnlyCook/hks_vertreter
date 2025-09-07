@@ -14,19 +14,16 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import androidx.preference.PreferenceManager
 import com.google.android.material.snackbar.Snackbar
 import com.thecooker.vertretungsplaner.R
 import com.thecooker.vertretungsplaner.databinding.FragmentHomeBinding
 import kotlinx.coroutines.*
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.TimeUnit
 
 class TouchScrollView @JvmOverloads constructor(
     context: Context,
@@ -84,7 +81,7 @@ class HomeFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        val homeViewModel = ViewModelProvider(this).get(HomeViewModel::class.java)
+        ViewModelProvider(this)[HomeViewModel::class.java]
 
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         val root: View = binding.root
@@ -248,7 +245,7 @@ class HomeFragment : Fragment() {
             return
         }
 
-        classText.text = "Klasse: $klasse"
+        "Klasse: $klasse".also { classText.text = it }
 
         if (isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs) {
             L.d("HomeFragment", "loading substitute plan; first load: $isFirstLoad, cooldown enabled: $cooldownEnabled, time since last: ${timeSinceLastLoad}ms")
@@ -299,7 +296,7 @@ class HomeFragment : Fragment() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupUI() {
-        val constraintLayout = binding.root as androidx.constraintlayout.widget.ConstraintLayout
+        val constraintLayout = binding.root
         constraintLayout.removeAllViews()
 
         headerLayout = LinearLayout(requireContext()).apply {
@@ -325,7 +322,7 @@ class HomeFragment : Fragment() {
         }
 
         refreshButton = Button(requireContext()).apply {
-            text = "Aktualisieren"
+            "Aktualisieren".also { text = it }
             textSize = 16f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setBackgroundColor(resources.getColor(android.R.color.white, null))
@@ -516,7 +513,7 @@ class HomeFragment : Fragment() {
             return
         }
 
-        classText.text = "Klasse: $klasse"
+        "Klasse: $klasse".also { classText.text = it }
 
         if (!isNetworkAvailable()) {
             L.d("HomeFragment", "No internet connection, trying to load cached data")
@@ -536,7 +533,7 @@ class HomeFragment : Fragment() {
                 if (::contentLayout.isInitialized) {
                     contentLayout.removeAllViews()
                     val loadingText = TextView(requireContext()).apply {
-                        text = "Lade Vertretungsplan..."
+                        "Lade Vertretungsplan...".also { text = it }
                         gravity = android.view.Gravity.CENTER
                         textSize = 16f
                         layoutParams = LinearLayout.LayoutParams(
@@ -577,7 +574,7 @@ class HomeFragment : Fragment() {
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
                 if (::lastUpdateText.isInitialized) {
-                    lastUpdateText.text = "Stand: $lastUpdate"
+                    "Stand: $lastUpdate".also { lastUpdateText.text = it }
                 }
                 displaySubstitutePlan(substitutePlan)
 
@@ -600,29 +597,27 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun loadCachedSubstitutePlan(klasse: String) {
-        try {
-            val cacheFile = File(requireContext().cacheDir, "substitute_plan_$klasse.json")
-            val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+    private fun loadCachedSubstitutePlan(klasse: String) = try {
+        val cacheFile = File(requireContext().cacheDir, "substitute_plan_$klasse.json")
+        val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
 
-            if (cacheFile.exists() && lastUpdateFile.exists()) {
-                val cachedData = cacheFile.readText()
-                val lastUpdate = lastUpdateFile.readText()
+        if (cacheFile.exists() && lastUpdateFile.exists()) {
+            val cachedData = cacheFile.readText()
+            val lastUpdate = lastUpdateFile.readText()
 
-                val jsonData = JSONObject(cachedData)
-                if (::lastUpdateText.isInitialized) {
-                    lastUpdateText.text = "Stand: $lastUpdate (Offline)"
-                }
-                displaySubstitutePlan(jsonData)
-
-                L.d("HomeFragment", "Loaded cached substitute plan")
-            } else {
-                showNoInternetMessage()
+            val jsonData = JSONObject(cachedData)
+            if (::lastUpdateText.isInitialized) {
+                "Stand: $lastUpdate (Offline)".also { lastUpdateText.text = it }
             }
-        } catch (e: Exception) {
-            L.e("HomeFragment", "Error loading cached data", e)
+            displaySubstitutePlan(jsonData)
+
+            L.d("HomeFragment", "Loaded cached substitute plan")
+        } else {
             showNoInternetMessage()
         }
+    } catch (e: Exception) {
+        L.e("HomeFragment", "Error loading cached data", e)
+        showNoInternetMessage()
     }
 
     private fun saveSubstitutePlanToCache(klasse: String?, jsonData: String, lastUpdate: String) {
@@ -639,7 +634,7 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private suspend fun fetchLastUpdateTime(): String {
+    private fun fetchLastUpdateTime(): String {
         val url = URL("https://www.heinrich-kleyer-schule.de/aktuelles/vertretungsplan/")
         val connection = url.openConnection() as HttpURLConnection
 
@@ -658,7 +653,7 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private suspend fun fetchSubstitutePlan(klasse: String): JSONObject {
+    private fun fetchSubstitutePlan(klasse: String): JSONObject {
         val url = URL("https://www.heinrich-kleyer-schule.de/aktuelles/vertretungsplan/$klasse.json")
         val connection = url.openConnection() as HttpURLConnection
 
@@ -690,7 +685,7 @@ class HomeFragment : Fragment() {
 
         if (dates == null || dates.length() == 0) {
             val noEntriesText = TextView(requireContext()).apply {
-                text = "Leider entfällt nichts. 😭"
+                "Leider entfällt nichts. 😭".also { text = it }
                 gravity = android.view.Gravity.CENTER
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -813,9 +808,8 @@ class HomeFragment : Fragment() {
         if ((filterOnlyMySubjects || isTemporaryFilterDisabled) && studentSubjects.isNotEmpty() && totalEntries > 0) {
             val filterInfo = TextView(requireContext()).apply {
                 text = when {
-                    isTemporaryFilterDisabled -> "Filter temporär deaktiviert: Alle ${totalEntries} Einträge angezeigt"
-                    totalEntries > filteredEntries && hasVisibleEntries -> "Filter aktiv: ${filteredEntries} von ${totalEntries} Einträgen angezeigt"
-                    totalEntries > filteredEntries -> "Filter aktiv: Alle ${totalEntries} Einträge ausgeblendet"
+                    isTemporaryFilterDisabled -> "Filter temporär deaktiviert: Alle $totalEntries Einträge angezeigt"
+                    totalEntries > filteredEntries -> "Filter aktiv: $filteredEntries von $totalEntries Einträgen angezeigt"
                     else -> null
                 }
 
@@ -869,16 +863,16 @@ class HomeFragment : Fragment() {
                 ((targetDate.timeInMillis - today.timeInMillis) / (1000 * 60 * 60 * 24)).toInt()
 
             val formattedDate = outputFormat.format(date)
-            val isToday = daysDifference == 0
+            daysDifference == 0
 
             when {
-                daysDifference == 0 -> Pair("$formattedDate (heute)", isToday)
-                daysDifference == 1 -> Pair("$formattedDate (morgen)", isToday)
-                daysDifference == 2 -> Pair("$formattedDate (übermorgen)", isToday)
-                daysDifference >= 7 -> Pair("$formattedDate (nächste Woche)", isToday)
-                else -> Pair(formattedDate, isToday)
+                daysDifference == 0 -> Pair("$formattedDate (heute)", true)
+                daysDifference == 1 -> Pair("$formattedDate (morgen)", false)
+                daysDifference == 2 -> Pair("$formattedDate (übermorgen)", false)
+                daysDifference >= 7 -> Pair("$formattedDate (nächste Woche)", false)
+                else -> Pair(formattedDate, false)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Pair(dateString, false)
         }
     }
@@ -1114,7 +1108,7 @@ class HomeFragment : Fragment() {
 
         contentLayout.removeAllViews()
         val noInternetText = TextView(requireContext()).apply {
-            text = "Keine Internetverbindung.\nBitte überprüfe deine Verbindung und versuche es erneut."
+            "Keine Internetverbindung.\nBitte überprüfe deine Verbindung und versuche es erneut.".also { text = it }
             gravity = android.view.Gravity.CENTER
             textSize = 16f
             setTextColor(resources.getColor(android.R.color.holo_orange_dark, null))
@@ -1344,9 +1338,7 @@ class HomeFragment : Fragment() {
 
     private fun animateRefreshContainerAway() {
         refreshContainer?.let { container ->
-            refreshIcon?.let { icon ->
-                icon.clearAnimation()
-            }
+            refreshIcon?.clearAnimation()
 
             val currentHeight = container.layoutParams.height.coerceAtLeast(1)
             val animator = android.animation.ValueAnimator.ofInt(currentHeight, 0)

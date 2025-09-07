@@ -1,5 +1,6 @@
 package com.thecooker.vertretungsplaner.ui.exams
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.ClipData
@@ -7,6 +8,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -34,6 +36,7 @@ import com.itextpdf.text.pdf.parser.SimpleTextExtractionStrategy
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
 import com.thecooker.vertretungsplaner.data.ExamManager
 import com.thecooker.vertretungsplaner.utils.BackupManager
+import androidx.core.content.edit
 
 class ExamFragment : Fragment() {
 
@@ -137,57 +140,6 @@ class ExamFragment : Fragment() {
             }
         }
 
-        fun getDateString(): String {
-            val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-            val daysUntil = getDaysUntilExam()
-
-            val dateStr = format.format(date)
-            return when {
-                isOverdue() -> "$dateStr (vergangen)"
-                daysUntil == 0L -> "$dateStr (heute)"
-                daysUntil == 1L -> "$dateStr (morgen)"
-                daysUntil <= 7 -> "$dateStr (in $daysUntil Tag${if (daysUntil > 1) "en" else ""})"
-                daysUntil <= 30 -> {
-                    val weeks = daysUntil / 7
-                    val remainingDays = daysUntil % 7
-                    when {
-                        weeks == 1L && remainingDays == 0L -> "$dateStr (in 1 Woche)"
-                        weeks == 1L -> "$dateStr (in 1 Woche und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
-                        remainingDays == 0L -> "$dateStr (in $weeks Wochen)"
-                        else -> "$dateStr (in $weeks Wochen und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
-                    }
-                }
-                daysUntil <= 365 -> {
-                    val months = daysUntil / 30
-                    val remainingDays = daysUntil % 30
-                    when {
-                        months == 1L && remainingDays <= 5 -> "$dateStr (in 1 Monat)"
-                        months == 1L -> "$dateStr (in 1 Monat und ${remainingDays} Tag${if (remainingDays > 1) "en" else ""})"
-                        remainingDays <= 5 -> "$dateStr (in $months Monaten)"
-                        else -> "$dateStr (in $months Monaten und ${remainingDays} Tag${if (remainingDays > 1) "en" else ""})"
-                    }
-                }
-                else -> {
-                    val years = daysUntil / 365
-                    val remainingDays = daysUntil % 365
-                    when {
-                        years == 1L && remainingDays <= 10 -> "$dateStr (in 1 Jahr)"
-                        years == 1L -> {
-                            val months = remainingDays / 30
-                            if (months > 0) "$dateStr (in 1 Jahr und $months Monat${if (months > 1) "en" else ""})"
-                            else "$dateStr (in 1 Jahr)"
-                        }
-                        remainingDays <= 10 -> "$dateStr (in $years Jahren)"
-                        else -> {
-                            val months = remainingDays / 30
-                            if (months > 0) "$dateStr (in $years Jahren und $months Monat${if (months > 1) "en" else ""})"
-                            else "$dateStr (in $years Jahren)"
-                        }
-                    }
-                }
-            }
-        }
-
         fun getDisplayDateString(): String {
             val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
             val weekday = getGermanWeekday(date)
@@ -216,9 +168,9 @@ class ExamFragment : Fragment() {
                     val remainingDays = daysUntil % 30
                     when {
                         months == 1L && remainingDays <= 5 -> "$formattedDate (in 1 Monat)"
-                        months == 1L -> "$formattedDate (in 1 Monat und ${remainingDays} Tag${if (remainingDays > 1) "en" else ""})"
+                        months == 1L -> "$formattedDate (in 1 Monat und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
                         remainingDays <= 5 -> "$formattedDate (in $months Monaten)"
-                        else -> "$formattedDate (in $months Monaten und ${remainingDays} Tag${if (remainingDays > 1) "en" else ""})"
+                        else -> "$formattedDate (in $months Monaten und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
                     }
                 }
                 else -> {
@@ -307,7 +259,6 @@ class ExamFragment : Fragment() {
         private const val TAG = "ExamFragment"
         private const val PREFS_EXAM_LIST = "exam_list"
         private const val PREFS_EXAM_SCHEDULE_INFO = "exam_schedule_info"
-        private const val EXPORT_FILE_REQUEST_CODE = 101
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -336,10 +287,7 @@ class ExamFragment : Fragment() {
         return view
     }
 
-    fun initializeSharedPreferences(context: Context) {
-        sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-    }
-
+    @SuppressLint("InflateParams", "SetTextI18n")
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -350,7 +298,7 @@ class ExamFragment : Fragment() {
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
             setTextColor(resources.getColor(android.R.color.black))
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTypeface(null, Typeface.BOLD)
         }
 
         recyclerView.visibility = View.GONE
@@ -398,7 +346,7 @@ class ExamFragment : Fragment() {
                 result.data?.data?.let { uri ->
                     val content = sharedPreferences.getString("temp_export_content", "") ?: ""
                     saveToSelectedFile(uri, content)
-                    sharedPreferences.edit().remove("temp_export_content").apply()
+                    sharedPreferences.edit {remove("temp_export_content")}
                 }
             }
         }
@@ -529,7 +477,7 @@ class ExamFragment : Fragment() {
                 val pageText = PdfTextExtractor.getTextFromPage(reader, i, strategy)
                 stringBuilder.append(pageText)
                 stringBuilder.append("\n")
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 stringBuilder.append(PdfTextExtractor.getTextFromPage(reader, i))
                 stringBuilder.append("\n")
             }
@@ -576,7 +524,7 @@ class ExamFragment : Fragment() {
 
             L.d(TAG, "Schedule info: $scheduleInfo")
 
-            val newExams = parseExamsFromSchedule(preprocessedPage, scheduleInfo)
+            val newExams = parseExamsFromSchedule(preprocessedPage)
 
             if (newExams.isEmpty()) {
                 Toast.makeText(requireContext(), "Keine Klausuren für deine Fächer gefunden", Toast.LENGTH_SHORT).show()
@@ -603,7 +551,7 @@ class ExamFragment : Fragment() {
 
     private fun findUserClassPage(pdfText: String, classPrefix: String): String? {
         val lines = pdfText.split("\n")
-        var pageStart = -1
+        var pageStart: Int
         var pageEnd = -1
 
         val userClass = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt") ?: "Nicht ausgewählt"
@@ -745,7 +693,7 @@ class ExamFragment : Fragment() {
         }
     }
 
-    private fun parseExamsFromSchedule(page: String, scheduleInfo: ExamScheduleInfo): List<ExamEntry> {
+    private fun parseExamsFromSchedule(page: String): List<ExamEntry> {
         val exams = mutableListOf<ExamEntry>()
         val studentSubjects = getStudentSubjects()
         val studentTeachers = getStudentTeachers()
@@ -756,7 +704,7 @@ class ExamFragment : Fragment() {
         L.d(TAG, "Student subjects: $studentSubjects")
         L.d(TAG, "Student teachers: $studentTeachers")
 
-        val months = extractMonthsFromSchedule(page, scheduleInfo.year)
+        val months = extractMonthsFromSchedule(page)
         if (months.isEmpty()) {
             L.e(TAG, "No months found in schedule")
             return exams
@@ -958,7 +906,7 @@ class ExamFragment : Fragment() {
     private fun fixMultiLineDayEntries(text: String): String {
         val lines = text.split("\n")
         val result = mutableListOf<String>()
-        val weekdays = setOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+        setOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 
         var i = 0
         while (i < lines.size) {
@@ -1206,7 +1154,7 @@ class ExamFragment : Fragment() {
 
         L.d(TAG, "Parsing line for day $dayNumber: '$processedLine'")
 
-        val dayPattern = "(?<!\\[)\\b$dayNumber\\b(?!\\])"
+        val dayPattern = "(?<!\\[)\\b$dayNumber\\b(?!])"
         val dayMatches = dayPattern.toRegex().findAll(processedLine).toList()
 
         L.d(TAG, "Found ${dayMatches.size} occurrences of day $dayNumber")
@@ -1308,7 +1256,7 @@ class ExamFragment : Fragment() {
         return teachers.filter { it.isNotBlank() }
     }
 
-    private fun extractMonthsFromSchedule(page: String, year: String): List<Pair<String, Int>> {
+    private fun extractMonthsFromSchedule(page: String): List<Pair<String, Int>> {
         val months = mutableListOf<Pair<String, Int>>()
         val lines = page.split("\n")
 
@@ -1391,7 +1339,7 @@ class ExamFragment : Fragment() {
         for (examSubject in examSubjects) {
             val matchingSubject = findMatchingUserSubject(examSubject, studentSubjects, studentTeachers)
             if (matchingSubject != null) {
-                val note = buildExamNote(examSubject, content)
+                val note = buildExamNote()
                 matchingExams.add(Pair(matchingSubject, note))
                 L.d(TAG, "Matched exam: $matchingSubject with note: '$note'")
             }
@@ -1565,7 +1513,7 @@ class ExamFragment : Fragment() {
 
     private fun cleanExamNumber(subject: String): String {
         // remove [1] and [2] and optionally previous space ("Ma-2 [1]" -> "Ma-2" and "Ma-2[1]" -> "Ma-2")
-        val cleaned = subject.replace(Regex("\\s*\\[\\d+\\]$"), "").trim()
+        val cleaned = subject.replace(Regex("\\s*\\[\\d+]$"), "").trim()
         L.d(TAG, "Cleaned exam number: '$subject' -> '$cleaned'")
         return cleaned
     }
@@ -1702,29 +1650,14 @@ class ExamFragment : Fragment() {
         return null
     }
 
-    private fun buildExamNote(examSubject: String, content: String): String {
+    private fun buildExamNote(): String {
         val notes = mutableListOf<String>()
-
-        /*
-        // GK/LK
-        if (content.contains("LK") || examSubject.contains("LK")) {
-            notes.add("Leistungskurs")
-        } else if (content.contains("KK") || examSubject.contains("KK")) {
-            notes.add("Kooperationskurs")
-        }
-
-        // add halbjahr exam number
-        val examNumber = extractExamNumber(content)
-        if (examNumber != null) {
-            notes.add("Klausur #$examNumber")
-        }
-        */
-
+        // just build nothing else
         return notes.joinToString(", ")
     }
 
     private fun extractExamNumber(content: String): Int? {
-        val regex = "\\[([0-9]+)\\]".toRegex()
+        val regex = "\\[([0-9]+)]".toRegex()
         val match = regex.find(content)
         val examNumber = match?.groupValues?.get(1)?.toIntOrNull()
 
@@ -1775,16 +1708,9 @@ class ExamFragment : Fragment() {
 
     private fun saveScheduleInfo(scheduleInfo: ExamScheduleInfo) {
         val json = Gson().toJson(scheduleInfo)
-        sharedPreferences.edit()
-            .putString(PREFS_EXAM_SCHEDULE_INFO, json)
-            .apply()
-    }
-
-    private fun getScheduleInfo(): ExamScheduleInfo? {
-        val json = sharedPreferences.getString(PREFS_EXAM_SCHEDULE_INFO, null)
-        return if (json != null) {
-            Gson().fromJson(json, ExamScheduleInfo::class.java)
-        } else null
+        sharedPreferences.edit {
+            putString(PREFS_EXAM_SCHEDULE_INFO, json)
+        }
     }
 
     private fun saveExportToFile(content: String) {
@@ -1797,11 +1723,11 @@ class ExamFragment : Fragment() {
             putExtra(Intent.EXTRA_TITLE, filename)
         }
 
-        sharedPreferences.edit().putString("temp_export_content", content).apply()
+        sharedPreferences.edit {putString("temp_export_content", content)}
 
         try {
             exportLauncher.launch(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1859,11 +1785,11 @@ class ExamFragment : Fragment() {
     }
 
     private fun importFromFilePicker() {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+        Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        sharedPreferences.edit().remove("temp_add_to_existing").apply() // didnt want to change the name
+        sharedPreferences.edit { remove("temp_add_to_existing") } // didnt want to change the name
     }
 
     private fun importFromClipboard() {
@@ -1930,7 +1856,7 @@ class ExamFragment : Fragment() {
                             textGradeDisplay.text = "Ungültig"
                             textGradeDisplay.setBackgroundColor(resources.getColor(android.R.color.holo_red_light))
                         }
-                    } catch (e: NumberFormatException) {
+                    } catch (_: NumberFormatException) {
                         textGradeDisplay.text = ""
                         textGradeDisplay.setBackgroundColor(resources.getColor(android.R.color.background_light))
                     }
@@ -2042,7 +1968,7 @@ class ExamFragment : Fragment() {
                         try {
                             val markValue = markText.toInt()
                             if (markValue in 0..15) markValue else null
-                        } catch (e: NumberFormatException) {
+                        } catch (_: NumberFormatException) {
                             null
                         }
                     } else null
@@ -2052,7 +1978,7 @@ class ExamFragment : Fragment() {
                     if (editExam != null) {
                         updateExam(editExam, subject, selectedDate, note, mark)
                     } else {
-                        addExam(subject, selectedDate, note, mark)
+                        addExam(subject, selectedDate, note, null)
                     }
                 } else {
                     Toast.makeText(requireContext(), "Gebe dein Fach ein", Toast.LENGTH_SHORT).show()
@@ -2247,9 +2173,9 @@ class ExamFragment : Fragment() {
 
     private fun saveExams() {
         val json = Gson().toJson(examList)
-        sharedPreferences.edit()
-            .putString(PREFS_EXAM_LIST, json)
-            .apply()
+        sharedPreferences.edit {
+            putString(PREFS_EXAM_LIST, json)
+        }
 
         ExamManager.setExams(examList)
     }
@@ -2297,29 +2223,12 @@ class ExamFragment : Fragment() {
     private fun updateExamCount() {
         val upcomingCount = examList.count { !it.isCompleted }
         val totalCount = examList.size
-        tvExamCount.text = "$upcomingCount / $totalCount Klausuren"
+        "$upcomingCount / $totalCount Klausuren".also { tvExamCount.text = it }
     }
 
     private fun updateDateButton(button: Button, date: Date) {
         val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
         button.text = format.format(date)
-    }
-
-    private fun showDatePicker(currentDate: Date, onDateSelected: (Date) -> Unit) {
-        val calendar = Calendar.getInstance().apply { time = currentDate }
-
-        DatePickerDialog(
-            requireContext(),
-            { _, year, month, day ->
-                val newDate = Calendar.getInstance().apply {
-                    set(year, month, day)
-                }.time
-                onDateSelected(newDate)
-            },
-            calendar.get(Calendar.YEAR),
-            calendar.get(Calendar.MONTH),
-            calendar.get(Calendar.DAY_OF_MONTH)
-        ).show()
     }
 
     private fun showExportOptions() {
@@ -2375,7 +2284,7 @@ class ExamFragment : Fragment() {
         }
     }
 
-    private fun getSubjectSchedule(context: Context, subject: String): Map<Int, List<Int>> {
+    private fun getSubjectSchedule(subject: String): Map<Int, List<Int>> {
         val json = sharedPreferences.getString("timetable_data", "{}")
 
         try {
@@ -2428,7 +2337,7 @@ class ExamFragment : Fragment() {
 
         // get subject schedule if available
         val subjectSchedule = if (!selectedSubject.isNullOrEmpty()) {
-            getSubjectSchedule(requireContext(), selectedSubject)
+            getSubjectSchedule(selectedSubject)
         } else {
             emptyMap()
         }
@@ -2460,10 +2369,10 @@ class ExamFragment : Fragment() {
 
         // if we have subject data -> show days with today marked
         if (subjectSchedule.isNotEmpty()) {
-            val availableDays = subjectSchedule.keys.map { dayIndex ->
+            val availableDays = subjectSchedule.keys.joinToString(", ") { dayIndex ->
                 val dayName = getWeekdayName(dayIndex)
                 if (dayIndex == todayIndex) "[$dayName]" else dayName
-            }.joinToString(", ")
+            }
             datePickerDialog.setTitle("$selectedSubject: $availableDays")
         }
 
@@ -2495,7 +2404,7 @@ class ExamFragment : Fragment() {
 
         if (exam.mark != null) {
             val grade = exam.getGradeFromMark()
-            textMark.text = "Note: ${exam.mark} Punkte ($grade)"
+            "Note: ${exam.mark} Punkte ($grade)".also { textMark.text = it }
             textMark.visibility = View.VISIBLE
         } else {
             textMark.visibility = View.GONE
@@ -2515,7 +2424,7 @@ class ExamFragment : Fragment() {
         val format = SimpleDateFormat("EEEE, dd. MMMM yyyy", Locale.GERMANY)
         val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
         val formattedDate = format.format(exam.date)
-        val formattedTime = timeFormat.format(exam.date)
+        timeFormat.format(exam.date)
 
         val daysUntil = exam.getDaysUntilExam()
         val statusText = when {
@@ -2523,7 +2432,7 @@ class ExamFragment : Fragment() {
             daysUntil == 0L -> "Diese Klausur ist heute!"
             daysUntil == 1L -> "Diese Klausur ist morgen"
             daysUntil <= 7 -> "Noch $daysUntil Tag${if (daysUntil > 1) "e" else ""} bis zur Klausur"
-            else -> "Noch ${daysUntil} Tage bis zur Klausur"
+            else -> "Noch $daysUntil Tage bis zur Klausur"
         }
 
         return "$formattedDate\n$statusText"

@@ -1,5 +1,7 @@
 package com.thecooker.vertretungsplaner.ui.gallery
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -7,22 +9,18 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.StyleSpan
 import com.thecooker.vertretungsplaner.L
-import android.util.TypedValue
 import android.view.*
 import android.widget.*
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
 import com.google.gson.Gson
-import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.R
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
@@ -45,8 +43,9 @@ import java.io.InputStreamReader
 import android.widget.CheckBox
 import android.os.Handler
 import android.os.Looper
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.os.Build
+import android.text.Html
 import android.util.AttributeSet
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.lifecycle.lifecycleScope
@@ -58,12 +57,7 @@ import android.view.ViewGroup
 import android.view.Gravity
 import android.widget.LinearLayout
 import androidx.appcompat.content.res.AppCompatResources
-
-data class CalendarPeriodData(
-    val date: Date,
-    val calendarView: TableLayout,
-    val isLoaded: Boolean = false
-)
+import kotlin.math.min
 
 class SwipeInterceptorLayout @JvmOverloads constructor(
     context: Context,
@@ -87,7 +81,6 @@ class SwipeInterceptorLayout @JvmOverloads constructor(
     private var hasMovedEnough = false
     private val minSwipeDistance = 150f
     private val minMovementToDetect = 30f
-    private val maxVerticalRatio = 2.0f
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.action) {
@@ -113,7 +106,7 @@ class SwipeInterceptorLayout @JvmOverloads constructor(
                             hasMovedEnough = true
                         }
 
-                        val progress = kotlin.math.min(totalHorizontalMovement / minSwipeDistance, 1f)
+                        val progress = min(totalHorizontalMovement / minSwipeDistance, 1f)
                         swipeListener?.onSwipeProgress(progress, deltaX > 0)
                         return true
                     }
@@ -134,7 +127,7 @@ class SwipeInterceptorLayout @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 if (isSwipeGesture) {
                     val deltaX = event.x - initialX
-                    val progress = kotlin.math.min(abs(deltaX) / minSwipeDistance, 1f)
+                    val progress = min(abs(deltaX) / minSwipeDistance, 1f)
                     swipeListener?.onSwipeProgress(progress, deltaX > 0)
                     lastX = event.x
                     return true
@@ -235,48 +228,10 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        fun setAlternativeRoomsForSubject(context: Context, subject: String, rooms: List<String>) {
-            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-            val json = sharedPreferences.getString("alternative_rooms", "{}")
-
-            val allRooms = try {
-                val type = object : TypeToken<MutableMap<String, List<String>>>() {}.type
-                Gson().fromJson<MutableMap<String, List<String>>>(json, type) ?: mutableMapOf()
-            } catch (e: Exception) {
-                mutableMapOf()
-            }
-
-            if (rooms.isEmpty()) {
-                allRooms.remove(subject)
-            } else {
-                allRooms[subject] = rooms
-            }
-
-            val newJson = Gson().toJson(allRooms)
-            sharedPreferences.edit()
-                .putString("alternative_rooms", newJson)
-                .apply()
-
-            L.d("GalleryFragment", "Alternative rooms updated for subject: $subject")
-        }
-
-        fun getAllAlternativeRooms(context: Context): Map<String, List<String>> {
-            val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-            val json = sharedPreferences.getString("alternative_rooms", "{}")
-            return try {
-                val type = object : TypeToken<MutableMap<String, List<String>>>() {}.type
-                Gson().fromJson(json, type) ?: mutableMapOf()
-            } catch (e: Exception) {
-                L.e("GalleryFragment", "Error loading all alternative rooms", e)
-                emptyMap()
-            }
-        }
     }
 
     private val cellWidth = 150
     private val cellHeight = 80
-    private val dayCellWidth = 400
-    private val dayCellHeight = 120
 
     private val lessonTimes = mapOf(
         1 to "07:30", 2 to "08:15", 3 to "09:30", 4 to "10:15", 5 to "11:15",
@@ -328,7 +283,7 @@ class GalleryFragment : Fragment() {
     )
 
     enum class EntryType {
-        HOMEWORK, EXAM, SUBSTITUTE, SPECIAL_DAY, NOTE, VACATION
+        HOMEWORK, EXAM, SUBSTITUTE, SPECIAL_DAY, VACATION
     }
 
     private val examColor = Color.parseColor("#9C27B0")
@@ -680,14 +635,14 @@ class GalleryFragment : Fragment() {
 
         var totalExams = 0
         var totalHomework = 0
-        var totalVacationDays = vacationWeeks.size * 7
+        val totalVacationDays = vacationWeeks.size * 7
 
         val checkDate = Calendar.getInstance()
         repeat(365) { dayOffset ->
             checkDate.time = now.time
             checkDate.add(Calendar.DAY_OF_YEAR, dayOffset)
 
-            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(checkDate.time)
+            SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(checkDate.time)
             val calendarInfo = calendarDataManager.getCalendarInfoForDate(checkDate.time)
 
             calendarInfo?.exams?.let { exams ->
@@ -1014,7 +969,7 @@ class GalleryFragment : Fragment() {
             .show()
     }
 
-    private suspend fun fetchVacationDataFromWebsite(schoolYear: String): List<Pair<String, Pair<Date, Date>>> {
+    private fun fetchVacationDataFromWebsite(schoolYear: String): List<Pair<String, Pair<Date, Date>>> {
         val url = URL("https://kultus.hessen.de/schulsystem/ferien/ferientermine")
         val connection = url.openConnection() as HttpURLConnection
 
@@ -1081,7 +1036,7 @@ class GalleryFragment : Fragment() {
                     else -> vacationType
                 }
 
-                val dateRangePattern = Regex("(\\d{1,2}\\.\\d{1,2}\\.)\\s*(?:(\\d{4}))?\\s*-\\s*(\\d{1,2}\\.\\d{1,2}\\.)\\s*(\\d{4})")
+                val dateRangePattern = Regex("(\\d{1,2}\\.\\d{1,2}\\.)\\s*(\\d{4})?\\s*-\\s*(\\d{1,2}\\.\\d{1,2}\\.)\\s*(\\d{4})")
                 val dateMatch = dateRangePattern.find(dateRange)
 
                 if (dateMatch != null) {
@@ -1162,7 +1117,7 @@ class GalleryFragment : Fragment() {
     private fun determineVacationType(date: Date): String {
         val calendar = Calendar.getInstance().apply { time = date }
         val month = calendar.get(Calendar.MONTH)
-        val dayOfYear = calendar.get(Calendar.DAY_OF_YEAR)
+        calendar.get(Calendar.DAY_OF_YEAR)
 
         return when (month) {
             Calendar.FEBRUARY, Calendar.MARCH, Calendar.APRIL -> {
@@ -1588,7 +1543,7 @@ class GalleryFragment : Fragment() {
         val timetableEntry = timetableData[dayKey]?.get(lesson)
 
         val cell = createStyledCell("", isDayView = true)
-        var cellText = ""
+        var cellText: String
         val calendarEntries = mutableListOf<CalendarEntry>()
 
         // check if in vacation
@@ -1733,9 +1688,9 @@ class GalleryFragment : Fragment() {
 
                 if (additionalInfo.isNotEmpty()) {
                     val finalHtml = htmlText + "<br><small>" + additionalInfo.joinToString(" | ") + "</small>"
-                    cell.text = android.text.Html.fromHtml(finalHtml, android.text.Html.FROM_HTML_MODE_COMPACT)
+                    cell.text = Html.fromHtml(finalHtml, Html.FROM_HTML_MODE_COMPACT)
                 } else {
-                    cell.text = android.text.Html.fromHtml(htmlText, android.text.Html.FROM_HTML_MODE_COMPACT)
+                    cell.text = Html.fromHtml(htmlText, Html.FROM_HTML_MODE_COMPACT)
                 }
             } else {
                 // Normal display logic
@@ -1762,7 +1717,7 @@ class GalleryFragment : Fragment() {
                         formattedFirstLine
                     }
 
-                    cell.text = android.text.Html.fromHtml(finalText, android.text.Html.FROM_HTML_MODE_COMPACT)
+                    cell.text = Html.fromHtml(finalText, Html.FROM_HTML_MODE_COMPACT)
                 } else {
                     cell.text = cellText
                 }
@@ -2118,7 +2073,7 @@ class GalleryFragment : Fragment() {
         return try {
             val type = object : TypeToken<List<String>>() {}.type
             Gson().fromJson(json, type) ?: emptyList()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -2408,7 +2363,6 @@ class GalleryFragment : Fragment() {
                 EntryType.SUBSTITUTE -> if (entry.content.lowercase().contains(query)) return true
                 EntryType.SPECIAL_DAY -> if (entry.content.lowercase().contains(query)) return true
                 EntryType.VACATION -> if ("ferien".contains(query) || "ferientag".contains(query)) return true
-                else -> if (entry.content.lowercase().contains(query)) return true
             }
         }
 
@@ -2460,7 +2414,7 @@ class GalleryFragment : Fragment() {
     }
 
     private fun isCurrentBreakTime(afterLesson: Int, currentTime: Calendar): Boolean {
-        val breakMinutes = breakTimes[afterLesson] ?: return false
+        breakTimes[afterLesson] ?: return false
         val lessonEndTime = lessonEndTimes[afterLesson] ?: return false
         val nextLessonStartTime = lessonTimes[afterLesson + 1] ?: return false
 
@@ -3441,7 +3395,7 @@ class GalleryFragment : Fragment() {
         }
         try {
             startActivityForResult(intent, 1001)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(requireContext(), "Dateimanager nicht verfügbar", Toast.LENGTH_SHORT).show()
         }
     }
@@ -3573,7 +3527,7 @@ class GalleryFragment : Fragment() {
                 val loadedData: MutableMap<String, VacationWeek> = Gson().fromJson(json, type) ?: mutableMapOf()
                 vacationWeeks.clear()
                 vacationWeeks.putAll(loadedData)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 val oldType = object : TypeToken<MutableSet<String>>() {}.type
                 try {
                     val oldData: MutableSet<String> = Gson().fromJson(json, oldType) ?: mutableSetOf()
@@ -3713,7 +3667,7 @@ class GalleryFragment : Fragment() {
         highlightAnimator?.cancel()
         highlightAnimator = null
         currentHighlightedCell?.let { cell ->
-            val calendarEntries = getCalendarEntriesForCurrentCell(cell)
+            val calendarEntries = getCalendarEntriesForCurrentCell()
             val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
             cell.background = if (backgroundColor != Color.TRANSPARENT) {
                 createRoundedDrawable(backgroundColor)
@@ -3750,7 +3704,7 @@ class GalleryFragment : Fragment() {
                     Color.blue(Color.YELLOW)
                 )
 
-                val calendarEntries = getCalendarEntriesForCurrentCell(cell)
+                val calendarEntries = getCalendarEntriesForCurrentCell()
                 val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
 
                 cell.background = createRoundedDrawableWithBorder(
@@ -3760,11 +3714,11 @@ class GalleryFragment : Fragment() {
                 )
             }
 
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
                     // reset to normal after anim end
                     currentHighlightedCell?.let { cell ->
-                        val calendarEntries = getCalendarEntriesForCurrentCell(cell)
+                        val calendarEntries = getCalendarEntriesForCurrentCell()
                         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
                         cell.background = createRoundedDrawableWithBorder(
                             backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE,
@@ -3780,9 +3734,9 @@ class GalleryFragment : Fragment() {
 
         try {
             highlightAnimator?.start()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // fallback static border
-            val calendarEntries = getCalendarEntriesForCurrentCell(cell)
+            val calendarEntries = getCalendarEntriesForCurrentCell()
             val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
             cell.background = createRoundedDrawableWithBorder(
                 backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE,
@@ -3792,7 +3746,7 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun getCalendarEntriesForCurrentCell(cell: TextView): List<CalendarEntry> {
+    private fun getCalendarEntriesForCurrentCell(): List<CalendarEntry> {
         // helper method to get calendar entries for current cell
         return emptyList() // fallback
     }
@@ -3842,7 +3796,7 @@ class GalleryFragment : Fragment() {
     }
 
     private fun identifyFreePeriods() {
-        for ((dayKey, dayTimetable) in timetableData) {
+        for ((_, dayTimetable) in timetableData) {
             val lessons = dayTimetable.toSortedMap()
 
             if (lessons.isEmpty()) continue
@@ -3990,7 +3944,7 @@ class GalleryFragment : Fragment() {
             val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
             val vacationsArray = JSONArray()
 
-            val vacationPeriods = mutableListOf<Pair<Date, Date>>()
+            mutableListOf<Pair<Date, Date>>()
             val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY)
 
             val sortedVacationWeeks = vacationWeeks.keys.sorted()
@@ -4134,8 +4088,8 @@ class GalleryFragment : Fragment() {
         }
 
         swipeIndicatorView?.let { indicator ->
-            val scaledProgress = kotlin.math.min(progress, 1f)
-            val targetAlpha = kotlin.math.min(scaledProgress * 1.2f, 0.95f)
+            val scaledProgress = min(progress, 1f)
+            val targetAlpha = min(scaledProgress * 1.2f, 0.95f)
 
             indicator.alpha = targetAlpha
             indicator.visibility = View.VISIBLE
@@ -4224,7 +4178,7 @@ class GalleryFragment : Fragment() {
                 setColor(Color.parseColor("#F0FFFFFF"))
                 cornerRadius = 35f
                 setStroke(4, Color.parseColor("#0f5293"))
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     elevation = 15f
                 }
             }
@@ -4292,7 +4246,7 @@ class GalleryFragment : Fragment() {
                 val deltaY = e2.y - e1.y
 
                 if (abs(deltaX) > 30 && abs(deltaX) > abs(deltaY) * 0.4f) {
-                    val progress = kotlin.math.min(abs(deltaX) / 120f, 1f)
+                    val progress = min(abs(deltaX) / 120f, 1f)
                     showSwipeIndicator(deltaX > 0, progress)
                     return true
                 }
