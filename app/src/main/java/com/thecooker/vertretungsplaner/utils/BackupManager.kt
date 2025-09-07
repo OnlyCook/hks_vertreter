@@ -452,11 +452,13 @@ class BackupManager(private val context: Context) {
         }
     }
 
-    /**
-     * Import exam data by directly manipulating SharedPreferences and CalendarDataManager
-     */
     fun importExamData(content: String) {
         try {
+            // check if header valid before continuing
+            if (!content.contains("# Heinrich-Kleyer-Schule Klausuren Export")) {
+                throw IllegalArgumentException("Ungültiges Datenformat")
+            }
+
             val lines = content.split("\n")
             val examList = mutableListOf<ExamEntry>()
 
@@ -522,7 +524,7 @@ class BackupManager(private val context: Context) {
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)
-            throw Exception("Failed to import exam data: ${e.message}")
+            throw Exception("Importfehler: ${e.message}")
         }
     }
 

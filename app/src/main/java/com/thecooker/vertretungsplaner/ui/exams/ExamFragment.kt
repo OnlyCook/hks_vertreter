@@ -1817,7 +1817,17 @@ class ExamFragment : Fragment() {
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)
-            Toast.makeText(requireContext(), "Fehler beim Importieren der Daten: ${e.message}", Toast.LENGTH_LONG).show()
+
+            val errorMessage = when {
+                e.message?.contains("Ungültiges Datenformat") == true ->
+                    "Ungültiges Datenformat. Bitte überprüfe deine Eingabe."
+                e.message?.contains("Importfehler") == true ->
+                    e.message!!.removePrefix("Importfehler: ")
+                else ->
+                    "Fehler beim Importieren der Daten: ${e.message}"
+            }
+
+            Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
         }
     }
 

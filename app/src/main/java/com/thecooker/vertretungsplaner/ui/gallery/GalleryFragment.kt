@@ -44,10 +44,8 @@ import android.widget.CheckBox
 import android.os.Handler
 import android.os.Looper
 import android.animation.ValueAnimator
-import android.os.Build
 import android.text.Html
 import android.util.AttributeSet
-import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.lifecycle.lifecycleScope
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONArray
@@ -58,6 +56,11 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import androidx.appcompat.content.res.AppCompatResources
 import kotlin.math.min
+import androidx.core.view.isNotEmpty
+import androidx.core.view.isEmpty
+import androidx.core.graphics.toColorInt
+import androidx.core.content.edit
+import androidx.core.view.isVisible
 
 class SwipeInterceptorLayout @JvmOverloads constructor(
     context: Context,
@@ -286,7 +289,7 @@ class GalleryFragment : Fragment() {
         HOMEWORK, EXAM, SUBSTITUTE, SPECIAL_DAY, VACATION
     }
 
-    private val examColor = Color.parseColor("#9C27B0")
+    private val examColor = "#9C27B0".toColorInt()
 
     // search bar
     private lateinit var searchBar: EditText
@@ -354,7 +357,7 @@ class GalleryFragment : Fragment() {
         }
 
         val loadingMessage = TextView(requireContext()).apply {
-            text = "Kalender wird geladen..."
+            "Kalender wird geladen...".also { text = it }
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -375,7 +378,7 @@ class GalleryFragment : Fragment() {
         calendarGrid.removeAllViews()
 
         val errorMessage = TextView(requireContext()).apply {
-            text = "Fehler beim Laden des Kalenders.\nTippe hier um es erneut zu versuchen."
+            "Fehler beim Laden des Kalenders.\nTippe hier um es erneut zu versuchen.".also { text = it }
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -493,10 +496,13 @@ class GalleryFragment : Fragment() {
     }
 
     private fun saveViewPreference() {
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        sharedPreferences.edit()
-            .putBoolean("calendar_day_view", isDayView)
-            .apply()
+        val sharedPreferences = requireContext().getSharedPreferences(
+            "AppPrefs",
+            Context.MODE_PRIVATE
+        )
+        sharedPreferences.edit {
+            putBoolean("calendar_day_view", isDayView)
+        }
     }
 
     private fun loadViewPreference() {
@@ -930,7 +936,7 @@ class GalleryFragment : Fragment() {
         }
 
         val clearExistingCheckbox = CheckBox(requireContext()).apply {
-            text = "Vorhandene automatische Ferien löschen"
+            "Vorhandene automatische Ferien löschen".also { text = it }
             isChecked = true
             setPadding(0, 16, 0, 16)
         }
@@ -944,7 +950,7 @@ class GalleryFragment : Fragment() {
         }
 
         container.addView(TextView(requireContext()).apply {
-            text = "Schuljahr auswählen:"
+            "Schuljahr auswählen:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -1201,13 +1207,13 @@ class GalleryFragment : Fragment() {
         weekSpinner.setSelection(currentWeek - 1)
 
         container.addView(TextView(requireContext()).apply {
-            text = "Jahr:"
+            "Jahr:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
-            text = "Kalenderwoche:"
+            "Kalenderwoche:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -1270,19 +1276,19 @@ class GalleryFragment : Fragment() {
         daySpinner.setSelection(currentDay.get(Calendar.DAY_OF_MONTH) - 1)
 
         container.addView(TextView(requireContext()).apply {
-            text = "Jahr:"
+            "Jahr:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
-            text = "Monat:"
+            "Monat:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(monthSpinner)
         container.addView(TextView(requireContext()).apply {
-            text = "Tag:"
+            "Tag:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -1325,31 +1331,29 @@ class GalleryFragment : Fragment() {
         setupColorLegend()
     }
 
-    private fun updateWeekDisplay() {
-        if (isDayView) {
-            val currentDay = Calendar.getInstance().apply {
-                time = currentWeekStart.time
-                add(Calendar.DAY_OF_WEEK, currentDayOffset)
-            }
-
-            val dateFormat = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY)
-            currentWeekTextView.text = dateFormat.format(currentDay.time)
-        } else {
-            val weekEnd = Calendar.getInstance().apply {
-                time = currentWeekStart.time
-                add(Calendar.DAY_OF_WEEK, 4)
-            }
-
-            val dateFormat = SimpleDateFormat("dd.", Locale.GERMANY)
-            val weekFormat = SimpleDateFormat("w", Locale.GERMANY)
-
-            val startDay = dateFormat.format(currentWeekStart.time)
-            val endDay = dateFormat.format(weekEnd.time)
-            val monthYear = SimpleDateFormat("MM.yyyy", Locale.GERMANY).format(weekEnd.time)
-            val weekNumber = weekFormat.format(currentWeekStart.time)
-
-            currentWeekTextView.text = "$startDay - $endDay$monthYear\nKalenderwoche $weekNumber"
+    private fun updateWeekDisplay() = if (isDayView) {
+        val currentDay = Calendar.getInstance().apply {
+            time = currentWeekStart.time
+            add(Calendar.DAY_OF_WEEK, currentDayOffset)
         }
+
+        val dateFormat = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY)
+        currentWeekTextView.text = dateFormat.format(currentDay.time)
+    } else {
+        val weekEnd = Calendar.getInstance().apply {
+            time = currentWeekStart.time
+            add(Calendar.DAY_OF_WEEK, 4)
+        }
+
+        val dateFormat = SimpleDateFormat("dd.", Locale.GERMANY)
+        val weekFormat = SimpleDateFormat("w", Locale.GERMANY)
+
+        val startDay = dateFormat.format(currentWeekStart.time)
+        val endDay = dateFormat.format(weekEnd.time)
+        val monthYear = SimpleDateFormat("MM.yyyy", Locale.GERMANY).format(weekEnd.time)
+        val weekNumber = weekFormat.format(currentWeekStart.time)
+
+        currentWeekTextView.text = "$startDay - $endDay$monthYear\nKalenderwoche $weekNumber"
     }
 
     private fun buildCalendarGrid() {
@@ -1376,6 +1380,8 @@ class GalleryFragment : Fragment() {
         } else {
             createWeekView()
         }
+
+        startInitialHighlighting()
     }
 
     private fun createWeekView() {
@@ -1426,13 +1432,13 @@ class GalleryFragment : Fragment() {
         val isToday = isSameDay(currentDay.time, today.time)
 
         if (isToday) {
-            dayHeader.background = createRoundedDrawable(Color.parseColor("#FFC107"))
+            dayHeader.background = createRoundedDrawable("#FFC107".toColorInt())
             dayHeader.setTextColor(Color.BLACK)
         }
 
         // check for notes and mark with asterisk
         if (hasNotesForDay(currentDay.time) || shouldShowAsterisk(currentDay.time)) {
-            dayHeader.text = "${dayHeader.text}*"
+            "${dayHeader.text}*".also { dayHeader.text = it }
         }
 
         dayHeader.setOnClickListener { showDayDetails(currentDay.time) }
@@ -1453,7 +1459,7 @@ class GalleryFragment : Fragment() {
         for (lesson in 1..maxLessons) {
             val breakMinutes = breakTimes[lesson - 1]
             if (breakMinutes != null && lesson > 1) {
-                createDayBreakRow(breakMinutes, isCurrentDay, currentTime, lesson)
+                createDayBreakRow(breakMinutes)
             }
 
             val lessonRow = TableRow(requireContext()).apply {
@@ -1495,7 +1501,7 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun createDayBreakRow(breakMinutes: Int, isCurrentDay: Boolean, currentTime: Calendar, afterLesson: Int) {
+    private fun createDayBreakRow(breakMinutes: Int) {
         val breakRow = TableRow(requireContext()).apply {
             layoutParams = TableLayout.LayoutParams(
                 TableLayout.LayoutParams.MATCH_PARENT,
@@ -1504,19 +1510,13 @@ class GalleryFragment : Fragment() {
         }
 
         val breakView = TextView(requireContext()).apply {
-            text = "Pause\n($breakMinutes Min.)"
+            "Pause\n($breakMinutes Min.)".also { text = it }
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(8, 8, 8, 8)
             setTextColor(Color.BLACK)
 
-            val drawable = createRoundedDrawable(Color.LTGRAY)
-            background = drawable
-
-            // check if currently in break
-            if (isCurrentDay && isCurrentBreakTime(afterLesson - 1, currentTime)) {
-                background = createRoundedDrawableWithBorder(Color.LTGRAY, Color.YELLOW, 8)
-            }
+            background = createRoundedDrawable(Color.LTGRAY)
 
             layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT).apply {
                 span = 2
@@ -1693,7 +1693,6 @@ class GalleryFragment : Fragment() {
                     cell.text = Html.fromHtml(htmlText, Html.FROM_HTML_MODE_COMPACT)
                 }
             } else {
-                // Normal display logic
                 if (additionalInfo.isNotEmpty()) {
                     cellText += "\n" + additionalInfo.joinToString(" | ")
                 }
@@ -1764,12 +1763,17 @@ class GalleryFragment : Fragment() {
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
 
-        if (isCurrentDay && isCurrentLesson(lesson, currentTime) && timetableEntry != null) {
-            val drawable = createRoundedDrawableWithBorder(
-                backgroundColor,
-                Color.YELLOW, 12
-            )
-            cell.background = drawable
+        // check for current lesson highlight
+        if (isCurrentDay) {
+            val isCurrentLessonTime = isCurrentLesson(lesson, currentTime)
+            val isCurrentBreakTime = isCurrentBreakTime(lesson - 1, currentTime)
+
+            if ((isCurrentLessonTime && timetableEntry != null) || isCurrentBreakTime) {
+                startCurrentLessonHighlight(cell, backgroundColor)
+            } else if (backgroundColor != Color.TRANSPARENT) {
+                val drawable = createRoundedDrawable(backgroundColor)
+                cell.background = drawable
+            }
         } else if (backgroundColor != Color.TRANSPARENT) {
             val drawable = createRoundedDrawable(backgroundColor)
             cell.background = drawable
@@ -1858,7 +1862,7 @@ class GalleryFragment : Fragment() {
 
     private fun showEmptyCalendar() {
         val emptyMessage = TextView(requireContext()).apply {
-            text = "Du musst zuerst deinen Stundenplan scannen, um den Kalender verwenden zu können."
+            "Du musst zuerst deinen Stundenplan scannen, um den Kalender verwenden zu können.".also { text = it }
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -1932,7 +1936,7 @@ class GalleryFragment : Fragment() {
         }
 
         val notesLabel = TextView(requireContext()).apply {
-            text = "Notizen:"
+            "Notizen:".also { text = it }
             textSize = 16f
             setTextColor(Color.BLACK)
             setTypeface(null, Typeface.BOLD)
@@ -1946,7 +1950,7 @@ class GalleryFragment : Fragment() {
         }
 
         val occasionsLabel = TextView(requireContext()).apply {
-            text = "Besondere Ereignisse:"
+            "Besondere Ereignisse:".also { text = it }
             textSize = 16f
             setTextColor(Color.BLACK)
             setTypeface(null, Typeface.BOLD)
@@ -2080,30 +2084,36 @@ class GalleryFragment : Fragment() {
 
     private fun saveUserNotesForDate(date: Date, notes: String) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        sharedPreferences.edit()
-            .putString("user_notes_$dateStr", notes)
-            .apply()
+        val sharedPreferences = requireContext().getSharedPreferences(
+            "AppPrefs",
+            Context.MODE_PRIVATE
+        )
+        sharedPreferences.edit {
+            putString("user_notes_$dateStr", notes)
+        }
     }
 
     private fun saveUserSpecialOccasionsForDate(date: Date, occasions: List<String>) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
         val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
         val json = Gson().toJson(occasions)
-        sharedPreferences.edit()
-            .putString("user_special_occasions_$dateStr", json)
-            .apply()
+        sharedPreferences.edit {
+            putString("user_special_occasions_$dateStr", json)
+        }
 
         saveHolidaysData()
     }
 
     private fun clearUserDataForDate(date: Date) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        sharedPreferences.edit()
-            .remove("user_notes_$dateStr")
-            .remove("user_special_occasions_$dateStr")
-            .apply()
+        val sharedPreferences = requireContext().getSharedPreferences(
+            "AppPrefs",
+            Context.MODE_PRIVATE
+        )
+        sharedPreferences.edit {
+            remove("user_notes_$dateStr")
+                .remove("user_special_occasions_$dateStr")
+        }
     }
 
     private fun showAllLessonTimes() {
@@ -2134,12 +2144,12 @@ class GalleryFragment : Fragment() {
     private fun createLessonRows() {
         val maxLessons = getMaxLessonsForWeek()
         val currentTime = Calendar.getInstance()
-        val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
+        isSameWeek(currentWeekStart.time, currentTime.time)
 
         for (lesson in 1..maxLessons) {
             val breakMinutes = breakTimes[lesson - 1]
             if (breakMinutes != null && lesson > 1) {
-                createBreakRow(breakMinutes, isCurrentWeek, currentTime, lesson - 1)
+                createBreakRow(breakMinutes)
             }
 
             val lessonRow = TableRow(requireContext()).apply {
@@ -2152,17 +2162,9 @@ class GalleryFragment : Fragment() {
             val timeCell = createStyledCell("$lesson", isLessonColumn = true).apply {
                 setTypeface(null, Typeface.BOLD)
 
-                val isCurrentLessonTime = isCurrentWeek &&
-                        isCurrentLesson(lesson, currentTime) &&
-                        !isCurrentBreakTime(lesson - 1, currentTime)
-
-                background = if (isCurrentLessonTime) {
-                    createFlatRoundedDrawable("#FFC107")
-                } else {
-                    createFlatRoundedDrawable("#ECEFF1")
-                }
-
-                setTextColor(if (isCurrentLessonTime) Color.BLACK else Color.parseColor("#37474F"))
+                // set default background without highlighting
+                background = createFlatRoundedDrawable("#ECEFF1")
+                setTextColor("#37474F".toColorInt())
 
                 setOnClickListener { showLessonTimeDetails(lesson) }
             }
@@ -2170,7 +2172,7 @@ class GalleryFragment : Fragment() {
 
             // day columns
             for (dayIndex in weekdays.indices) {
-                val dayCell = createDayCell(dayIndex, lesson, isCurrentWeek, currentTime)
+                val dayCell = createDayCell(dayIndex, lesson)
                 lessonRow.addView(dayCell)
             }
 
@@ -2180,9 +2182,7 @@ class GalleryFragment : Fragment() {
 
     private fun createDayCell(
         dayIndex: Int,
-        lesson: Int,
-        isCurrentWeek: Boolean,
-        currentTime: Calendar
+        lesson: Int
     ): TextView {
         val currentWeekDay = Calendar.getInstance().apply {
             time = currentWeekStart.time
@@ -2287,8 +2287,6 @@ class GalleryFragment : Fragment() {
         cell.text = cellText
 
         val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
-
-        // get actual room being used (could be alternative room from timetableEntry)
         val actualRoom = timetableEntry?.room ?: ""
         val actualTeacher = timetableEntry?.teacher ?: ""
 
@@ -2307,19 +2305,8 @@ class GalleryFragment : Fragment() {
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
 
-        if (isCurrentWeek && isSameDay(currentWeekDay.time, currentTime.time) &&
-            isCurrentLesson(lesson, currentTime) && timetableEntry != null
-        ) {
-            if (!isDayView) {
-                startCurrentLessonHighlight(cell)
-            } else {
-                val drawable = createRoundedDrawableWithBorder(
-                    backgroundColor,
-                    Color.YELLOW, 12
-                )
-                cell.background = drawable
-            }
-        } else if (backgroundColor != Color.TRANSPARENT) {
+        // set background without automatic highlighting
+        if (backgroundColor != Color.TRANSPARENT) {
             val drawable = createRoundedDrawable(backgroundColor)
             cell.background = drawable
         }
@@ -2380,7 +2367,7 @@ class GalleryFragment : Fragment() {
         return highestPriorityEntry?.backgroundColor ?: Color.TRANSPARENT
     }
 
-    private fun createBreakRow(breakMinutes: Int, isCurrentWeek: Boolean, currentTime: Calendar, afterLesson: Int) {
+    private fun createBreakRow(breakMinutes: Int) {
         val breakRow = TableRow(requireContext()).apply {
             layoutParams = TableLayout.LayoutParams(
                 TableLayout.LayoutParams.MATCH_PARENT,
@@ -2389,19 +2376,13 @@ class GalleryFragment : Fragment() {
         }
 
         val breakView = TextView(requireContext()).apply {
-            text = "Pause ($breakMinutes Min.)"
+            "Pause ($breakMinutes Min.)".also { text = it }
             textSize = 10f
             gravity = Gravity.CENTER
             setPadding(4, 4, 4, 4)
             setTextColor(Color.BLACK)
 
-            val drawable = createRoundedDrawable(Color.LTGRAY)
-            background = drawable
-
-            // break highlight
-            if (isCurrentWeek && isCurrentBreakTime(afterLesson, currentTime)) {
-                background = createRoundedDrawableWithBorder(Color.LTGRAY, Color.YELLOW, 8)
-            }
+            background = createRoundedDrawable(Color.LTGRAY)
 
             layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT).apply {
                 span = 6 // all columns
@@ -2420,15 +2401,20 @@ class GalleryFragment : Fragment() {
 
         val currentTimeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
 
-        val endParts = lessonEndTime.split(":")
-        val startParts = nextLessonStartTime.split(":")
-        val currentParts = currentTimeStr.split(":")
+        try {
+            val endParts = lessonEndTime.split(":")
+            val startParts = nextLessonStartTime.split(":")
+            val currentParts = currentTimeStr.split(":")
 
-        val endMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
-        val startMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
-        val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
+            val endMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
+            val startMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
+            val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
 
-        return currentMinutes >= endMinutes && currentMinutes < startMinutes
+            return currentMinutes >= endMinutes && currentMinutes < startMinutes
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error parsing break time", e)
+            return false
+        }
     }
 
     private fun setupColorLegend() {
@@ -2728,14 +2714,14 @@ class GalleryFragment : Fragment() {
             }
 
             if (isHeader) {
-                background = createRoundedDrawable(Color.parseColor("#0f5293"))
+                background = createRoundedDrawable("#0f5293".toColorInt())
                 setTextColor(Color.WHITE)
             } else if (isLessonColumn) {
-                background = createRoundedDrawable(Color.parseColor("#ECEFF1"))
-                setTextColor(Color.parseColor("#37474F"))
+                background = createRoundedDrawable("#ECEFF1".toColorInt())
+                setTextColor("#37474F".toColorInt())
             } else {
                 background = createRoundedDrawable(Color.WHITE)
-                setTextColor(Color.parseColor("#212121"))
+                setTextColor("#212121".toColorInt())
             }
 
             if (isDayView) {
@@ -2785,7 +2771,7 @@ class GalleryFragment : Fragment() {
 
     private fun createFlatRoundedDrawable(colorHex: String): GradientDrawable {
         return GradientDrawable().apply {
-            setColor(Color.parseColor(colorHex))
+            setColor(colorHex.toColorInt())
             cornerRadius = 8f
         }
     }
@@ -2827,7 +2813,7 @@ class GalleryFragment : Fragment() {
         }
 
         val roomLabel = TextView(requireContext()).apply {
-            text = "Raum:"
+            "Raum:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
             visibility = View.GONE
@@ -2907,13 +2893,13 @@ class GalleryFragment : Fragment() {
         }
 
         container.addView(TextView(requireContext()).apply {
-            text = "Fach:"
+            "Fach:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(subjectSpinner)
         container.addView(TextView(requireContext()).apply {
-            text = "Dauer:"
+            "Dauer:".also { text = it }
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -2927,7 +2913,7 @@ class GalleryFragment : Fragment() {
             .setPositiveButton("Speichern") { _, _ ->
                 val selectedSubject = subjectSpinner.selectedItem.toString()
                 val duration = durationSpinner.selectedItemPosition + 1
-                val selectedRoom = if (roomSpinner.visibility == View.VISIBLE && roomSpinner.selectedItem != null) {
+                val selectedRoom = if (roomSpinner.isVisible && roomSpinner.selectedItem != null) {
                     roomSpinner.selectedItem.toString()
                 } else ""
 
@@ -3454,7 +3440,7 @@ class GalleryFragment : Fragment() {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
             cornerRadius = 16f
-            setStroke(1, Color.parseColor("#E0E0E0"))
+            setStroke(1, "#E0E0E0".toColorInt())
         }
     }
 
@@ -3471,9 +3457,9 @@ class GalleryFragment : Fragment() {
         try {
             val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
             val json = Gson().toJson(timetableData)
-            sharedPreferences.edit()
-                .putString("timetable_data", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("timetable_data", json)
+            }
             L.d("GalleryFragment", "Timetable data saved")
         } catch (e: Exception) {
             L.e("GalleryFragment", "Error saving timetable data", e)
@@ -3499,9 +3485,9 @@ class GalleryFragment : Fragment() {
         try {
             val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
             val json = Gson().toJson(vacationWeeks)
-            sharedPreferences.edit()
-                .putString("vacation_data", json)
-                .apply()
+            sharedPreferences.edit {
+                putString("vacation_data", json)
+            }
             L.d("GalleryFragment", "Vacation data saved")
 
             // Also save in homework-compatible format
@@ -3663,40 +3649,43 @@ class GalleryFragment : Fragment() {
         stopCurrentHighlight()
     }
 
-    private fun stopCurrentHighlight() {
-        highlightAnimator?.cancel()
-        highlightAnimator = null
-        currentHighlightedCell?.let { cell ->
-            val calendarEntries = getCalendarEntriesForCurrentCell()
-            val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
-            cell.background = if (backgroundColor != Color.TRANSPARENT) {
-                createRoundedDrawable(backgroundColor)
-            } else {
-                createRoundedDrawable(Color.WHITE)
-            }
-        }
-        currentHighlightedCell = null
-    }
+    private fun createOptimizedPulseAnimation(cell: TextView, backgroundColor: Int): ValueAnimator {
+        return ValueAnimator.ofInt(0, 32).apply { // 32 steps = 4 cycles of 8 steps each
+            duration = 4000  // 4 cycles * 1000ms per cycle
 
-    private fun startCurrentLessonHighlight(cell: TextView) {
-        stopCurrentHighlight()
-
-        if (isDayView) return
-
-        currentHighlightedCell = cell
-
-        // pulsing animation
-        highlightAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 500
-            repeatCount = 3
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = AccelerateDecelerateInterpolator()
+            // configure when to stop (0-7 represents position within the final cycle)
+            val stopAtStep = 7  // 7 = thickest border, 0 = thinnest border
 
             addUpdateListener { animator ->
-                val animatedValue = animator.animatedValue as Float
-                val alpha = 0.3f + (animatedValue * 0.7f)
+                if (currentHighlightedCell != cell) return@addUpdateListener
 
-                val borderWidth = (8 + (animatedValue * 6)).toInt()
+                val totalStep = animator.animatedValue as Int
+                val currentCycle = totalStep / 8 // which cycle (0-3)
+                val stepInCycle = totalStep % 8 // step within current cycle (0-7)
+
+                if (currentCycle >= 4) {
+                    animator.cancel()
+                    return@addUpdateListener
+                }
+
+                if (currentCycle == 3 && stepInCycle >= stopAtStep) {
+                    animator.cancel()
+                    return@addUpdateListener
+                }
+
+                val progress = when {
+                    stepInCycle <= 3 -> stepInCycle / 3f // 0 to 1 (expanding)
+                    else -> (7 - stepInCycle) / 3f // 1 to 0 (contracting)
+                }
+
+                val minBorderWidth = 3
+                val maxBorderWidth = 8
+                val borderWidth = minBorderWidth + ((maxBorderWidth - minBorderWidth) * progress).toInt()
+
+                val baseAlpha = 0.7f
+                val pulseAlpha = 0.3f
+                val alpha = baseAlpha + (pulseAlpha * progress)
+
                 val pulseColor = Color.argb(
                     (255 * alpha).toInt(),
                     Color.red(Color.YELLOW),
@@ -3704,51 +3693,241 @@ class GalleryFragment : Fragment() {
                     Color.blue(Color.YELLOW)
                 )
 
-                val calendarEntries = getCalendarEntriesForCurrentCell()
-                val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
-
-                cell.background = createRoundedDrawableWithBorder(
-                    backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE,
-                    pulseColor,
-                    borderWidth
-                )
+                try {
+                    cell.background = createRoundedDrawableWithBorder(
+                        backgroundColor,
+                        pulseColor,
+                        borderWidth
+                    )
+                } catch (e: Exception) {
+                    L.w("GalleryFragment", "Error updating pulse animation", e)
+                }
             }
 
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    // reset to normal after anim end
-                    currentHighlightedCell?.let { cell ->
-                        val calendarEntries = getCalendarEntriesForCurrentCell()
-                        val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
-                        cell.background = createRoundedDrawableWithBorder(
-                            backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE,
-                            Color.YELLOW,
-                            12
-                        )
-                    }
-                    currentHighlightedCell = null
-                    highlightAnimator = null
+                    setStaticHighlight(cell, backgroundColor)
+                }
+
+                override fun onAnimationCancel(animation: Animator) {
+                    setStaticHighlight(cell, backgroundColor)
                 }
             })
-        }
 
-        try {
-            highlightAnimator?.start()
-        } catch (_: Exception) {
-            // fallback static border
-            val calendarEntries = getCalendarEntriesForCurrentCell()
-            val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
-            cell.background = createRoundedDrawableWithBorder(
-                backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE,
-                Color.YELLOW,
-                12
-            )
+            highlightAnimator = this
         }
     }
 
-    private fun getCalendarEntriesForCurrentCell(): List<CalendarEntry> {
-        // helper method to get calendar entries for current cell
-        return emptyList() // fallback
+    private fun setStaticHighlight(cell: TextView, backgroundColor: Int) {
+        if (currentHighlightedCell == cell) {
+            try {
+                cell.background = createRoundedDrawableWithBorder(
+                    backgroundColor,
+                    Color.YELLOW,
+                    8
+                )
+            } catch (e: Exception) {
+                L.w("GalleryFragment", "Error setting final highlight state", e)
+            }
+        }
+        highlightAnimator = null
+    }
+
+    private fun stopCurrentHighlight() {
+        highlightAnimator?.cancel()
+        highlightAnimator = null
+
+        currentHighlightedCell?.let { cell ->
+            try {
+                val calendarEntries = getCalendarEntriesForCurrentHighlightedCell()
+                val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
+                cell.background = if (backgroundColor != Color.TRANSPARENT) {
+                    createRoundedDrawable(backgroundColor)
+                } else {
+                    createRoundedDrawable(Color.WHITE)
+                }
+            } catch (e: Exception) {
+                L.w("GalleryFragment", "Error stopping highlight", e)
+            }
+        }
+        currentHighlightedCell = null
+    }
+
+    private fun getCalendarEntriesForCurrentHighlightedCell(): List<CalendarEntry> {
+        return emptyList()
+    }
+
+    private fun startCurrentBreakHighlight(breakView: TextView) {
+        stopCurrentHighlight()
+        currentHighlightedCell = breakView
+        val pulseAnimation = createOptimizedPulseAnimation(breakView, Color.LTGRAY)
+        pulseAnimation.start()
+    }
+
+    private fun startCurrentLessonHighlight(cell: TextView, backgroundColor: Int = Color.WHITE) {
+        stopCurrentHighlight()
+        currentHighlightedCell = cell
+        val finalBackgroundColor = backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE
+        val pulseAnimation = createOptimizedPulseAnimation(cell, finalBackgroundColor)
+        pulseAnimation.start()
+    }
+
+    private fun startInitialHighlighting() {
+        calendarGrid.post {
+            val currentTime = Calendar.getInstance()
+            val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
+
+            if (!isCurrentWeek && !isDayView) return@post
+
+            if (isDayView) {
+                val currentDay = Calendar.getInstance().apply {
+                    time = currentWeekStart.time
+                    add(Calendar.DAY_OF_WEEK, currentDayOffset)
+                }
+                val isCurrentDay = isSameDay(currentDay.time, currentTime.time)
+                if (!isCurrentDay) return@post
+            }
+
+            val maxLessons = getMaxLessonsForWeek()
+            for (lesson in 1..maxLessons) {
+                if (isCurrentBreakTime(lesson, currentTime)) {
+                    highlightCurrentBreak(lesson)
+                    return@post
+                }
+            }
+
+            for (lesson in 1..maxLessons) {
+                if (isCurrentLesson(lesson, currentTime)) {
+                    highlightCurrentLesson(lesson, currentTime)
+                    return@post
+                }
+            }
+        }
+    }
+
+    private fun highlightCurrentBreak(afterLesson: Int) {
+        if (isDayView) {
+            // day view
+            for (i in 0 until calendarGrid.childCount) {
+                val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+
+                if (row.isNotEmpty()) {
+                    val cell = row.getChildAt(0) as? TextView ?: continue
+                    val cellText = cell.text.toString()
+
+                    if (cellText.contains("Pause", ignoreCase = true)) {
+                        val breakPosition = getBreakPositionForDayView(i)
+                        if (breakPosition == afterLesson) {
+                            startCurrentBreakHighlight(cell)
+                            return
+                        }
+                    }
+                }
+            }
+        } else {
+            // week view
+            for (i in 0 until calendarGrid.childCount) {
+                val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+
+                for (j in 0 until row.childCount) {
+                    val cell = row.getChildAt(j) as? TextView ?: continue
+                    val cellText = cell.text.toString()
+
+                    if (cellText.contains("Pause", ignoreCase = true)) {
+                        val breakPosition = getBreakPositionFromGrid(i)
+                        if (breakPosition == afterLesson) {
+                            startCurrentBreakHighlight(cell)
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun getBreakPositionFromGrid(gridIndex: Int): Int {
+        var lessonCount = 0
+
+        for (i in 1 until gridIndex) {
+            val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+            if (row.isNotEmpty()) {
+                val firstCell = row.getChildAt(0) as? TextView ?: continue
+                val cellText = firstCell.text.toString()
+
+                if (!cellText.contains("Pause", ignoreCase = true) && cellText.trim().toIntOrNull() != null) {
+                    lessonCount++
+                }
+            }
+        }
+        return lessonCount
+    }
+
+    private fun getBreakPositionForDayView(breakRowIndex: Int): Int {
+        var lessonCount = 0
+
+        for (i in 1 until breakRowIndex) {
+            val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+            if (row.isNotEmpty()) {
+                val firstCell = row.getChildAt(0) as? TextView ?: continue
+                val cellText = firstCell.text.toString()
+
+                if (cellText.contains(".") && !cellText.contains("Pause", ignoreCase = true)) {
+                    lessonCount++
+                }
+            }
+        }
+        return lessonCount
+    }
+
+    private fun highlightCurrentLesson(lesson: Int, currentTime: Calendar) {
+        for (i in 0 until calendarGrid.childCount) {
+            val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+
+            if (row.isEmpty()) continue
+            val firstCell = row.getChildAt(0) as? TextView ?: continue
+            val cellText = firstCell.text.toString()
+
+            if (cellText.trim() == lesson.toString() || (isDayView && cellText.contains("$lesson."))) {
+
+                startCurrentLessonHighlight(firstCell, "#FFC107".toColorInt())
+
+                for (j in 1 until row.childCount) {
+                    val cell = row.getChildAt(j) as? TextView ?: continue
+
+                    if (isDayView) {
+                        val currentDay = Calendar.getInstance().apply {
+                            time = currentWeekStart.time
+                            add(Calendar.DAY_OF_WEEK, currentDayOffset)
+                        }
+                        if (isSameDay(currentDay.time, currentTime.time)) {
+                            val backgroundColor = getBackgroundColorFromCell(cell)
+                            startCurrentLessonHighlight(cell, backgroundColor)
+                        }
+                    } else {
+                        val dayIndex = j - 1
+                        if (dayIndex < 5) {
+                            val currentWeekDay = Calendar.getInstance().apply {
+                                time = currentWeekStart.time
+                                add(Calendar.DAY_OF_WEEK, dayIndex)
+                            }
+                            if (isSameDay(currentWeekDay.time, currentTime.time)) {
+                                val backgroundColor = getBackgroundColorFromCell(cell)
+                                startCurrentLessonHighlight(cell, backgroundColor)
+                            }
+                        }
+                    }
+                }
+                return
+            }
+        }
+    }
+
+    private fun getBackgroundColorFromCell(cell: TextView): Int {
+        val background = cell.background
+        if (background is GradientDrawable) {
+            return Color.WHITE
+        }
+        return Color.WHITE
     }
 
     private fun setupNavigationButtons() {
@@ -3806,7 +3985,6 @@ class GalleryFragment : Fragment() {
                 lessons[lesson]?.subject?.isNotBlank() == true
             }.maxOrNull() ?: continue
 
-            // Mark free periods between first and last lesson
             for (lessonNum in firstLesson..lastNonEmptyLesson) {
                 val entry = lessons[lessonNum]
                 if (entry == null || entry.subject.isBlank()) {
@@ -3928,9 +4106,9 @@ class GalleryFragment : Fragment() {
                 checkDate.add(Calendar.DAY_OF_YEAR, 1)
             }
 
-            sharedPreferences.edit()
-                .putString("holidays_data", holidaysArray.toString())
-                .apply()
+            sharedPreferences.edit {
+                putString("holidays_data", holidaysArray.toString())
+            }
 
             L.d("GalleryFragment", "Holidays data saved: ${holidaysArray.length()} holidays")
 
@@ -3941,7 +4119,10 @@ class GalleryFragment : Fragment() {
 
     private fun saveVacationsData() {
         try {
-            val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val sharedPreferences = requireContext().getSharedPreferences(
+                "AppPrefs",
+                Context.MODE_PRIVATE
+            )
             val vacationsArray = JSONArray()
 
             mutableListOf<Pair<Date, Date>>()
@@ -4007,9 +4188,9 @@ class GalleryFragment : Fragment() {
                 }
             }
 
-            sharedPreferences.edit()
-                .putString("vacations_data", vacationsArray.toString())
-                .apply()
+            sharedPreferences.edit {
+                putString("vacations_data", vacationsArray.toString())
+            }
 
             L.d("GalleryFragment", "Vacations data saved: ${vacationsArray.length()} vacation periods")
 
@@ -4019,7 +4200,8 @@ class GalleryFragment : Fragment() {
     }
 
     private fun setupSwipeGestures() {
-        val swipeInterceptor = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
+        val swipeInterceptor =
+            binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
 
         swipeInterceptor.swipeListener = object : SwipeInterceptorLayout.SwipeListener {
             override fun onSwipeLeft() {
@@ -4091,6 +4273,8 @@ class GalleryFragment : Fragment() {
             val scaledProgress = min(progress, 1f)
             val targetAlpha = min(scaledProgress * 1.2f, 0.95f)
 
+            positionSwipeIndicatorSided(isRightSwipe)
+
             indicator.alpha = targetAlpha
             indicator.visibility = View.VISIBLE
 
@@ -4110,7 +4294,7 @@ class GalleryFragment : Fragment() {
                 ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_forward)
             }
 
-            arrowIcon?.setTint(Color.parseColor("#0f5293"))
+            arrowIcon?.setTint("#0f5293".toColorInt())
 
             if (isRightSwipe) {
                 textView.setCompoundDrawablesWithIntrinsicBounds(arrowIcon, null, null, null)
@@ -4126,32 +4310,41 @@ class GalleryFragment : Fragment() {
 
             val rotation = if (isRightSwipe) -scaledProgress * 3f else scaledProgress * 3f
             indicator.rotation = rotation
-
-            positionSwipeIndicatorSided(isRightSwipe)
         }
     }
 
     private fun positionSwipeIndicatorSided(isRightSwipe: Boolean) {
         swipeIndicatorView?.let { indicator ->
-            indicator.post {
-                val calendarArea = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
+            val calendarArea = binding.root.findViewById<SwipeInterceptorLayout>(R.id.swipeInterceptor)
 
-                val calendarWidth = calendarArea.width
-                val calendarHeight = calendarArea.height
+            val calendarWidth = calendarArea.width
+            val calendarHeight = calendarArea.height
 
-                val centerY = (calendarHeight - indicator.height) / 2 // center vertically
-
-                val horizontalMargin = 60
-                val finalX = if (isRightSwipe) {
-                    horizontalMargin // previous -> left side
-                } else {
-                    calendarWidth - indicator.width - horizontalMargin // next -> right side
+            if (calendarWidth == 0 || calendarHeight == 0) {
+                calendarArea.post {
+                    positionSwipeIndicatorSided(isRightSwipe)
                 }
-
-                val layoutParams = indicator.layoutParams as ViewGroup.MarginLayoutParams
-                layoutParams.setMargins(finalX, centerY, 0, 0)
-                indicator.layoutParams = layoutParams
+                return
             }
+
+            if (indicator.width == 0) {
+                indicator.measure(
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+            }
+
+            val centerY = (calendarHeight - indicator.measuredHeight) / 2
+            val horizontalMargin = 60
+            val finalX = if (isRightSwipe) {
+                horizontalMargin // previous -> left side
+            } else {
+                calendarWidth - indicator.measuredWidth - horizontalMargin // next -> right side
+            }
+
+            val layoutParams = indicator.layoutParams as ViewGroup.MarginLayoutParams
+            layoutParams.setMargins(finalX, centerY, 0, 0)
+            indicator.layoutParams = layoutParams
         }
     }
 
@@ -4164,23 +4357,22 @@ class GalleryFragment : Fragment() {
 
         val indicator = TextView(requireContext()).apply {
             textSize = 18f
-            setTextColor(Color.parseColor("#0f5293"))
+            setTextColor("#0f5293".toColorInt())
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(40, 20, 40, 20)
             alpha = 0f
+            visibility = View.INVISIBLE
             elevation = 30f
             isClickable = false
             isFocusable = false
 
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                setColor(Color.parseColor("#F0FFFFFF"))
+                setColor("#F0FFFFFF".toColorInt())
                 cornerRadius = 35f
-                setStroke(4, Color.parseColor("#0f5293"))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    elevation = 15f
-                }
+                setStroke(4, "#0f5293".toColorInt())
+                elevation = 15f
             }
 
             layoutParams = ViewGroup.MarginLayoutParams(
@@ -4191,6 +4383,13 @@ class GalleryFragment : Fragment() {
 
         calendarContainer.addView(indicator)
         swipeIndicatorView = indicator
+
+        indicator.post {
+            indicator.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+        }
     }
 
     private fun hideSwipeIndicator() {
