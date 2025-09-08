@@ -178,30 +178,43 @@ object WorkScheduler {
             return
         }
 
+        // Check if work is already scheduled to avoid unnecessary rescheduling
+        val workManager = WorkManager.getInstance(context)
+        val workInfos = workManager.getWorkInfosForUniqueWork(HomeworkReminderWorker.WORK_NAME_DUE_DATE).get()
+        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
+            L.d(TAG, "Due date reminder work already scheduled")
+            return
+        }
+
         L.d(TAG, "Scheduling due date reminder checks")
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+            .setRequiresBatteryNotLow(false) // Allow on low battery for important reminders
             .build()
 
         val workData = workDataOf("work_type" to "due_date_reminder")
 
-        // Check every hour for due date reminders
+        // Use 2-hour intervals for better battery optimization while maintaining reliability
         val workRequest = PeriodicWorkRequest.Builder(
             HomeworkReminderWorker::class.java,
-            1, TimeUnit.HOURS
+            2, TimeUnit.HOURS
         )
             .setConstraints(constraints)
             .setInputData(workData)
             .addTag("due_date_reminder")
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                15000L, // 15 seconds in milliseconds
+                TimeUnit.MILLISECONDS
+            )
             .build()
 
-        WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(
-                HomeworkReminderWorker.WORK_NAME_DUE_DATE,
-                ExistingPeriodicWorkPolicy.REPLACE,
-                workRequest
-            )
+        workManager.enqueueUniquePeriodicWork(
+            HomeworkReminderWorker.WORK_NAME_DUE_DATE,
+            ExistingPeriodicWorkPolicy.KEEP, // Changed from REPLACE to KEEP
+            workRequest
+        )
 
         L.d(TAG, "Due date reminder work scheduled successfully")
     }
@@ -212,6 +225,14 @@ object WorkScheduler {
         if (!dailyReminderEnabled) {
             L.d(TAG, "Daily homework reminder disabled, canceling scheduled work")
             WorkManager.getInstance(context).cancelUniqueWork(HomeworkReminderWorker.WORK_NAME_DAILY)
+            WorkManager.getInstance(context).cancelUniqueWork("${HomeworkReminderWorker.WORK_NAME_DAILY}_initial")
+            return
+        }
+
+        val workManager = WorkManager.getInstance(context)
+        val workInfos = workManager.getWorkInfosForUniqueWork(HomeworkReminderWorker.WORK_NAME_DAILY).get()
+        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
+            L.d(TAG, "Daily homework reminder work already scheduled")
             return
         }
 
@@ -225,6 +246,7 @@ object WorkScheduler {
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+            .setRequiresBatteryNotLow(false)
             .build()
 
         val workData = workDataOf("work_type" to "daily_reminder")
@@ -238,12 +260,11 @@ object WorkScheduler {
             .build()
 
         // Schedule the initial work
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork(
-                "${HomeworkReminderWorker.WORK_NAME_DAILY}_initial",
-                ExistingWorkPolicy.REPLACE,
-                initialWorkRequest
-            )
+        workManager.enqueueUniqueWork(
+            "${HomeworkReminderWorker.WORK_NAME_DAILY}_initial",
+            ExistingWorkPolicy.REPLACE,
+            initialWorkRequest
+        )
 
         // Schedule periodic daily work
         val periodicWorkRequest = PeriodicWorkRequest.Builder(
@@ -253,14 +274,18 @@ object WorkScheduler {
             .setConstraints(constraints)
             .setInputData(workData)
             .addTag("daily_homework_reminder")
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                15000L, // 15 seconds in milliseconds
+                TimeUnit.MILLISECONDS
+            )
             .build()
 
-        WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(
-                HomeworkReminderWorker.WORK_NAME_DAILY,
-                ExistingPeriodicWorkPolicy.REPLACE,
-                periodicWorkRequest
-            )
+        workManager.enqueueUniquePeriodicWork(
+            HomeworkReminderWorker.WORK_NAME_DAILY,
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicWorkRequest
+        )
 
         L.d(TAG, "Daily homework reminder work scheduled successfully")
     }
@@ -285,30 +310,42 @@ object WorkScheduler {
             return
         }
 
+        val workManager = WorkManager.getInstance(context)
+        val workInfos = workManager.getWorkInfosForUniqueWork(ExamReminderWorker.WORK_NAME_EXAM_REMINDER).get()
+        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
+            L.d(TAG, "Exam reminder work already scheduled")
+            return
+        }
+
         L.d(TAG, "Scheduling exam reminder checks")
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+            .setRequiresBatteryNotLow(false)
             .build()
 
         val workData = workDataOf("work_type" to "exam_reminder")
 
-        // Check every 6 hours for exam reminders (since exams are typically days in advance)
+        // Changed to 4 hours for better battery optimization while maintaining reliability
         val workRequest = PeriodicWorkRequest.Builder(
             ExamReminderWorker::class.java,
-            6, TimeUnit.HOURS
+            4, TimeUnit.HOURS
         )
             .setConstraints(constraints)
             .setInputData(workData)
             .addTag("exam_reminder")
+            .setBackoffCriteria(
+                BackoffPolicy.LINEAR,
+                15000L, // 15 seconds in milliseconds
+                TimeUnit.MILLISECONDS
+            )
             .build()
 
-        WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(
-                ExamReminderWorker.WORK_NAME_EXAM_REMINDER,
-                ExistingPeriodicWorkPolicy.REPLACE,
-                workRequest
-            )
+        workManager.enqueueUniquePeriodicWork(
+            ExamReminderWorker.WORK_NAME_EXAM_REMINDER,
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
 
         L.d(TAG, "Exam reminder work scheduled successfully")
     }

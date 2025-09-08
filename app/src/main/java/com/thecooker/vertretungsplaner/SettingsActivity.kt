@@ -2,7 +2,6 @@ package com.thecooker.vertretungsplaner
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
@@ -11,7 +10,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
@@ -28,6 +26,7 @@ import android.view.View
 import com.thecooker.vertretungsplaner.utils.WorkScheduler
 import com.thecooker.vertretungsplaner.utils.TimePickerDialogHelper
 import android.app.TimePickerDialog
+import android.content.pm.ActivityInfo
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.os.Build
@@ -36,18 +35,17 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import com.thecooker.vertretungsplaner.ui.slideshow.HomeworkUtils
 import android.widget.AdapterView
-import androidx.appcompat.app.AppCompatDelegate
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONObject
 import kotlin.system.exitProcess
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import android.os.Handler
+import android.os.Looper
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : BaseActivity() {
 
     private var isInitializing = true
-
-    private lateinit var sharedPreferences: SharedPreferences
     private lateinit var btnResetData: Button
     private lateinit var btnScanTimetable: Button
     private lateinit var tvCurrentSelection: TextView
@@ -2098,7 +2096,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun openEmailClientFromSettings() {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
             data = "mailto:theactualcooker@gmail.com".toUri()
-            putExtra(Intent.EXTRA_SUBJECT, "Heinrich-Kleyer-Schule App - Kontakt")
+            putExtra(Intent.EXTRA_SUBJECT, "HKS Vertreter - Kontakt")
             putExtra(Intent.EXTRA_TEXT, "Hallo,\n\nich habe eine Frage/ein Problem mit der App:\n\n")
         }
 
@@ -2246,43 +2244,94 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun applyOrientationSetting(landscapeEnabled: Boolean) {
         requestedOrientation = if (landscapeEnabled) {
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         } else {
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
+
+        val intent = Intent().apply {
+            action = "com.thecooker.vertretungsplaner.ORIENTATION_CHANGED"
+            putExtra("landscape_enabled", landscapeEnabled)
+        }
+        sendBroadcast(intent)
     }
 
     private fun setupDarkModeSetting() {
         val switchDarkMode = findViewById<Switch>(R.id.switchDarkMode)
+        val switchFollowSystem = findViewById<Switch>(R.id.switchFollowSystemTheme)
 
-        val darkModeEnabled = sharedPreferences.getBoolean("dark_mode_enabled", false)
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+        val darkModeEnabled = if (followSystemTheme) false else sharedPreferences.getBoolean("dark_mode_enabled", false)
+
         switchDarkMode.isChecked = darkModeEnabled
+        switchFollowSystem.isChecked = followSystemTheme
+        switchDarkMode.isEnabled = !followSystemTheme
+
+        switchFollowSystem.setOnCheckedChangeListener { _, isChecked ->
+            if (!isInitializing) {
+                sharedPreferences.edit().apply {
+                    putBoolean("follow_system_theme", isChecked)
+                    if (isChecked) {
+                        remove("dark_mode_enabled")
+                    }
+                    commit()
+                }
+
+                switchDarkMode.isEnabled = !isChecked
+                if (isChecked) {
+                    switchDarkMode.isChecked = false
+                }
+
+                android.util.Log.d("Settings", "Saved follow_system_theme: $isChecked")
+
+                restartAppSafely()
+            }
+        }
 
         switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-            if (!isInitializing) {
-                sharedPreferences.edit { putBoolean("dark_mode_enabled", isChecked) }
+            if (!isInitializing && !followSystemTheme) {
+                sharedPreferences.edit().apply {
+                    putBoolean("dark_mode_enabled", isChecked)
+                    commit()
+                }
 
-                applyDarkModeSetting(isChecked)
+                android.util.Log.d("Settings", "Saved dark_mode_enabled: $isChecked")
 
-                Toast.makeText(this,
-                    if (isChecked) "Dunkler Modus aktiviert"
-                    else "Heller Modus aktiviert",
-                    Toast.LENGTH_SHORT).show()
-
-                recreate()
-            } else {
-                sharedPreferences.edit { putBoolean("dark_mode_enabled", isChecked) }
+                restartAppSafely()
             }
         }
     }
 
-    private fun applyDarkModeSetting(darkModeEnabled: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            AppCompatDelegate.setDefaultNightMode(
-                if (darkModeEnabled) AppCompatDelegate.MODE_NIGHT_YES
-                else AppCompatDelegate.MODE_NIGHT_NO
-            )
+    private fun revertSwitchState(settingType: String, originalState: Boolean) {
+        when (settingType) {
+            "follow_system" -> {
+                sharedPreferences.edit {
+                    putBoolean("follow_system_theme", originalState)
+                }
+                findViewById<Switch>(R.id.switchFollowSystemTheme).isChecked = originalState
+                findViewById<Switch>(R.id.switchDarkMode).isEnabled = !originalState
+            }
+            "dark_mode" -> {
+                sharedPreferences.edit {
+                    putBoolean("dark_mode_enabled", originalState)
+                }
+                findViewById<Switch>(R.id.switchDarkMode).isChecked = originalState
+            }
         }
+    }
+
+    private fun restartAppSafely() {
+        Toast.makeText(this, "Einstellungen gespeichert. App wird neu gestartet...", Toast.LENGTH_LONG).show()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            val intent = Intent(this, MainActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                finishAffinity()
+            }, 200)
+        }, 500)
     }
 
     private fun setupCalendarSettings() {

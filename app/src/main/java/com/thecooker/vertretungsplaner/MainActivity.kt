@@ -1,7 +1,6 @@
 package com.thecooker.vertretungsplaner
 
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -12,22 +11,17 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import androidx.drawerlayout.widget.DrawerLayout
-import androidx.appcompat.app.AppCompatActivity
 import com.thecooker.vertretungsplaner.databinding.ActivityMainBinding
 import androidx.appcompat.app.AppCompatDelegate
 import android.os.Build
 import android.content.pm.ActivityInfo
 
-class MainActivity : AppCompatActivity() {
-
+class MainActivity : BaseActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
-    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
 
         // apply theme settings before setting content view
         val darkModeEnabled = sharedPreferences.getBoolean("dark_mode_enabled", false)
@@ -36,14 +30,6 @@ class MainActivity : AppCompatActivity() {
                 if (darkModeEnabled) AppCompatDelegate.MODE_NIGHT_YES
                 else AppCompatDelegate.MODE_NIGHT_NO
             )
-        }
-
-        // apply orientation setting before setting content view
-        val landscapeEnabled = sharedPreferences.getBoolean("landscape_mode_enabled", true)
-        requestedOrientation = if (landscapeEnabled) {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -73,6 +59,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        val landscapeEnabled = sharedPreferences.getBoolean("landscape_mode_enabled", true)
+        val currentOrientation = if (landscapeEnabled) {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
+        if (requestedOrientation != currentOrientation) {
+            requestedOrientation = currentOrientation
+        }
 
         val navController = findNavController(R.id.nav_host_fragment_content_main)
         L.d("MainActivity", "Current destination: ${navController.currentDestination?.label}")

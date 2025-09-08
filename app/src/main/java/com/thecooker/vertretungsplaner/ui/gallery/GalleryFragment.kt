@@ -611,7 +611,7 @@ class GalleryFragment : Fragment() {
             appendLine("• Ferientage: ${stats.vacationDaysThisMonth}")
             appendLine()
 
-            appendLine("Gesamt:") // != aktuelles halbjahr
+            appendLine("Gesamt (zukünftig):") // != aktuelles halbjahr
             appendLine("• Klausuren gesamt: ${stats.totalExams}")
             appendLine("• Hausaufgaben gesamt: ${stats.totalHomework}")
             appendLine("• Ferientage gesamt: ${stats.totalVacationDays}")
@@ -942,8 +942,7 @@ class GalleryFragment : Fragment() {
         }
 
         val privacyNotice = TextView(requireContext()).apply {
-            text = "Hinweis: Diese Funktion lädt Feriendaten von kultus.hessen.de. " +
-                    "Es werden keine persönlichen Daten übertragen."
+            "Hinweis: Diese Funktion lädt Feriendaten von kultus.hessen.de.\nEs werden keine persönlichen Daten übertragen.".also { text = it }
             textSize = 12f
             setTextColor(Color.GRAY)
             setPadding(0, 16, 0, 16)
@@ -1353,7 +1352,7 @@ class GalleryFragment : Fragment() {
         val monthYear = SimpleDateFormat("MM.yyyy", Locale.GERMANY).format(weekEnd.time)
         val weekNumber = weekFormat.format(currentWeekStart.time)
 
-        currentWeekTextView.text = "$startDay - $endDay$monthYear\nKalenderwoche $weekNumber"
+        "$startDay - $endDay$monthYear\nKalenderwoche $weekNumber".also { currentWeekTextView.text = it }
     }
 
     private fun buildCalendarGrid() {
@@ -1483,11 +1482,6 @@ class GalleryFragment : Fragment() {
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
                 text = spannableText
-            }
-
-            if (isCurrentDay && isCurrentLesson(lesson, currentTime)) {
-                timeCell.background = createFlatRoundedDrawable("#FFC107")
-                timeCell.setTextColor(Color.BLACK)
             }
 
             timeCell.setOnClickListener { showLessonTimeDetails(lesson) }
@@ -1977,16 +1971,12 @@ class GalleryFragment : Fragment() {
             }
             occasionEditTexts.add(editText)
 
-            val removeButton = ImageButton(requireContext()).apply {
-                setImageResource(R.drawable.ic_trash_can)
-                setColorFilter(Color.RED)
-                background = null
+            val removeButton = Button(requireContext()).apply {
+                setText("×")
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    marginStart = 8
-                }
+                )
                 setOnClickListener {
                     occasionsContainer.removeView(occasionLayout)
                     occasionEditTexts.remove(editText)
@@ -1998,16 +1988,12 @@ class GalleryFragment : Fragment() {
             occasionsContainer.addView(occasionLayout)
         }
 
-        if (userOccasions.isEmpty()) {
-            addOccasionField()
-        } else {
-            userOccasions.forEach { occasion ->
-                addOccasionField(occasion)
-            }
+        userOccasions.forEach { occasion ->
+            addOccasionField(occasion)
         }
 
         val addOccasionButton = Button(requireContext()).apply {
-            text = "+ Ereignis hinzufügen"
+            "+ Ereignis hinzufügen".also { text = it }
             setOnClickListener { addOccasionField() }
         }
 
@@ -2020,8 +2006,8 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Tag bearbeiten - $dateStr")
             .setView(container)
+            .setNegativeButton("Abbrechen", null)
             .setPositiveButton("Speichern") { _, _ ->
-
                 val notes = notesEditText.text.toString().trim()
                 saveUserNotesForDate(date, notes)
 
@@ -2033,7 +2019,6 @@ class GalleryFragment : Fragment() {
                 updateCalendar()
                 Toast.makeText(requireContext(), "Änderungen gespeichert", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
             .setNeutralButton("Zurücksetzen") { _, _ ->
                 AlertDialog.Builder(requireContext())
                     .setTitle("Zurücksetzen bestätigen")
@@ -3125,35 +3110,118 @@ class GalleryFragment : Fragment() {
         val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
         val dateStr = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY).format(date)
 
-        val details = StringBuilder()
-        details.append("Details für $dateStr\n\n")
+        val scrollView = ScrollView(requireContext())
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+        }
+
+        val titleText = TextView(requireContext()).apply {
+            "Details für $dateStr".also { text = it }
+            textSize = 18f
+            setTextColor(Color.BLACK)
+            setPadding(0, 0, 0, 24)
+        }
+        container.addView(titleText)
 
         // vacation
         if (isDateInVacation(date)) {
             val vacationType = determineVacationType(date)
-            details.append("$vacationType\n\n")
+            val vacationText = TextView(requireContext()).apply {
+                text = vacationType
+                textSize = 16f
+                setTextColor(Color.BLACK)
+                setPadding(0, 0, 0, 16)
+            }
+            container.addView(vacationText)
         }
 
         // notes
         val userNotes = getUserNotesForDate(date)
         if (userNotes.isNotBlank()) {
-            details.append("Persönliche Notizen:\n$userNotes\n\n")
+            val notesContainer = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                background = createRoundedDrawable("#E3F2FD".toColorInt())
+                setPadding(24, 20, 24, 20)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, 20)
+                }
+            }
+
+            val notesLabel = TextView(requireContext()).apply {
+                "Persönliche Notizen:".also { text = it }
+                textSize = 14f
+                setTextColor("#1976D2".toColorInt())
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
+            }
+
+            val notesContent = TextView(requireContext()).apply {
+                text = userNotes
+                textSize = 14f
+                setTextColor("#424242".toColorInt())
+                background = createRoundedDrawable(Color.WHITE)
+                setPadding(16, 12, 16, 12)
+            }
+
+            notesContainer.addView(notesLabel)
+            notesContainer.addView(notesContent)
+            container.addView(notesContainer)
         }
 
         // user special occasions
         val userOccasions = getUserSpecialOccasionsForDate(date)
         if (userOccasions.isNotEmpty()) {
-            details.append("Besondere Ereignisse (manuell hinzugefügt):\n")
-            userOccasions.forEach { occasion ->
-                details.append("➞ $occasion\n")
+            val occasionsText = TextView(requireContext()).apply {
+                "Besondere Ereignisse (manuell):".also { text = it }
+                textSize = 16f
+                setTextColor(Color.BLACK)
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
             }
-            details.append("\n")
+            container.addView(occasionsText)
+
+            userOccasions.forEach { occasion ->
+                val occasionItem = TextView(requireContext()).apply {
+                    "➞ $occasion".also { text = it }
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    setPadding(16, 4, 0, 4)
+                }
+                container.addView(occasionItem)
+            }
+
+            val spacer = View(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    16
+                )
+            }
+            container.addView(spacer)
         }
 
         // calendar manager special occasions
         calendarInfo?.specialNote?.let { note ->
             if (note.isNotBlank()) {
-                details.append("Besondere Ereignisse (aus Stundenplan):\n- $note\n\n")
+                val calendarNotesText = TextView(requireContext()).apply {
+                    "Besondere Ereignisse (Klausurplan):".also { text = it }
+                    textSize = 16f
+                    setTextColor(Color.BLACK)
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(0, 0, 0, 8)
+                }
+                container.addView(calendarNotesText)
+
+                val noteItem = TextView(requireContext()).apply {
+                    "- $note".also { text = it }
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    setPadding(16, 4, 0, 16)
+                }
+                container.addView(noteItem)
             }
         }
 
@@ -3162,7 +3230,15 @@ class GalleryFragment : Fragment() {
             val homeworkList = SlideshowFragment.getHomeworkList(requireContext())
             val dayHomework = homeworkList.filter { isSameDay(it.dueDate, date) }
             if (dayHomework.isNotEmpty()) {
-                details.append("Hausaufgaben:\n")
+                val homeworkText = TextView(requireContext()).apply {
+                    "Hausaufgaben:".also { text = it }
+                    textSize = 16f
+                    setTextColor(Color.BLACK)
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(0, 0, 0, 8)
+                }
+                container.addView(homeworkText)
+
                 dayHomework.forEach { homework ->
                     var lessonText = ""
 
@@ -3181,9 +3257,22 @@ class GalleryFragment : Fragment() {
                         }
                     }
 
-                    details.append("➞ ${homework.subject}$lessonText\n")
+                    val homeworkItem = TextView(requireContext()).apply {
+                        "➞ ${homework.subject}$lessonText".also { text = it }
+                        textSize = 14f
+                        setTextColor(Color.BLACK)
+                        setPadding(16, 4, 0, 4)
+                    }
+                    container.addView(homeworkItem)
                 }
-                details.append("\n")
+
+                val spacer = View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        16
+                    )
+                }
+                container.addView(spacer)
             }
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error loading homework for details", e)
@@ -3193,11 +3282,32 @@ class GalleryFragment : Fragment() {
         var examsAdded = false
         calendarInfo?.exams?.let { exams ->
             if (exams.isNotEmpty()) {
-                details.append("Klausuren:\n")
-                exams.forEach { exam ->
-                    details.append("➞ ${exam.subject}\n")
+                val examsText = TextView(requireContext()).apply {
+                    "Klausuren:".also { text = it }
+                    textSize = 16f
+                    setTextColor(Color.BLACK)
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(0, 0, 0, 8)
                 }
-                details.append("\n")
+                container.addView(examsText)
+
+                exams.forEach { exam ->
+                    val examItem = TextView(requireContext()).apply {
+                        "➞ ${exam.subject}".also { text = it }
+                        textSize = 14f
+                        setTextColor(Color.BLACK)
+                        setPadding(16, 4, 0, 4)
+                    }
+                    container.addView(examItem)
+                }
+
+                val spacer = View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        16
+                    )
+                }
+                container.addView(spacer)
                 examsAdded = true
             }
         }
@@ -3205,11 +3315,32 @@ class GalleryFragment : Fragment() {
         val dateStr2 = SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date)
         val examsFromManager = ExamManager.getExamsForDate(dateStr2)
         if (examsFromManager.isNotEmpty() && !examsAdded) {
-            details.append("Klausuren:\n")
-            examsFromManager.forEach { exam ->
-                details.append("➞ ${exam.subject}\n")
+            val examsText = TextView(requireContext()).apply {
+                "Klausuren:".also { text = it }
+                textSize = 16f
+                setTextColor(Color.BLACK)
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
             }
-            details.append("\n")
+            container.addView(examsText)
+
+            examsFromManager.forEach { exam ->
+                val examItem = TextView(requireContext()).apply {
+                    "➞ ${exam.subject}".also { text = it }
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    setPadding(16, 4, 0, 4)
+                }
+                container.addView(examItem)
+            }
+
+            val spacer = View(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    16
+                )
+            }
+            container.addView(spacer)
         }
 
         // substitutes
@@ -3236,25 +3367,47 @@ class GalleryFragment : Fragment() {
         }
 
         if (relevantSubstitutes.isNotEmpty()) {
-            details.append("Vertretungen:\n")
+            val substitutesText = TextView(requireContext()).apply {
+                "Vertretungen:".also { text = it }
+                textSize = 16f
+                setTextColor(Color.BLACK)
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
+            }
+            container.addView(substitutesText)
+
             relevantSubstitutes.forEach { substitute ->
                 val lessonRange = if (substitute.stundeBis != null && substitute.stundeBis != substitute.stunde) {
                     "${substitute.stunde}-${substitute.stundeBis}. Stunde"
                 } else {
                     "${substitute.stunde}. Stunde"
                 }
-                details.append("➞ $lessonRange ${substitute.fach}: ${substitute.art}\n")
+
+                val substituteItem = TextView(requireContext()).apply {
+                    "➞ $lessonRange ${substitute.fach}: ${substitute.art}".also { text = it }
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    setPadding(16, 4, 0, 4)
+                }
+                container.addView(substituteItem)
             }
-            details.append("\n")
         }
 
-        if (details.length <= 50) {
-            details.append("Keine besonderen Ereignisse für diesen Tag.")
+        if (container.childCount <= 1) {
+            val emptyText = TextView(requireContext()).apply {
+                "Keine besonderen Ereignisse für diesen Tag.".also { text = it }
+                textSize = 14f
+                setTextColor(Color.GRAY)
+                setPadding(0, 16, 0, 0)
+            }
+            container.addView(emptyText)
         }
+
+        scrollView.addView(container)
 
         AlertDialog.Builder(requireContext())
             .setTitle("Tagesdetails")
-            .setMessage(details.toString())
+            .setView(scrollView)
             .setPositiveButton("Schließen", null)
             .setNeutralButton("Bearbeiten") { _, _ ->
                 showEditDayDialog(date)
@@ -3721,11 +3874,18 @@ class GalleryFragment : Fragment() {
     private fun setStaticHighlight(cell: TextView, backgroundColor: Int) {
         if (currentHighlightedCell == cell) {
             try {
-                cell.background = createRoundedDrawableWithBorder(
-                    backgroundColor,
-                    Color.YELLOW,
-                    8
-                )
+                val parent = cell.parent as? TableRow
+                val isLessonTimeCell = parent?.let { row ->
+                    row.indexOfChild(cell) == 0
+                } ?: false
+
+                if (!isLessonTimeCell) {
+                    cell.background = createRoundedDrawableWithBorder(
+                        backgroundColor,
+                        Color.YELLOW,
+                        8
+                    )
+                }
             } catch (e: Exception) {
                 L.w("GalleryFragment", "Error setting final highlight state", e)
             }
@@ -3739,12 +3899,23 @@ class GalleryFragment : Fragment() {
 
         currentHighlightedCell?.let { cell ->
             try {
-                val calendarEntries = getCalendarEntriesForCurrentHighlightedCell()
-                val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
-                cell.background = if (backgroundColor != Color.TRANSPARENT) {
-                    createRoundedDrawable(backgroundColor)
+                val parent = cell.parent as? TableRow
+                if (parent != null && parent.getChildAt(0) == cell) {
+                    if (isDayView) {
+                        cell.background = createRoundedDrawable("#ECEFF1".toColorInt())
+                        cell.setTextColor("#37474F".toColorInt())
+                    } else {
+                        cell.background = createFlatRoundedDrawable("#ECEFF1")
+                        cell.setTextColor("#37474F".toColorInt())
+                    }
                 } else {
-                    createRoundedDrawable(Color.WHITE)
+                    val calendarEntries = getCalendarEntriesForCurrentHighlightedCell()
+                    val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
+                    cell.background = if (backgroundColor != Color.TRANSPARENT) {
+                        createRoundedDrawable(backgroundColor)
+                    } else {
+                        createRoundedDrawable(Color.WHITE)
+                    }
                 }
             } catch (e: Exception) {
                 L.w("GalleryFragment", "Error stopping highlight", e)
@@ -3765,6 +3936,12 @@ class GalleryFragment : Fragment() {
     }
 
     private fun startCurrentLessonHighlight(cell: TextView, backgroundColor: Int = Color.WHITE) {
+        val parent = cell.parent as? TableRow
+        if (parent != null && parent.getChildAt(0) == cell) {
+            highlightLessonTimeCell(cell)
+            return
+        }
+
         stopCurrentHighlight()
         currentHighlightedCell = cell
         val finalBackgroundColor = backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE
@@ -3889,7 +4066,7 @@ class GalleryFragment : Fragment() {
 
             if (cellText.trim() == lesson.toString() || (isDayView && cellText.contains("$lesson."))) {
 
-                startCurrentLessonHighlight(firstCell, "#FFC107".toColorInt())
+                highlightLessonTimeCell(firstCell)
 
                 for (j in 1 until row.childCount) {
                     val cell = row.getChildAt(j) as? TextView ?: continue
@@ -3900,7 +4077,7 @@ class GalleryFragment : Fragment() {
                             add(Calendar.DAY_OF_WEEK, currentDayOffset)
                         }
                         if (isSameDay(currentDay.time, currentTime.time)) {
-                            val backgroundColor = getBackgroundColorFromCell(cell)
+                            val backgroundColor = Color.WHITE
                             startCurrentLessonHighlight(cell, backgroundColor)
                         }
                     } else {
@@ -3911,7 +4088,7 @@ class GalleryFragment : Fragment() {
                                 add(Calendar.DAY_OF_WEEK, dayIndex)
                             }
                             if (isSameDay(currentWeekDay.time, currentTime.time)) {
-                                val backgroundColor = getBackgroundColorFromCell(cell)
+                                val backgroundColor = Color.WHITE
                                 startCurrentLessonHighlight(cell, backgroundColor)
                             }
                         }
@@ -3922,12 +4099,17 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun getBackgroundColorFromCell(cell: TextView): Int {
-        val background = cell.background
-        if (background is GradientDrawable) {
-            return Color.WHITE
+    private fun highlightLessonTimeCell(cell: TextView) {
+        if (currentHighlightedCell == cell) {
+            highlightAnimator?.cancel()
+            highlightAnimator = null
         }
-        return Color.WHITE
+
+        try {
+            cell.background = createRoundedDrawable(Color.YELLOW)
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error highlighting lesson time cell", e)
+        }
     }
 
     private fun setupNavigationButtons() {

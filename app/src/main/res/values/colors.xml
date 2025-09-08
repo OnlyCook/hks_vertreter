@@ -11,4 +11,14 @@
     <color name="dark_red">#CC0000</color>
     <color name="light_yellow">#FFFFCC</color>
     <color name="warning_background">#FFF3CD</color>
+
+    <!-- Your custom blue colors -->
+    <item name="primary_blue" type="color">#0e5292</item>
+    <item name="primary_blue_medium" type="color">#083c70</item>
+    <item name="primary_blue_dark" type="color">#012244</item>
+
+    <!-- Supporting colors for modern flat design -->
+    <item name="light_gray" type="color">#F5F5F5</item>
+    <item name="medium_gray" type="color">#9E9E9E</item>
+    <item name="dark_gray" type="color">#424242</item>
 </resources>

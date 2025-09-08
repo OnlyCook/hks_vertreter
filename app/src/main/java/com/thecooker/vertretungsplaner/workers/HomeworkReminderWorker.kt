@@ -15,6 +15,7 @@ import com.thecooker.vertretungsplaner.R
 import com.thecooker.vertretungsplaner.ui.slideshow.SlideshowFragment
 import java.util.*
 import java.util.concurrent.TimeUnit
+import androidx.core.content.edit
 
 class HomeworkReminderWorker(
     private val context: Context,
@@ -66,9 +67,17 @@ class HomeworkReminderWorker(
         val upcomingHomework = getUpcomingHomework(homeworkList, reminderHours)
 
         if (upcomingHomework.isNotEmpty()) {
-            showDueDateNotification(upcomingHomework)
+            val newHomeworkToNotify = filterAlreadyNotifiedHomework(upcomingHomework, "due_date")
+            if (newHomeworkToNotify.isNotEmpty()) {
+                showDueDateNotification(newHomeworkToNotify)
+                markHomeworkAsNotified(newHomeworkToNotify, "due_date")
+            } else {
+                L.d(TAG, "All upcoming homework already notified for due date")
+            }
         } else {
             L.d(TAG, "No upcoming homework found for due date reminder")
+            // Clear old notifications when no homework is due
+            clearOldNotifications("due_date")
         }
 
         return Result.success()
@@ -83,11 +92,21 @@ class HomeworkReminderWorker(
             return Result.success()
         }
 
+        // Only show daily reminder once per day
+        val today = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+        val lastDailyNotificationDay = sharedPreferences.getInt("last_daily_notification_day", -1)
+
+        if (today == lastDailyNotificationDay) {
+            L.d(TAG, "Daily reminder already shown today")
+            return Result.success()
+        }
+
         val homeworkList = SlideshowFragment.getHomeworkList(context)
         val uncompletedHomework = homeworkList.filter { !it.isCompleted }
 
         if (uncompletedHomework.isNotEmpty()) {
             showDailyNotification(uncompletedHomework)
+            sharedPreferences.edit { putInt("last_daily_notification_day", today) }
         } else {
             L.d(TAG, "No uncompleted homework found for daily reminder")
         }
@@ -238,6 +257,66 @@ class HomeworkReminderWorker(
 
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun filterAlreadyNotifiedHomework(
+        homework: List<SlideshowFragment.HomeworkEntry>,
+        notificationType: String
+    ): List<SlideshowFragment.HomeworkEntry> {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val notifiedHomeworkIds = sharedPreferences.getStringSet("notified_homework_$notificationType", emptySet()) ?: emptySet()
+
+        return homework.filter { hw ->
+            val homeworkId = generateHomeworkId(hw)
+            !notifiedHomeworkIds.contains(homeworkId)
+        }
+    }
+
+    private fun markHomeworkAsNotified(
+        homework: List<SlideshowFragment.HomeworkEntry>,
+        notificationType: String
+    ) {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val notifiedHomeworkIds = sharedPreferences.getStringSet("notified_homework_$notificationType", emptySet())?.toMutableSet() ?: mutableSetOf()
+
+        homework.forEach { hw ->
+            val homeworkId = generateHomeworkId(hw)
+            notifiedHomeworkIds.add(homeworkId)
+        }
+
+        sharedPreferences.edit {
+            putStringSet(
+                "notified_homework_$notificationType",
+                notifiedHomeworkIds
+            )
+        }
+        L.d(TAG, "Marked ${homework.size} homework items as notified for $notificationType")
+    }
+
+    private fun generateHomeworkId(homework: SlideshowFragment.HomeworkEntry): String {
+        // Create unique ID based on homework properties that don't change
+        // Using only subject and due date since those are the main identifiers
+        return "${homework.subject}_${homework.dueDate.time}"
+    }
+
+    private fun clearOldNotifications(notificationType: String) {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val homeworkList = SlideshowFragment.getHomeworkList(context)
+        val currentHomeworkIds = homeworkList.map { generateHomeworkId(it) }.toSet()
+
+        val notifiedHomeworkIds = sharedPreferences.getStringSet("notified_homework_$notificationType", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val idsToRemove = notifiedHomeworkIds.filter { id -> !currentHomeworkIds.contains(id) }
+
+        if (idsToRemove.isNotEmpty()) {
+            notifiedHomeworkIds.removeAll(idsToRemove.toSet())
+            sharedPreferences.edit {
+                putStringSet(
+                    "notified_homework_$notificationType",
+                    notifiedHomeworkIds
+                )
+            }
+            L.d(TAG, "Cleared ${idsToRemove.size} old notification records for $notificationType")
         }
     }
 }

@@ -18,6 +18,7 @@ import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import androidx.core.content.edit
 
 class ExamReminderWorker(
     private val context: Context,
@@ -55,9 +56,17 @@ class ExamReminderWorker(
         val upcomingExams = getUpcomingExams(examList, reminderDays)
 
         if (upcomingExams.isNotEmpty()) {
-            showExamReminderNotification(upcomingExams)
+            val newExamsToNotify = filterAlreadyNotifiedExams(upcomingExams)
+            if (newExamsToNotify.isNotEmpty()) {
+                showExamReminderNotification(newExamsToNotify)
+                markExamsAsNotified(newExamsToNotify)
+            } else {
+                L.d(TAG, "All upcoming exams already notified")
+            }
         } else {
             L.d(TAG, "No upcoming exams found for reminder")
+            // Clear old notifications when no exams are upcoming
+            clearOldExamNotifications()
         }
 
         return Result.success()
@@ -170,6 +179,50 @@ class ExamReminderWorker(
 
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun filterAlreadyNotifiedExams(exams: List<ExamFragment.ExamEntry>): List<ExamFragment.ExamEntry> {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val notifiedExamIds = sharedPreferences.getStringSet("notified_exam_ids", emptySet()) ?: emptySet()
+
+        return exams.filter { exam ->
+            val examId = generateExamId(exam)
+            !notifiedExamIds.contains(examId)
+        }
+    }
+
+    private fun markExamsAsNotified(exams: List<ExamFragment.ExamEntry>) {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val notifiedExamIds = sharedPreferences.getStringSet("notified_exam_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+
+        exams.forEach { exam ->
+            val examId = generateExamId(exam)
+            notifiedExamIds.add(examId)
+        }
+
+        sharedPreferences.edit { putStringSet("notified_exam_ids", notifiedExamIds) }
+        L.d(TAG, "Marked ${exams.size} exams as notified")
+    }
+
+    private fun generateExamId(exam: ExamFragment.ExamEntry): String {
+        // Create unique ID based on exam properties that don't change
+        // Using only subject and date since those are the main identifiers
+        return "${exam.subject}_${exam.date.time}"
+    }
+
+    private fun clearOldExamNotifications() {
+        val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val examList = getExamList(context)
+        val currentExamIds = examList.map { generateExamId(it) }.toSet()
+
+        val notifiedExamIds = sharedPreferences.getStringSet("notified_exam_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val idsToRemove = notifiedExamIds.filter { id -> !currentExamIds.contains(id) }
+
+        if (idsToRemove.isNotEmpty()) {
+            notifiedExamIds.removeAll(idsToRemove.toSet())
+            sharedPreferences.edit { putStringSet("notified_exam_ids", notifiedExamIds) }
+            L.d(TAG, "Cleared ${idsToRemove.size} old exam notification records")
         }
     }
 }

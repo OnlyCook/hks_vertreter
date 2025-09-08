@@ -382,22 +382,28 @@ class AutoUpdateWorker(
             val cachedData = cacheFile.readText()
             val cachedPlan = JSONObject(cachedData)
 
-            when (changeType) {
+            val changes = when (changeType) {
                 "all_class_subjects" -> {
-                    val newEntries = getNewEntries(cachedPlan, newPlan)
-                    if (newEntries.isNotEmpty()) {
-                        saveDetectedChanges(newEntries)
-                        true
-                    } else false
+                    getNewEntries(cachedPlan, newPlan)
                 }
                 "my_subjects_only" -> {
-                    val newEntries = getNewEntriesForMySubjects(cachedPlan, newPlan)
-                    if (newEntries.isNotEmpty()) {
-                        saveDetectedChanges(newEntries)
-                        true
-                    } else false
+                    getNewEntriesForMySubjects(cachedPlan, newPlan)
                 }
-                else -> false
+                else -> emptyList()
+            }
+
+            if (changes.isNotEmpty()) {
+                val newChangesToNotify = filterAlreadyNotifiedChanges(changes)
+                if (newChangesToNotify.isNotEmpty()) {
+                    saveDetectedChanges(newChangesToNotify)
+                    markChangesAsNotified(newChangesToNotify)
+                    true
+                } else {
+                    L.d(TAG, "All changes already notified")
+                    false
+                }
+            } else {
+                false
             }
         } catch (e: Exception) {
             L.e(TAG, "Error comparing plans: ${e.message}", e)
@@ -554,6 +560,40 @@ class AutoUpdateWorker(
             notificationManager.createNotificationChannel(updateChannel)
             notificationManager.createNotificationChannel(changesChannel)
         }
+    }
+
+    private fun filterAlreadyNotifiedChanges(changes: List<SubstituteEntry>): List<SubstituteEntry> {
+        val notifiedChangeIds = sharedPreferences.getStringSet("notified_change_ids", emptySet()) ?: emptySet()
+
+        return changes.filter { change ->
+            val changeId = generateChangeId(change)
+            !notifiedChangeIds.contains(changeId)
+        }
+    }
+
+    private fun markChangesAsNotified(changes: List<SubstituteEntry>) {
+        val notifiedChangeIds = sharedPreferences.getStringSet("notified_change_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+
+        changes.forEach { change ->
+            val changeId = generateChangeId(change)
+            notifiedChangeIds.add(changeId)
+        }
+
+        // Clean up old notifications (keep only last 50 to prevent unlimited growth)
+        if (notifiedChangeIds.size > 50) {
+            val sortedIds = notifiedChangeIds.toList()
+            val idsToKeep = sortedIds.takeLast(50).toSet()
+            notifiedChangeIds.clear()
+            notifiedChangeIds.addAll(idsToKeep)
+        }
+
+        sharedPreferences.edit().putStringSet("notified_change_ids", notifiedChangeIds).apply()
+        L.d(TAG, "Marked ${changes.size} changes as notified")
+    }
+
+    private fun generateChangeId(change: SubstituteEntry): String {
+        // Create unique ID based on change properties
+        return "${change.date}_${change.stunde}_${change.stundebis}_${change.fach}_${change.text.hashCode()}"
     }
 
     data class SubstituteEntry(

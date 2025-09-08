@@ -24,7 +24,7 @@ import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
-class SubjectSelectionActivity : AppCompatActivity() {
+class SubjectSelectionActivity : BaseActivity() {
 
     private lateinit var toolbar: Toolbar
     private lateinit var searchEditText: EditText
@@ -39,7 +39,6 @@ class SubjectSelectionActivity : AppCompatActivity() {
     private lateinit var tvSearchResults: TextView
 
     private lateinit var adapter: SubjectAdapter
-    private lateinit var sharedPreferences: SharedPreferences
 
     // variables to hold subject triplets
     private var allSubjectTriplets = mutableListOf<SubjectTriplet>()
