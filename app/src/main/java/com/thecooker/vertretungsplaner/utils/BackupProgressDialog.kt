@@ -15,12 +15,14 @@ import androidx.core.graphics.drawable.toDrawable
 
 interface DialogDismissCallback {
     fun onDialogDismissed(isExport: Boolean, wasSuccessful: Boolean)
+    fun onEditRequested(isExport: Boolean, currentSections: List<BackupManager.BackupSection>)
 }
 
 class BackupProgressDialog(
     private val context: Context,
     private val isExport: Boolean,
-    private val backupManager: BackupManager
+    private val backupManager: BackupManager,
+    private val enabledSections: Set<String>? = null
 ) : Dialog(context), BackupManager.BackupProgressCallback {
 
     private lateinit var titleText: TextView
@@ -28,6 +30,7 @@ class BackupProgressDialog(
     private lateinit var sectionsContainer: LinearLayout
     private lateinit var cancelButton: Button
     private lateinit var errorButton: Button
+    private lateinit var editButton: Button
     private lateinit var scrollView: ScrollView
 
     private var isCancelled = false
@@ -70,6 +73,7 @@ class BackupProgressDialog(
         sectionsContainer = view.findViewById(R.id.sectionsContainer)
         cancelButton = view.findViewById(R.id.cancelButton)
         errorButton = view.findViewById(R.id.errorButton)
+        editButton = view.findViewById(R.id.editButton)
         scrollView = view.findViewById(R.id.scrollView)
 
         titleText.text = if (isExport) "Sicherung wird erstellt..." else "Sicherung wird wiederhergestellt..."
@@ -78,6 +82,12 @@ class BackupProgressDialog(
         errorButton.setOnClickListener {
             val errorReport = backupManager.generateErrorReport(processedSections, if (isExport) "Export" else "Import")
             showErrorDetails(errorReport)
+        }
+
+        editButton.visibility = View.GONE
+        editButton.setOnClickListener {
+            dismissCallback?.onEditRequested(isExport, processedSections.toList())
+            dismiss()
         }
 
         cancelButton.setOnClickListener {
@@ -94,7 +104,7 @@ class BackupProgressDialog(
     }
 
     private fun setupSectionViews() {
-        val sections = listOf(
+        val allSections = listOf(
             BackupManager.BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
             BackupManager.BackupSection("CALENDAR_DATA", "Kalender-Daten"),
             BackupManager.BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
@@ -103,23 +113,43 @@ class BackupProgressDialog(
             BackupManager.BackupSection("APP_SETTINGS", "App-Einstellungen")
         )
 
-        progressBar.max = sections.size
+        val sectionsToShow = if (enabledSections != null) {
+            allSections.filter { enabledSections.contains(it.name) }
+        } else {
+            allSections
+        }
 
-        sections.forEach { section ->
+        progressBar.max = sectionsToShow.size
+
+        val excludedSections = if (enabledSections != null) {
+            allSections.filter { !enabledSections.contains(it.name) }
+        } else {
+            emptyList()
+        }
+
+        sectionsToShow.forEach { section ->
             val sectionView = SectionProgressView(context, section.displayName)
             sectionsContainer.addView(sectionView.view)
             sectionViews[section.name] = sectionView
+        }
+
+        excludedSections.forEach { section ->
+            val sectionView = SectionProgressView(context, section.displayName)
+            sectionView.setStatus(BackupManager.SectionStatus.EXCLUDED)
+            sectionsContainer.addView(sectionView.view)
         }
     }
 
     override fun onSectionStarted(section: BackupManager.BackupSection) {
         if (isCancelled) return
+        if (enabledSections != null && !enabledSections.contains(section.name)) return
 
         sectionViews[section.name]?.setStatus(BackupManager.SectionStatus.IN_PROGRESS)
     }
 
     override fun onSectionCompleted(section: BackupManager.BackupSection) {
         if (isCancelled) return
+        if (enabledSections != null && !enabledSections.contains(section.name)) return
 
         processedSections.add(section)
         sectionViews[section.name]?.setStatus(section.status, section.errorMessage)
@@ -145,6 +175,10 @@ class BackupProgressDialog(
 
         if (hasErrors || hasEmptySections) {
             errorButton.visibility = View.VISIBLE
+        }
+
+        if (enabledSections == null) {
+            editButton.visibility = View.VISIBLE
         }
     }
 
@@ -222,6 +256,13 @@ class BackupProgressDialog(
                     statusIcon.setColorFilter(ContextCompat.getColor(context, android.R.color.holo_orange_dark))
                     "Keine Daten".also { errorText.text = it }
                     errorText.visibility = View.VISIBLE
+                }
+                BackupManager.SectionStatus.EXCLUDED -> {
+                    statusIcon.setImageResource(R.drawable.ic_remove)
+                    statusIcon.setColorFilter(ContextCompat.getColor(context, android.R.color.darker_gray))
+                    "Ausgeschlossen".also { errorText.text = it }
+                    errorText.visibility = View.VISIBLE
+                    nameText.alpha = 0.6f
                 }
             }
         }

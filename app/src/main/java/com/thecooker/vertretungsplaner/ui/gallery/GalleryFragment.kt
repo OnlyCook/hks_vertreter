@@ -1649,6 +1649,7 @@ class GalleryFragment : Fragment() {
             val additionalInfo = mutableListOf<String>()
             var hasSubstitute = false
             var substituteText = ""
+            var isCancelled = false
 
             calendarEntries.forEach { entry ->
                 when (entry.type) {
@@ -1660,6 +1661,10 @@ class GalleryFragment : Fragment() {
                             substituteText = entry.content
                         } else {
                             additionalInfo.add(entry.content)
+                            if (entry.content.contains("Entfällt", ignoreCase = true) &&
+                                entry.backgroundColor == getColorBlindFriendlyColor("red")) {
+                                isCancelled = true
+                            }
                         }
                     }
                     EntryType.SPECIAL_DAY -> {
@@ -1699,9 +1704,13 @@ class GalleryFragment : Fragment() {
                     val formattedFirstLine = if (subjectEndIndex > 0) {
                         val subject = firstLine.substring(0, subjectEndIndex)
                         val restOfFirstLine = firstLine.substring(subjectEndIndex)
-                        "<b>$subject</b>$restOfFirstLine"
+
+                        // strikethrough if cancelled
+                        val subjectHtml = if (isCancelled) "<s><b>$subject</b></s>" else "<b>$subject</b>"
+                        "$subjectHtml$restOfFirstLine"
                     } else {
-                        "<b>$firstLine</b>"
+                        // strikethrough if cancelled
+                        if (isCancelled) "<s><b>$firstLine</b></s>" else "<b>$firstLine</b>"
                     }
 
                     val finalText = if (lines.size > 1) {
@@ -2254,6 +2263,7 @@ class GalleryFragment : Fragment() {
         }
 
         val calendarEntries = mutableListOf<CalendarEntry>()
+        var isCancelled = false
 
         if (timetableEntry != null && !timetableEntry.isBreak) {
             cellText = timetableEntry.subject
@@ -2264,12 +2274,25 @@ class GalleryFragment : Fragment() {
                     timetableEntry.subject
                 )
             )
+
+            calendarEntries.forEach { entry ->
+                if (entry.type == EntryType.SUBSTITUTE &&
+                    entry.content.contains("Entfällt", ignoreCase = true) &&
+                    entry.backgroundColor == getColorBlindFriendlyColor("red")) {
+                    isCancelled = true
+                }
+            }
         } else if (isEditMode) {
             cellText = "＋"
             cell.setTextColor(Color.GRAY)
         }
 
-        cell.text = cellText
+        // strikethrough if cancelled
+        if (isCancelled && cellText.isNotEmpty() && cellText != "＋") {
+            cell.text = Html.fromHtml("<s>$cellText</s>", Html.FROM_HTML_MODE_COMPACT)
+        } else {
+            cell.text = cellText
+        }
 
         val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
         val actualRoom = timetableEntry?.room ?: ""
@@ -4319,7 +4342,7 @@ class GalleryFragment : Fragment() {
             else -> when (originalColor) { // normal
                 "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
                 "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
-                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light)
+                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
                 else -> Color.TRANSPARENT
             }
         }

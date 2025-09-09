@@ -246,6 +246,212 @@ class BackupManager(private val context: Context) {
         return sections
     }
 
+    fun createSelectiveBackup(enabledSections: Set<String>, callback: BackupProgressCallback? = null): String {
+        L.d(TAG, "Creating selective backup for sections: $enabledSections")
+        this.progressCallback = callback
+
+        val content = StringBuilder()
+        val allSections = backupSections.toMutableList()
+        val sectionsToProcess = allSections.filter { enabledSections.contains(it.name) }
+
+        // header information
+        content.appendLine("# Heinrich-Kleyer-Schule App Backup")
+        content.appendLine("# Version: $BACKUP_VERSION")
+        content.appendLine("# Created: ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMAN).format(Date())}")
+        content.appendLine()
+
+        sectionsToProcess.forEach { section ->
+            try {
+                section.status = SectionStatus.IN_PROGRESS
+                notifySectionStarted(section)
+
+                val sectionContent = when (section.name) {
+                    "TIMETABLE_DATA" -> {
+                        content.appendLine("[TIMETABLE_DATA]")
+                        val data = exportTimetableData()
+                        content.appendLine(data)
+                        content.appendLine("[/TIMETABLE_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "CALENDAR_DATA" -> {
+                        content.appendLine("[CALENDAR_DATA]")
+                        val data = exportCalendarData()
+                        content.appendLine(data)
+                        content.appendLine("[/CALENDAR_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "HOMEWORK_DATA" -> {
+                        content.appendLine("[HOMEWORK_DATA]")
+                        val data = exportHomeworkData()
+                        content.appendLine(data)
+                        content.appendLine("[/HOMEWORK_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "EXAM_DATA" -> {
+                        content.appendLine("[EXAM_DATA]")
+                        val data = exportExamData()
+                        content.appendLine(data)
+                        content.appendLine("[/EXAM_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "GRADE_DATA" -> {
+                        content.appendLine("[GRADE_DATA]")
+                        val data = exportGradeData()
+                        content.appendLine(data)
+                        content.appendLine("[/GRADE_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "APP_SETTINGS" -> {
+                        content.appendLine("[APP_SETTINGS]")
+                        val data = exportAppSettings()
+                        content.appendLine(data)
+                        content.appendLine("[/APP_SETTINGS]")
+                        data
+                    }
+                    else -> ""
+                }
+
+                val hasData = sectionContent.trim().isNotEmpty() &&
+                        !sectionContent.trim().startsWith("# Error") &&
+                        sectionContent.split("\n").size > 3
+
+                section.status = if (hasData) SectionStatus.SUCCESS else SectionStatus.EMPTY
+                notifySectionCompleted(section)
+
+            } catch (e: Exception) {
+                L.e(TAG, "Error creating backup for section ${section.name}", e)
+                section.status = SectionStatus.FAILED
+                section.errorMessage = e.message
+                notifySectionCompleted(section)
+            }
+        }
+
+        val success = sectionsToProcess.none { it.status == SectionStatus.FAILED }
+        notifyBackupCompleted(success, sectionsToProcess)
+
+        L.d(TAG, "Selective backup created successfully")
+        return content.toString()
+    }
+
+    fun restoreSelectiveBackup(backupContent: String, enabledSections: Set<String>, callback: BackupProgressCallback? = null): RestoreResult {
+        L.d(TAG, "Starting selective backup restore for sections: $enabledSections")
+        this.progressCallback = callback
+
+        isFullBackupRestore = true
+        val allSections = backupSections.toMutableList()
+        val sectionsToProcess = allSections.filter { enabledSections.contains(it.name) }
+
+        try {
+            val parsedSections = parseBackupSections(backupContent)
+            var successCount = 0
+            val errors = mutableListOf<String>()
+
+            sectionsToProcess.forEach { section ->
+                try {
+                    section.status = SectionStatus.IN_PROGRESS
+                    notifySectionStarted(section)
+
+                    val sectionContent = parsedSections[section.name]
+                    if (sectionContent == null) {
+                        section.status = SectionStatus.EMPTY
+                        section.errorMessage = "Keine Daten in der Sicherung gefunden"
+                        notifySectionCompleted(section)
+                        return@forEach
+                    }
+
+                    when (section.name) {
+                        "TIMETABLE_DATA" -> {
+                            importTimetableData(sectionContent)
+                            successCount++
+                        }
+                        "CALENDAR_DATA" -> {
+                            importCalendarData(sectionContent)
+                            successCount++
+                        }
+                        "HOMEWORK_DATA" -> {
+                            importHomeworkData(sectionContent)
+                            successCount++
+                        }
+                        "EXAM_DATA" -> {
+                            importExamDataFromFullBackup(sectionContent)
+                            successCount++
+                        }
+                        "GRADE_DATA" -> {
+                            importGradeData(sectionContent)
+                            successCount++
+                        }
+                        "APP_SETTINGS" -> {
+                            importAppSettings(sectionContent)
+                            successCount++
+                        }
+                    }
+
+                    section.status = SectionStatus.SUCCESS
+                    notifySectionCompleted(section)
+
+                } catch (e: Exception) {
+                    L.e(TAG, "Error restoring section ${section.name}", e)
+                    section.status = SectionStatus.FAILED
+                    section.errorMessage = e.message
+                    errors.add("${section.displayName}: ${e.message}")
+                    notifySectionCompleted(section)
+                }
+            }
+
+            val success = sectionsToProcess.none { it.status == SectionStatus.FAILED }
+
+            val result = RestoreResult(
+                success = success,
+                restoredSections = successCount,
+                totalSections = sectionsToProcess.size,
+                errors = errors
+            )
+
+            notifyBackupCompleted(success, sectionsToProcess)
+            return result
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error parsing backup", e)
+            sectionsToProcess.forEach { it.status = SectionStatus.FAILED; it.errorMessage = "Backup parsing failed: ${e.message}" }
+            notifyBackupCompleted(false, sectionsToProcess)
+            return RestoreResult(
+                success = false,
+                restoredSections = 0,
+                totalSections = sectionsToProcess.size,
+                errors = listOf("Backup parsing failed: ${e.message}")
+            )
+        } finally {
+            isFullBackupRestore = false
+        }
+    }
+
+    fun analyzeBackupSections(backupContent: String): List<BackupSection> {
+        val parsedSections = parseBackupSections(backupContent)
+        val allSections = listOf(
+            BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
+            BackupSection("CALENDAR_DATA", "Kalender-Daten"),
+            BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
+            BackupSection("EXAM_DATA", "Klausuren"),
+            BackupSection("GRADE_DATA", "Noten"),
+            BackupSection("APP_SETTINGS", "App-Einstellungen")
+        )
+
+        return allSections.map { section ->
+            val hasData = parsedSections.containsKey(section.name) &&
+                    parsedSections[section.name]?.trim()?.isNotEmpty() == true
+            BackupSection(
+                section.name,
+                section.displayName,
+                if (hasData) SectionStatus.SUCCESS else SectionStatus.EMPTY
+            )
+        }
+    }
+
     private fun exportTimetableData(): String {
         val subjects = sharedPreferences.getString("student_subjects", "") ?: ""
         val teachers = sharedPreferences.getString("student_teachers", "") ?: ""
@@ -1677,7 +1883,8 @@ class BackupManager(private val context: Context) {
         IN_PROGRESS,
         SUCCESS,
         FAILED,
-        EMPTY
+        EMPTY,
+        EXCLUDED
     }
 
     interface BackupProgressCallback {

@@ -44,6 +44,8 @@ import android.os.Handler
 import android.os.Looper
 import com.thecooker.vertretungsplaner.utils.BackupProgressDialog
 import com.thecooker.vertretungsplaner.utils.DialogDismissCallback
+import com.thecooker.vertretungsplaner.utils.SectionSelectionCallback
+import com.thecooker.vertretungsplaner.utils.SectionSelectionDialog
 
 class SettingsActivity : BaseActivity() {
 
@@ -119,6 +121,10 @@ class SettingsActivity : BaseActivity() {
 
     // filter lift
     private lateinit var switchLeftFilterLift: Switch
+
+    // backup
+    private var tempImportContent: String? = null
+    private var tempImportSections: List<BackupManager.BackupSection>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -2376,23 +2382,8 @@ class SettingsActivity : BaseActivity() {
 
     private fun exportFullBackup() {
         try {
-            showProgressDialog(isExport = true) { progressDialog ->
-                Thread {
-                    try {
-                        val content = backupManager.createFullBackup(progressDialog.progressCallback)
-
-                        runOnUiThread {
-                            // user must press "Fortfahren" to continue
-                            sharedPreferences.edit { putString("temp_export_content", content) }
-                        }
-                    } catch (e: Exception) {
-                        runOnUiThread {
-                            progressDialog.dismiss()
-                            L.e(TAG, "Error creating full backup", e)
-                            Toast.makeText(this@SettingsActivity, "Fehler beim Erstellen der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }.start()
+            showSectionSelectionDialog(isExport = true) { selectedSections ->
+                executeExport(selectedSections)
             }
         } catch (e: Exception) {
             L.e(TAG, "Error starting full backup", e)
@@ -2400,8 +2391,64 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
-    private fun showProgressDialog(isExport: Boolean, onReady: (BackupProgressDialog) -> Unit) {
-        val progressDialog = BackupProgressDialog(this, isExport, backupManager)
+    private fun executeExport(enabledSections: Set<String>) {
+        showProgressDialog(isExport = true, enabledSections = enabledSections) { progressDialog ->
+            Thread {
+                try {
+                    val content = if (enabledSections.size == 6) {
+                        backupManager.createFullBackup(progressDialog.progressCallback)
+                    } else {
+                        backupManager.createSelectiveBackup(enabledSections, progressDialog.progressCallback)
+                    }
+
+                    runOnUiThread {
+                        sharedPreferences.edit { putString("temp_export_content", content) }
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        progressDialog.dismiss()
+                        L.e(TAG, "Error creating backup", e)
+                        Toast.makeText(this@SettingsActivity, "Fehler beim Erstellen der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }.start()
+        }
+    }
+
+    private fun showSectionSelectionDialog(
+        isExport: Boolean,
+        availableSections: List<BackupManager.BackupSection>? = null,
+        currentSelection: Set<String>? = null,
+        onSectionsSelected: (Set<String>) -> Unit
+    ) {
+        val sections = availableSections ?: listOf(
+            BackupManager.BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
+            BackupManager.BackupSection("CALENDAR_DATA", "Kalender-Daten"),
+            BackupManager.BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
+            BackupManager.BackupSection("EXAM_DATA", "Klausuren"),
+            BackupManager.BackupSection("GRADE_DATA", "Noten"),
+            BackupManager.BackupSection("APP_SETTINGS", "App-Einstellungen")
+        )
+
+        val dialog = SectionSelectionDialog(this, isExport, sections, currentSelection)
+        dialog.setCallback(object : SectionSelectionCallback {
+            override fun onSectionsSelected(selectedSections: Set<String>) {
+                onSectionsSelected(selectedSections)
+            }
+
+            override fun onSelectionCancelled() {
+                // dialog cancelled
+            }
+        })
+        dialog.show()
+    }
+
+    private fun showProgressDialog(
+        isExport: Boolean,
+        enabledSections: Set<String>? = null,
+        onReady: (BackupProgressDialog) -> Unit
+    ) {
+        val progressDialog = BackupProgressDialog(this, isExport, backupManager, enabledSections)
 
         progressDialog.setDismissCallback(object : DialogDismissCallback {
             override fun onDialogDismissed(isExport: Boolean, wasSuccessful: Boolean) {
@@ -2413,6 +2460,37 @@ class SettingsActivity : BaseActivity() {
                     }
                 } else if (!isExport && wasSuccessful) {
                     showRestartRecommendationDialog()
+                }
+            }
+
+            override fun onEditRequested(isExport: Boolean, currentSections: List<BackupManager.BackupSection>) {
+                if (isExport) {
+                    val currentSelection = currentSections.map { it.name }.toSet()
+                    showSectionSelectionDialog(
+                        isExport = true,
+                        currentSelection = currentSelection
+                    ) { selectedSections ->
+                        executeExport(selectedSections)
+                    }
+                } else {
+                    tempImportSections?.let { sections ->
+                        val availableSections = sections.filter {
+                            it.status != BackupManager.SectionStatus.FAILED
+                        }
+                        val currentSelection = currentSections
+                            .filter { it.status == BackupManager.SectionStatus.SUCCESS }
+                            .map { it.name }.toSet()
+
+                        showSectionSelectionDialog(
+                            isExport = false,
+                            availableSections = availableSections,
+                            currentSelection = currentSelection
+                        ) { selectedSections ->
+                            tempImportContent?.let { content ->
+                                executeImport(content, selectedSections)
+                            }
+                        }
+                    }
                 }
             }
         })
@@ -2545,24 +2623,51 @@ class SettingsActivity : BaseActivity() {
 
     private fun processFullBackupImport(content: String) {
         try {
-            showFullBackupImportConfirmationDialog(content)
+            val availableSections = backupManager.analyzeBackupSections(content)
+            tempImportContent = content
+            tempImportSections = availableSections
+
+            val sectionsWithData = availableSections.filter {
+                it.status != BackupManager.SectionStatus.EMPTY
+            }
+
+            if (sectionsWithData.isEmpty()) {
+                Toast.makeText(this, "Die Sicherungsdatei enthält keine verwendbaren Daten", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            showSectionSelectionDialog(
+                isExport = false,
+                availableSections = availableSections
+            ) { selectedSections ->
+                showFullBackupImportConfirmationDialog(content, selectedSections)
+            }
+
         } catch (e: Exception) {
             L.e(TAG, "Error processing full backup import", e)
-            Toast.makeText(this, "Fehler beim Importieren der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Fehler beim Analysieren der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun showFullBackupImportConfirmationDialog(content: String) {
+    private fun showFullBackupImportConfirmationDialog(content: String, selectedSections: Set<String>) {
+        val sectionNames = listOf(
+            "TIMETABLE_DATA" to "Stundenplan",
+            "CALENDAR_DATA" to "Kalender-Daten",
+            "HOMEWORK_DATA" to "Hausaufgaben",
+            "EXAM_DATA" to "Klausuren",
+            "GRADE_DATA" to "Noten",
+            "APP_SETTINGS" to "App-Einstellungen"
+        ).toMap()
+
+        val selectedSectionsList = selectedSections.mapNotNull { sectionNames[it] }
+        val sectionText = selectedSectionsList.joinToString("\n• ", "• ")
+
         val message = """
-        Vollständige Sicherung wiederherstellen?
+        Die folgenden Bereiche werden wiederhergestellt:
         
-        Dies wird ALLE aktuellen App-Daten ersetzen:
-        • Stundenplan
-        • Kalender-Daten
-        • Hausaufgaben
-        • Klausuren
-        • Noten
-        • App-Einstellungen
+        $sectionText
+        
+        Dies wird die aktuellen Daten in diesen Bereichen ersetzen!
         
         Diese Aktion kann nicht rückgängig gemacht werden!
     """.trimIndent()
@@ -2571,18 +2676,22 @@ class SettingsActivity : BaseActivity() {
             .setTitle("Sicherung wiederherstellen")
             .setMessage(message)
             .setPositiveButton("Wiederherstellen") { _, _ ->
-                executeFullBackupRestore(content)
+                executeImport(content, selectedSections)
             }
             .setNegativeButton("Abbrechen", null)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .show()
     }
 
-    private fun executeFullBackupRestore(content: String) {
-        showProgressDialog(isExport = false) { progressDialog ->
+    private fun executeImport(content: String, enabledSections: Set<String>) {
+        showProgressDialog(isExport = false, enabledSections = enabledSections) { progressDialog ->
             Thread {
                 try {
-                    val result = backupManager.restoreFromBackup(content, progressDialog.progressCallback)
+                    val result = if (enabledSections.size == 6) {
+                        backupManager.restoreFromBackup(content, progressDialog.progressCallback)
+                    } else {
+                        backupManager.restoreSelectiveBackup(content, enabledSections, progressDialog.progressCallback)
+                    }
 
                     runOnUiThread {
                         if (result.success) {
@@ -2615,7 +2724,7 @@ class SettingsActivity : BaseActivity() {
 
                 } catch (e: Exception) {
                     runOnUiThread {
-                        L.e(TAG, "Error executing full backup restore", e)
+                        L.e(TAG, "Error executing backup restore", e)
                         Toast.makeText(this@SettingsActivity, "Fehler beim Wiederherstellen: ${e.message}", Toast.LENGTH_LONG).show()
                     }
                 }

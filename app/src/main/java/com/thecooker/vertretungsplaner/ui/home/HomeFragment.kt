@@ -228,7 +228,7 @@ class HomeFragment : Fragment() {
             else -> when (originalColor) { // normal
                 "red" -> resources.getColor(android.R.color.holo_red_light, null)
                 "green" -> resources.getColor(android.R.color.holo_green_light, null)
-                "orange" -> resources.getColor(android.R.color.holo_orange_light, null)
+                "orange" -> resources.getColor(android.R.color.holo_orange_dark, null)
                 else -> resources.getColor(android.R.color.transparent, null)
             }
         }
