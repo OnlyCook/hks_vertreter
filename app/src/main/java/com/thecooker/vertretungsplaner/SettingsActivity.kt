@@ -42,6 +42,8 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import android.os.Handler
 import android.os.Looper
+import com.thecooker.vertretungsplaner.utils.BackupProgressDialog
+import com.thecooker.vertretungsplaner.utils.DialogDismissCallback
 
 class SettingsActivity : BaseActivity() {
 
@@ -1679,7 +1681,7 @@ class SettingsActivity : BaseActivity() {
 
     private fun setupStartupPageSetting() {
         val startupPages = arrayOf("Kalender", "Vertretungsplan (empfohlen)", "Hausaufgaben", "Klausuren", "Noten")
-        val currentSelection = sharedPreferences.getInt("startup_page_index", 0)
+        val currentSelection = sharedPreferences.getInt("startup_page_index", 1)
 
         "Startseite: ${startupPages[currentSelection]}".also { btnStartupPage.text = it }
 
@@ -2302,24 +2304,6 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
-    private fun revertSwitchState(settingType: String, originalState: Boolean) {
-        when (settingType) {
-            "follow_system" -> {
-                sharedPreferences.edit {
-                    putBoolean("follow_system_theme", originalState)
-                }
-                findViewById<Switch>(R.id.switchFollowSystemTheme).isChecked = originalState
-                findViewById<Switch>(R.id.switchDarkMode).isEnabled = !originalState
-            }
-            "dark_mode" -> {
-                sharedPreferences.edit {
-                    putBoolean("dark_mode_enabled", originalState)
-                }
-                findViewById<Switch>(R.id.switchDarkMode).isChecked = originalState
-            }
-        }
-    }
-
     private fun restartAppSafely() {
         Toast.makeText(this, "Einstellungen gespeichert. App wird neu gestartet...", Toast.LENGTH_LONG).show()
 
@@ -2392,20 +2376,74 @@ class SettingsActivity : BaseActivity() {
 
     private fun exportFullBackup() {
         try {
-            val backupContent = backupManager.createFullBackup()
-            showFullBackupExportOptions(backupContent)
+            showProgressDialog(isExport = true) { progressDialog ->
+                Thread {
+                    try {
+                        val content = backupManager.createFullBackup(progressDialog.progressCallback)
+
+                        runOnUiThread {
+                            // user must press "Fortfahren" to continue
+                            sharedPreferences.edit { putString("temp_export_content", content) }
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            progressDialog.dismiss()
+                            L.e(TAG, "Error creating full backup", e)
+                            Toast.makeText(this@SettingsActivity, "Fehler beim Erstellen der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
+            }
         } catch (e: Exception) {
-            L.e(TAG, "Error creating full backup", e)
-            Toast.makeText(this, "Fehler beim Erstellen der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+            L.e(TAG, "Error starting full backup", e)
+            Toast.makeText(this, "Fehler beim Starten der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun showFullBackupExportOptions(content: String) {
-        val options = arrayOf("Als Datei speichern", "In Zwischenablage kopieren")
+    private fun showProgressDialog(isExport: Boolean, onReady: (BackupProgressDialog) -> Unit) {
+        val progressDialog = BackupProgressDialog(this, isExport, backupManager)
 
+        progressDialog.setDismissCallback(object : DialogDismissCallback {
+            override fun onDialogDismissed(isExport: Boolean, wasSuccessful: Boolean) {
+                if (isExport && wasSuccessful) {
+                    val content = sharedPreferences.getString("temp_export_content", "")
+                    if (!content.isNullOrEmpty()) {
+                        showFullBackupExportOptions(content)
+                        sharedPreferences.edit { remove("temp_export_content") }
+                    }
+                } else if (!isExport && wasSuccessful) {
+                    showRestartRecommendationDialog()
+                }
+            }
+        })
+
+        progressDialog.show()
+        onReady(progressDialog)
+    }
+
+    private fun showFullBackupExportOptions(content: String) {
+        //val content = backupManager.createFullBackup()
+        val options = listOf(
+            Pair("Als Datei speichern", R.drawable.ic_export_file),
+            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+        )
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            this,
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("Vollständige Sicherung exportieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveFullBackupToFile(content)
                     1 -> copyFullBackupToClipboard(content)
@@ -2443,11 +2481,27 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun importFullBackup() {
-        val options = arrayOf("Aus Datei importieren", "Aus Zwischenablage einfügen")
-
+        val options = listOf(
+            Pair("Aus Datei importieren", R.drawable.ic_import_file),
+            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+        )
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            this,
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("Vollständige Sicherung importieren")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFullBackupFromFile()
                     1 -> importFullBackupFromClipboard()
@@ -2525,32 +2579,47 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun executeFullBackupRestore(content: String) {
-        try {
-            val result = backupManager.restoreFromBackup(content)
+        showProgressDialog(isExport = false) { progressDialog ->
+            Thread {
+                try {
+                    val result = backupManager.restoreFromBackup(content, progressDialog.progressCallback)
 
-            if (result.success) {
-                loadCurrentSelection()
-                updateTimetableButton()
-                setupFilterSwitch()
+                    runOnUiThread {
+                        if (result.success) {
+                            loadCurrentSelection()
+                            updateTimetableButton()
+                            setupFilterSwitch()
 
-                Toast.makeText(this,
-                    "Sicherung erfolgreich wiederhergestellt!\n${result.restoredSections}/${result.totalSections} Bereiche wiederhergestellt",
-                    Toast.LENGTH_LONG).show()
+                            val hasEmptySections = result.restoredSections < result.totalSections
+                            val message = if (hasEmptySections) {
+                                "Sicherung teilweise wiederhergestellt: ${result.restoredSections}/${result.totalSections} Bereiche"
+                            } else {
+                                "Sicherung erfolgreich wiederhergestellt!\n${result.restoredSections}/${result.totalSections} Bereiche wiederhergestellt"
+                            }
 
-                showRestartRecommendationDialog()
-            } else {
-                val errorMessage = if (result.errors.isEmpty()) {
-                    "Unbekannter Fehler beim Wiederherstellen"
-                } else {
-                    "Teilweise wiederhergestellt: ${result.restoredSections}/${result.totalSections} Bereiche\nFehler: ${result.errors.joinToString(", ")}"
+                            Toast.makeText(this@SettingsActivity, message, Toast.LENGTH_LONG).show()
+                        } else {
+                            val errorMessage = if (result.errors.isEmpty()) {
+                                "Unbekannter Fehler beim Wiederherstellen"
+                            } else {
+                                "Teilweise wiederhergestellt: ${result.restoredSections}/${result.totalSections} Bereiche\nFehler: ${result.errors.joinToString(", ")}"
+                            }
+
+                            Toast.makeText(this@SettingsActivity, errorMessage, Toast.LENGTH_LONG).show()
+                        }
+
+                        if (result.restoredSections > 0) {
+                            // restart dialog -> dismissed separately
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        L.e(TAG, "Error executing full backup restore", e)
+                        Toast.makeText(this@SettingsActivity, "Fehler beim Wiederherstellen: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                 }
-
-                Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
-            }
-
-        } catch (e: Exception) {
-            L.e(TAG, "Error executing full backup restore", e)
-            Toast.makeText(this, "Fehler beim Wiederherstellen: ${e.message}", Toast.LENGTH_LONG).show()
+            }.start()
         }
     }
 

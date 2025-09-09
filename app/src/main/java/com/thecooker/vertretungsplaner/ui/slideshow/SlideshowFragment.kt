@@ -989,57 +989,73 @@ class SlideshowFragment : Fragment() {
 
     private fun sortHomework() {
         homeworkList.sortWith { a, b ->
-            // always sort ascending by due date/time
             when {
-                !a.isCompleted && !a.isOverdue() && !b.isCompleted && !b.isOverdue() -> {
-                    val dateComparison = a.dueDate.compareTo(b.dueDate)
-                    if (dateComparison != 0) {
-                        dateComparison
-                    } else {
-                        when {
-                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                            a.dueTime != null && b.dueTime == null -> -1
-                            a.dueTime == null && b.dueTime != null -> 1
-                            else -> 0
-                        }
-                    }
-                }
-                !a.isCompleted && !a.isOverdue() && !b.isCompleted && b.isOverdue() -> -1
-                !a.isCompleted && a.isOverdue() && !b.isCompleted && !b.isOverdue() -> 1
-                !a.isCompleted && a.isOverdue() && !b.isCompleted && b.isOverdue() -> {
-                    val dateComparison = a.dueDate.compareTo(b.dueDate)
-                    if (dateComparison != 0) {
-                        dateComparison
-                    } else {
-                        when {
-                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                            a.dueTime != null && b.dueTime == null -> -1
-                            a.dueTime == null && b.dueTime != null -> 1
-                            else -> 0
-                        }
-                    }
-                }
-                !a.isCompleted && a.isOverdue() && b.isCompleted -> -1
-                a.isCompleted && !b.isCompleted && b.isOverdue() -> 1
-                !a.isCompleted && !a.isOverdue() && b.isCompleted -> -1
-                a.isCompleted && !b.isCompleted && !b.isOverdue() -> 1
+                // both completed -> sort by due date then due time
                 a.isCompleted && b.isCompleted -> {
                     val dateComparison = a.dueDate.compareTo(b.dueDate)
                     if (dateComparison != 0) {
                         dateComparison
                     } else {
-                        when {
-                            a.dueTime != null && b.dueTime != null -> a.dueTime!!.compareTo(b.dueTime!!)
-                            a.dueTime != null && b.dueTime == null -> -1
-                            a.dueTime == null && b.dueTime != null -> 1
-                            else -> 0
+                        compareByTime(a, b)
+                    }
+                }
+
+                // one completed, one not -> uncompleted first unless overdue
+                a.isCompleted && !b.isCompleted -> {
+                    if (b.isOverdue()) -1 else 1
+                }
+                !a.isCompleted && b.isCompleted -> {
+                    if (a.isOverdue()) 1 else -1
+                }
+
+                // both uncompleted
+                !a.isCompleted && !b.isCompleted -> {
+                    when {
+                        // both overdue -> sort by date then time
+                        a.isOverdue() && b.isOverdue() -> {
+                            val dateComparison = a.dueDate.compareTo(b.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                compareByTime(a, b)
+                            }
+                        }
+
+                        // one overdue, one not -> overdue goes after non-overdue
+                        a.isOverdue() && !b.isOverdue() -> 1
+                        !a.isOverdue() && b.isOverdue() -> -1
+
+                        // both not overdue -> sort by date then time
+                        else -> {
+                            val dateComparison = a.dueDate.compareTo(b.dueDate)
+                            if (dateComparison != 0) {
+                                dateComparison
+                            } else {
+                                compareByTime(a, b)
+                            }
                         }
                     }
                 }
+
                 else -> 0
             }
         }
         adapter.notifyDataSetChanged()
+    }
+
+    private fun compareByTime(a: HomeworkEntry, b: HomeworkEntry): Int {
+        return when {
+            // both have due times -> sort by time
+            a.dueTime != null && b.dueTime != null -> {
+                a.dueTime!!.compareTo(b.dueTime!!)
+            }
+            // 1 has time, 2 doesnt -> 1 comes first (higher priority)
+            a.dueTime != null && b.dueTime == null -> -1
+            // 2 has time, 1 doesnt -> 2 comes first (higher priority)
+            a.dueTime == null && b.dueTime != null -> 1
+            // neither has time -> equal priority
+            else -> 0
+        }
     }
 
     private fun saveHomework() {

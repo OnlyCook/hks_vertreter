@@ -11,11 +11,24 @@ import com.thecooker.vertretungsplaner.data.CalendarDataManager
 import java.text.DecimalFormat
 import androidx.core.content.edit
 
-
 class BackupManager(private val context: Context) {
 
-    private val sharedPreferences: SharedPreferences =
-        context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+    private val sharedPreferences: SharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+
+    private var isFullBackupRestore = false
+
+    private var progressCallback: BackupProgressCallback? = null
+
+    private val backupSections = listOf(
+        BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
+        BackupSection("CALENDAR_DATA", "Kalender-Daten"),
+        BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
+        BackupSection("EXAM_DATA", "Klausuren"),
+        BackupSection("GRADE_DATA", "Noten"),
+        BackupSection("APP_SETTINGS", "App-Einstellungen")
+    )
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     companion object {
         private const val TAG = "BackupManager"
@@ -23,10 +36,12 @@ class BackupManager(private val context: Context) {
         const val HKS_BACKUP_FILE_EXTENSION = ".hks"
     }
 
-    fun createFullBackup(): String {
+    fun createFullBackup(callback: BackupProgressCallback? = null): String {
         L.d(TAG, "Creating full backup...")
+        this.progressCallback = callback
 
         val content = StringBuilder()
+        val sections = backupSections.toMutableList()
 
         // header information
         content.appendLine("# Heinrich-Kleyer-Schule App Backup")
@@ -34,69 +49,110 @@ class BackupManager(private val context: Context) {
         content.appendLine("# Created: ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMAN).format(Date())}")
         content.appendLine()
 
-        try {
-            // export timetable data (from settings/scanner)
-            content.appendLine("[TIMETABLE_DATA]")
-            val timetableData = exportTimetableData()
-            content.appendLine(timetableData)
-            content.appendLine("[/TIMETABLE_DATA]")
-            content.appendLine()
+        sections.forEach { section ->
+            try {
+                section.status = SectionStatus.IN_PROGRESS
+                notifySectionStarted(section)
 
-            // export calendar data
-            content.appendLine("[CALENDAR_DATA]")
-            val calendarData = exportCalendarData()
-            content.appendLine(calendarData)
-            content.appendLine("[/CALENDAR_DATA]")
-            content.appendLine()
+                val sectionContent = when (section.name) {
+                    "TIMETABLE_DATA" -> {
+                        content.appendLine("[TIMETABLE_DATA]")
+                        val data = exportTimetableData()
+                        content.appendLine(data)
+                        content.appendLine("[/TIMETABLE_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "CALENDAR_DATA" -> {
+                        content.appendLine("[CALENDAR_DATA]")
+                        val data = exportCalendarData()
+                        content.appendLine(data)
+                        content.appendLine("[/CALENDAR_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "HOMEWORK_DATA" -> {
+                        content.appendLine("[HOMEWORK_DATA]")
+                        val data = exportHomeworkData()
+                        content.appendLine(data)
+                        content.appendLine("[/HOMEWORK_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "EXAM_DATA" -> {
+                        content.appendLine("[EXAM_DATA]")
+                        val data = exportExamData()
+                        content.appendLine(data)
+                        content.appendLine("[/EXAM_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "GRADE_DATA" -> {
+                        content.appendLine("[GRADE_DATA]")
+                        val data = exportGradeData()
+                        content.appendLine(data)
+                        content.appendLine("[/GRADE_DATA]")
+                        content.appendLine()
+                        data
+                    }
+                    "APP_SETTINGS" -> {
+                        content.appendLine("[APP_SETTINGS]")
+                        val data = exportAppSettings()
+                        content.appendLine(data)
+                        content.appendLine("[/APP_SETTINGS]")
+                        data
+                    }
+                    else -> ""
+                }
 
-            // export homework data
-            content.appendLine("[HOMEWORK_DATA]")
-            val homeworkData = exportHomeworkData()
-            content.appendLine(homeworkData)
-            content.appendLine("[/HOMEWORK_DATA]")
-            content.appendLine()
+                val hasData = sectionContent.trim().isNotEmpty() &&
+                        !sectionContent.trim().startsWith("# Error") &&
+                        sectionContent.split("\n").size > 3
 
-            // export exam data
-            content.appendLine("[EXAM_DATA]")
-            val examData = exportExamData()
-            content.appendLine(examData)
-            content.appendLine("[/EXAM_DATA]")
-            content.appendLine()
+                section.status = if (hasData) SectionStatus.SUCCESS else SectionStatus.EMPTY
+                notifySectionCompleted(section)
 
-            // export grade data
-            content.appendLine("[GRADE_DATA]")
-            val gradeData = exportGradeData()
-            content.appendLine(gradeData)
-            content.appendLine("[/GRADE_DATA]")
-            content.appendLine()
-
-            // export app settings
-            content.appendLine("[APP_SETTINGS]")
-            val appSettings = exportAppSettings()
-            content.appendLine(appSettings)
-            content.appendLine("[/APP_SETTINGS]")
-
-        } catch (e: Exception) {
-            L.e(TAG, "Error creating backup", e)
-            throw e
+            } catch (e: Exception) {
+                L.e(TAG, "Error creating backup for section ${section.name}", e)
+                section.status = SectionStatus.FAILED
+                section.errorMessage = e.message
+                notifySectionCompleted(section)
+            }
         }
+
+        val success = sections.none { it.status == SectionStatus.FAILED }
+        notifyBackupCompleted(success, sections)
 
         L.d(TAG, "Full backup created successfully")
         return content.toString()
     }
 
-    fun restoreFromBackup(backupContent: String): RestoreResult {
+    fun restoreFromBackup(backupContent: String, callback: BackupProgressCallback? = null): RestoreResult {
         L.d(TAG, "Starting backup restore...")
+        this.progressCallback = callback
+
+        isFullBackupRestore = true
+        val sections = backupSections.toMutableList()
 
         try {
-            val sections = parseBackupSections(backupContent)
-
+            val parsedSections = parseBackupSections(backupContent)
             var successCount = 0
             val errors = mutableListOf<String>()
 
-            sections.forEach { (sectionName, sectionContent) ->
+            sections.forEach { section ->
                 try {
-                    when (sectionName) {
+                    section.status = SectionStatus.IN_PROGRESS
+                    notifySectionStarted(section)
+
+                    val sectionContent = parsedSections[section.name]
+                    if (sectionContent == null) {
+                        section.status = SectionStatus.EMPTY
+                        section.errorMessage = "Keine Daten in der Sicherung gefunden"
+                        notifySectionCompleted(section)
+                        return@forEach
+                    }
+
+                    when (section.name) {
                         "TIMETABLE_DATA" -> {
                             importTimetableData(sectionContent)
                             successCount++
@@ -110,7 +166,7 @@ class BackupManager(private val context: Context) {
                             successCount++
                         }
                         "EXAM_DATA" -> {
-                            importExamData(sectionContent)
+                            importExamDataFromFullBackup(sectionContent)
                             successCount++
                         }
                         "GRADE_DATA" -> {
@@ -121,31 +177,44 @@ class BackupManager(private val context: Context) {
                             importAppSettings(sectionContent)
                             successCount++
                         }
-                        else -> {
-                            L.w(TAG, "Unknown section: $sectionName")
-                        }
                     }
+
+                    section.status = SectionStatus.SUCCESS
+                    notifySectionCompleted(section)
+
                 } catch (e: Exception) {
-                    L.e(TAG, "Error restoring section $sectionName", e)
-                    errors.add("$sectionName: ${e.message}")
+                    L.e(TAG, "Error restoring section ${section.name}", e)
+                    section.status = SectionStatus.FAILED
+                    section.errorMessage = e.message
+                    errors.add("${section.displayName}: ${e.message}")
+                    notifySectionCompleted(section)
                 }
             }
 
-            return RestoreResult(
-                success = errors.isEmpty(),
+            val success = sections.none { it.status == SectionStatus.FAILED }
+
+            val result = RestoreResult(
+                success = success,
                 restoredSections = successCount,
                 totalSections = 6,
                 errors = errors
             )
 
+            notifyBackupCompleted(success, sections)
+            return result
+
         } catch (e: Exception) {
             L.e(TAG, "Error parsing backup", e)
+            sections.forEach { it.status = SectionStatus.FAILED; it.errorMessage = "Backup parsing failed: ${e.message}" }
+            notifyBackupCompleted(false, sections)
             return RestoreResult(
                 success = false,
                 restoredSections = 0,
                 totalSections = 6,
                 errors = listOf("Backup parsing failed: ${e.message}")
             )
+        } finally {
+            isFullBackupRestore = false
         }
     }
 
@@ -292,6 +361,17 @@ class BackupManager(private val context: Context) {
         val colorblindMode = sharedPreferences.getString("colorblind_mode", "none") ?: ""
         val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
         val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
+        val filterOnlyMySubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+        val autoDeleteHomework = sharedPreferences.getBoolean("auto_delete_homework", false)
+        val dueDateReminderEnabled = sharedPreferences.getBoolean("due_date_reminder_enabled", false)
+        val dueDateReminderHours = sharedPreferences.getInt("due_date_reminder_hours", 16)
+        val dailyHomeworkReminderEnabled = sharedPreferences.getBoolean("daily_homework_reminder_enabled", false)
+        val dailyHomeworkReminderTime = sharedPreferences.getString("daily_homework_reminder_time", "19:00") ?: ""
+        val examDueDateReminderEnabled = sharedPreferences.getBoolean("exam_due_date_reminder_enabled", false)
+        val examDueDateReminderDays = sharedPreferences.getInt("exam_due_date_reminder_days", 7)
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+        val calendarRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", false)
+        val calendarIncludeWeekends = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -307,13 +387,23 @@ class BackupManager(private val context: Context) {
             appendLine("COLORBLIND_MODE=$colorblindMode")
             appendLine("REMOVE_COOLDOWN=$removeCooldown")
             appendLine("LEFT_FILTER_LIFT=$leftFilterLift")
+            appendLine("FILTER_ONLY_MY_SUBJECTS=$filterOnlyMySubjects")
+            appendLine("AUTO_DELETE_HOMEWORK=$autoDeleteHomework")
+            appendLine("DUE_DATE_REMINDER_ENABLED=$dueDateReminderEnabled")
+            appendLine("DUE_DATE_REMINDER_HOURS=$dueDateReminderHours")
+            appendLine("DAILY_HOMEWORK_REMINDER_ENABLED=$dailyHomeworkReminderEnabled")
+            appendLine("DAILY_HOMEWORK_REMINDER_TIME=$dailyHomeworkReminderTime")
+            appendLine("EXAM_DUE_DATE_REMINDER_ENABLED=$examDueDateReminderEnabled")
+            appendLine("EXAM_DUE_DATE_REMINDER_DAYS=$examDueDateReminderDays")
+            appendLine("FOLLOW_SYSTEM_THEME=$followSystemTheme")
+            appendLine("CALENDAR_REAL_TIME_ENABLED=$calendarRealTimeEnabled")
+            appendLine("CALENDAR_INCLUDE_WEEKENDS=$calendarIncludeWeekends")
         }
     }
 
     private fun importAppSettings(content: String) {
         val lines = content.lines()
         sharedPreferences.edit {
-
             lines.forEach { line ->
                 when {
                     line.startsWith("STARTUP_PAGE=") -> putInt(
@@ -378,6 +468,61 @@ class BackupManager(private val context: Context) {
 
                     line.startsWith("LEFT_FILTER_LIFT=") -> putBoolean(
                         "left_filter_lift",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("FILTER_ONLY_MY_SUBJECTS=") -> putBoolean(
+                        "filter_only_my_subjects",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("AUTO_DELETE_HOMEWORK=") -> putBoolean(
+                        "auto_delete_homework",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("DUE_DATE_REMINDER_ENABLED=") -> putBoolean(
+                        "due_date_reminder_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("DUE_DATE_REMINDER_HOURS=") -> putInt(
+                        "due_date_reminder_hours",
+                        line.substringAfter("=").toIntOrNull() ?: 16
+                    )
+
+                    line.startsWith("DAILY_HOMEWORK_REMINDER_ENABLED=") -> putBoolean(
+                        "daily_homework_reminder_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("DAILY_HOMEWORK_REMINDER_TIME=") -> putString(
+                        "daily_homework_reminder_time",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("EXAM_DUE_DATE_REMINDER_ENABLED=") -> putBoolean(
+                        "exam_due_date_reminder_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("EXAM_DUE_DATE_REMINDER_DAYS=") -> putInt(
+                        "exam_due_date_reminder_days",
+                        line.substringAfter("=").toIntOrNull() ?: 7
+                    )
+
+                    line.startsWith("FOLLOW_SYSTEM_THEME=") -> putBoolean(
+                        "follow_system_theme",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("CALENDAR_REAL_TIME_ENABLED=") -> putBoolean(
+                        "calendar_real_time_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("CALENDAR_INCLUDE_WEEKENDS=") -> putBoolean(
+                        "calendar_include_weekends_dayview",
                         line.substringAfter("=").toBoolean()
                     )
                 }
@@ -454,7 +599,6 @@ class BackupManager(private val context: Context) {
 
     fun importExamData(content: String) {
         try {
-            // check if header valid before continuing
             if (!content.contains("# Heinrich-Kleyer-Schule Klausuren Export")) {
                 throw IllegalArgumentException("Ungültiges Datenformat")
             }
@@ -510,7 +654,7 @@ class BackupManager(private val context: Context) {
                 }
             }
 
-            if (calendarLines.isNotEmpty()) {
+            if (calendarLines.isNotEmpty() && !isFullBackupRestore) {
                 val calendarContent = calendarLines.joinToString("\n")
                 calendarManager.importCalendarData(calendarContent)
             }
@@ -525,6 +669,67 @@ class BackupManager(private val context: Context) {
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)
             throw Exception("Importfehler: ${e.message}")
+        }
+    }
+
+    private fun importExamDataFromFullBackup(content: String) {
+        try {
+            val lines = content.split("\n")
+            val examList = mutableListOf<ExamEntry>()
+
+            var importedExamCount = 0
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+
+            for (line in lines) {
+                if (line.startsWith("#") || line.trim().isEmpty()) {
+                    continue
+                }
+
+                if (line.contains("|")) {
+                    val parts = line.split("|")
+                    if (parts.size >= 6) {
+                        try {
+                            val subject = parts[0].trim()
+                            val date = dateFormat.parse(parts[1].trim()) ?: continue
+                            val note = parts[2].trim().replace("\\n", "\n")
+                            val isCompleted = parts[3].trim() == "1"
+                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
+                            val mark = parts.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+
+                            val exam = ExamEntry(
+                                subject = subject,
+                                date = date,
+                                note = note,
+                                isCompleted = isCompleted,
+                                examNumber = examNumber,
+                                isFromSchedule = isFromSchedule,
+                                mark = mark
+                            )
+
+                            examList.add(exam)
+                            importedExamCount++
+                        } catch (e: Exception) {
+                            L.w(TAG, "Error parsing exam line from full backup: $line", e)
+                        }
+                    }
+                }
+            }
+
+            if (importedExamCount > 0) {
+                val json = Gson().toJson(examList)
+                sharedPreferences.edit {
+                    putString("exam_list", json)
+                }
+
+                L.d(TAG, "Imported $importedExamCount exams from full backup successfully")
+            } else {
+                L.w(TAG, "No exam data found in full backup section")
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing exam data from full backup", e)
+            throw Exception("Failed to import exam data from full backup: ${e.message}")
         }
     }
 
@@ -1414,6 +1619,39 @@ class BackupManager(private val context: Context) {
         }
     }
 
+    fun generateErrorReport(sections: List<BackupSection>, operation: String): String {
+        val timestamp = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMAN).format(Date())
+        val sb = StringBuilder()
+
+        sb.appendLine("# Heinrich-Kleyer-Schule App - Fehlerprotokoll")
+        sb.appendLine("# Operation: $operation")
+        sb.appendLine("# Zeitstempel: $timestamp")
+        sb.appendLine("# App Version: $BACKUP_VERSION")
+        sb.appendLine("# Android Version: ${android.os.Build.VERSION.RELEASE}")
+        sb.appendLine("# Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        sb.appendLine()
+
+        sections.forEach { section ->
+            sb.appendLine("## ${section.displayName} (${section.name})")
+            sb.appendLine("Status: ${section.status}")
+            if (section.errorMessage != null) {
+                sb.appendLine("Fehler: ${section.errorMessage}")
+            }
+            sb.appendLine()
+        }
+
+        val failedSections = sections.filter { it.status == SectionStatus.FAILED }
+        val emptySections = sections.filter { it.status == SectionStatus.EMPTY }
+        val successfulSections = sections.filter { it.status == SectionStatus.SUCCESS }
+
+        sb.appendLine("# Zusammenfassung")
+        sb.appendLine("Erfolgreich: ${successfulSections.size}")
+        sb.appendLine("Fehlgeschlagen: ${failedSections.size}")
+        sb.appendLine("Leer/Nicht gefunden: ${emptySections.size}")
+
+        return sb.toString()
+    }
+
     data class GradeHistoryEntry(
         val month: Int,
         val year: Int,
@@ -1426,4 +1664,43 @@ class BackupManager(private val context: Context) {
         val totalSections: Int,
         val errors: List<String>
     )
+
+    data class BackupSection(
+        val name: String,
+        val displayName: String,
+        var status: SectionStatus = SectionStatus.PENDING,
+        var errorMessage: String? = null
+    )
+
+    enum class SectionStatus {
+        PENDING,
+        IN_PROGRESS,
+        SUCCESS,
+        FAILED,
+        EMPTY
+    }
+
+    interface BackupProgressCallback {
+        fun onSectionStarted(section: BackupSection)
+        fun onSectionCompleted(section: BackupSection)
+        fun onBackupCompleted(success: Boolean, sections: List<BackupSection>)
+    }
+
+    private fun notifySectionStarted(section: BackupSection) {
+        handler.post {
+            progressCallback?.onSectionStarted(section)
+        }
+    }
+
+    private fun notifySectionCompleted(section: BackupSection) {
+        handler.post {
+            progressCallback?.onSectionCompleted(section)
+        }
+    }
+
+    private fun notifyBackupCompleted(success: Boolean, sections: List<BackupSection>) {
+        handler.post {
+            progressCallback?.onBackupCompleted(success, sections)
+        }
+    }
 }

@@ -1656,7 +1656,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Die App kann Fehler oder falsche Informationen enthalten. Algorithmen sind nicht 100% fehlerfrei. Auch die Schule kann Fehler bei der Veröffentlichung des Vertretungsplans machen. Nutzung auf eigene Verantwortung."
+                        android:text="Die App kann Fehler oder falsche Informationen enthalten. Algorithmen sind nicht 100% fehlerfrei. Die Schule kann das Format des Vertretungs-, Klausur- oder Stundenplans ändern. Nutzung auf eigene Verantwortung."
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:lineSpacingExtra="2dp"

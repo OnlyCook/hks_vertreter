@@ -3944,9 +3944,79 @@ class GalleryFragment : Fragment() {
 
         stopCurrentHighlight()
         currentHighlightedCell = cell
-        val finalBackgroundColor = backgroundColor.takeIf { it != Color.TRANSPARENT } ?: Color.WHITE
-        val pulseAnimation = createOptimizedPulseAnimation(cell, finalBackgroundColor)
+
+        val actualBackgroundColor = if (backgroundColor == Color.WHITE) {
+            getCurrentCellBackgroundColor(cell)
+        } else {
+            backgroundColor
+        }
+
+        val pulseAnimation = createOptimizedPulseAnimation(cell, actualBackgroundColor)
         pulseAnimation.start()
+    }
+
+    private fun getCurrentCellBackgroundColor(cell: TextView): Int {
+        val currentDrawable = cell.background
+        if (currentDrawable is GradientDrawable) {
+            val parent = cell.parent as? TableRow
+            if (parent != null) {
+                val cellIndex = parent.indexOfChild(cell)
+                val rowIndex = (parent.parent as? TableLayout)?.indexOfChild(parent) ?: -1
+
+                if (cellIndex > 0 && rowIndex > 0) {
+                    val dayIndex = if (isDayView) currentDayOffset else (cellIndex - 1)
+                    val lesson = getLessonFromRowIndex(rowIndex)
+
+                    if (lesson > 0) {
+                        val currentWeekDay = Calendar.getInstance().apply {
+                            time = currentWeekStart.time
+                            add(Calendar.DAY_OF_WEEK, if (isDayView) currentDayOffset else dayIndex)
+                        }
+
+                        val dayKey = getWeekdayKey(dayIndex)
+                        val timetableEntry = timetableData[dayKey]?.get(lesson)
+
+                        if (timetableEntry != null) {
+                            val calendarEntries = getCalendarEntriesForDayAndLesson(
+                                currentWeekDay.time,
+                                lesson,
+                                timetableEntry.subject
+                            )
+                            return getHighestPriorityBackgroundColor(calendarEntries)
+                        }
+                    }
+                }
+            }
+        }
+
+        return Color.WHITE // fallback
+    }
+
+    private fun getLessonFromRowIndex(rowIndex: Int): Int {
+        var lessonCount = 0
+        var breakCount = 0
+
+        for (i in 1 until rowIndex) {
+            val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+            if (row.isNotEmpty()) {
+                val firstCell = row.getChildAt(0) as? TextView ?: continue
+                val cellText = firstCell.text.toString()
+
+                if (cellText.contains("Pause", ignoreCase = true)) {
+                    breakCount++
+                } else if (isDayView) {
+                    if (cellText.contains(".") && !cellText.contains("Pause")) {
+                        lessonCount++
+                    }
+                } else {
+                    if (cellText.trim().toIntOrNull() != null) {
+                        lessonCount++
+                    }
+                }
+            }
+        }
+
+        return lessonCount
     }
 
     private fun startInitialHighlighting() {
@@ -4077,7 +4147,17 @@ class GalleryFragment : Fragment() {
                             add(Calendar.DAY_OF_WEEK, currentDayOffset)
                         }
                         if (isSameDay(currentDay.time, currentTime.time)) {
-                            val backgroundColor = Color.WHITE
+                            val dayKey = getWeekdayKey(currentDayOffset)
+                            val timetableEntry = timetableData[dayKey]?.get(lesson)
+                            val calendarEntries = if (timetableEntry != null) {
+                                getCalendarEntriesForDayAndLesson(currentDay.time, lesson, timetableEntry.subject)
+                            } else {
+                                emptyList()
+                            }
+                            val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries).takeIf {
+                                it != Color.TRANSPARENT
+                            } ?: Color.WHITE
+
                             startCurrentLessonHighlight(cell, backgroundColor)
                         }
                     } else {
@@ -4088,7 +4168,17 @@ class GalleryFragment : Fragment() {
                                 add(Calendar.DAY_OF_WEEK, dayIndex)
                             }
                             if (isSameDay(currentWeekDay.time, currentTime.time)) {
-                                val backgroundColor = Color.WHITE
+                                val dayKey = getWeekdayKey(dayIndex)
+                                val timetableEntry = timetableData[dayKey]?.get(lesson)
+                                val calendarEntries = if (timetableEntry != null) {
+                                    getCalendarEntriesForDayAndLesson(currentWeekDay.time, lesson, timetableEntry.subject)
+                                } else {
+                                    emptyList()
+                                }
+                                val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries).takeIf {
+                                    it != Color.TRANSPARENT
+                                } ?: Color.WHITE
+
                                 startCurrentLessonHighlight(cell, backgroundColor)
                             }
                         }
@@ -4098,6 +4188,7 @@ class GalleryFragment : Fragment() {
             }
         }
     }
+
 
     private fun highlightLessonTimeCell(cell: TextView) {
         if (currentHighlightedCell == cell) {
