@@ -10,7 +10,7 @@
         android:id="@+id/titleText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Bereiche auswählen"
+        android:text="@string/dialog_sec_title"
         android:textSize="18sp"
         android:textStyle="bold"
         android:gravity="center"
@@ -28,7 +28,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Alle auswählen"
+            android:text="@string/dialog_sec_select_all"
             android:layout_marginEnd="8dp"
             style="?android:attr/buttonBarButtonStyle" />
 
@@ -37,7 +37,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Alle abwählen"
+            android:text="@string/dialog_sec_deselect_all"
             android:layout_marginStart="8dp"
             style="?android:attr/buttonBarButtonStyle" />
 
@@ -68,7 +68,7 @@
             android:id="@+id/cancelButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Abbrechen"
+            android:text="@string/dialog_sec_cancel"
             android:layout_marginEnd="8dp"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp" />
@@ -77,7 +77,7 @@
             android:id="@+id/saveButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Speichern"
+            android:text="@string/dialog_sec_save"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp" />
 

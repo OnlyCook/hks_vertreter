@@ -66,7 +66,7 @@ class HomeworkAdapter(
         holder.checkboxArea.setOnClickListener(null)
         holder.textHomeworkDetails.setOnClickListener(null)
 
-        val checkboxText = "${homework.subject} | ${homework.getDueDateString()}"
+        val checkboxText = "${homework.subject} | ${homework.getDueDateString(holder.itemView.context)}"
         val spannableString = SpannableString(checkboxText)
         spannableString.setSpan(
             StyleSpan(Typeface.BOLD),

@@ -35,7 +35,7 @@ class ExamAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val exam = examList[position]
 
-        val fullText = "${exam.subject} | ${exam.getDisplayDateString()}"
+        val fullText = "${exam.subject} | ${exam.getDisplayDateString(holder.itemView.context)}"
         val spannableString = SpannableString(fullText)
         val subjectLength = exam.subject.length
 

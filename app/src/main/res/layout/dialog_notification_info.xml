@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Benachrichtigungen einrichten"
+        android:text="@string/dlg_not_info_title"
         android:textSize="20sp"
         android:textStyle="bold"
         android:textColor="?attr/colorPrimary"
@@ -29,7 +29,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Damit die Änderungs-Benachrichtigungen zuverlässig funktionieren:"
+        android:text="@string/dlg_not_info_main_text"
         android:textSize="16sp"
         android:textColor="@android:color/black"
         android:layout_marginBottom="16dp"
@@ -61,7 +61,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Benachrichtigungen für diese App müssen aktiviert sein"
+                android:text="@string/dlg_not_info_permission"
                 android:textSize="14sp"
                 android:textColor="@android:color/black" />
 
@@ -86,7 +86,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Akkuoptimierung sollte für diese App deaktiviert werden"
+                android:text="@string/dlg_not_info_battery_opt"
                 android:textSize="14sp"
                 android:textColor="@android:color/black" />
 
@@ -110,7 +110,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Hintergrund-Aktivität sollte erlaubt sein"
+                android:text="@string/dlg_not_info_background"
                 android:textSize="14sp"
                 android:textColor="@android:color/black" />
 
@@ -129,7 +129,7 @@
             android:id="@+id/btnNotificationSettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Benachrichtigungs-\nEinstellungen öffnen"
+            android:text="@string/dlg_not_info_btn_notifications"
             android:textColor="@android:color/white"
             android:background="?attr/colorPrimary"
             android:layout_marginBottom="8dp"
@@ -139,7 +139,7 @@
             android:id="@+id/btnBatterySettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Akku-Einstellungen öffnen"
+            android:text="@string/dlg_not_info_btn_battery"
             android:textColor="?attr/colorPrimary"
             android:background="?android:attr/selectableItemBackground"
             android:layout_marginBottom="8dp"
@@ -149,7 +149,7 @@
             android:id="@+id/btnClose"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Schließen"
+            android:text="@string/dlg_not_info_btn_close"
             android:textColor="@android:color/darker_gray"
             android:background="?android:attr/selectableItemBackground"
             android:padding="12dp" />

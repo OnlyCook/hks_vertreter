@@ -60,6 +60,7 @@ class SetupActivity : AppCompatActivity() {
         initializeViews()
         setupBildungsgangSpinner()
         setupListeners()
+        setupLanguageButton()
     }
 
     private fun initializeViews() {
@@ -71,7 +72,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun setupBildungsgangSpinner() {
-        val bildungsgangOptions = mutableListOf("Bildungsgang auswählen")
+        val bildungsgangOptions = mutableListOf(getString(R.string.act_set_program_select))
         bildungsgangOptions.addAll(bildungsgangData.keys)
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, bildungsgangOptions)
@@ -137,7 +138,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun populateKlasseSpinner(bildungsgang: String) {
-        val klasseOptions = mutableListOf("Klasse auswählen")
+        val klasseOptions = mutableListOf(getString(R.string.act_set_class_select))
         bildungsgangData[bildungsgang]?.let { classes ->
             klasseOptions.addAll(classes)
         }
@@ -149,13 +150,10 @@ class SetupActivity : AppCompatActivity() {
 
     private fun showUnverifiedBildungsgangDialog(bildungsgang: String) {
         AlertDialog.Builder(this)
-            .setTitle("Bildungsgang nicht vollständig getestet")
+            .setTitle(getString(R.string.setup_unverified_program_title))
             .setIcon(android.R.drawable.ic_dialog_info)
-            .setMessage("Der Bildungsgang \"$bildungsgang\" wurde noch nicht vollständig getestet. " +
-                    "Einige Funktionen könnten möglicherweise nicht wie erwartet funktionieren.\n\n" +
-                    "Falls du Probleme feststellst, kontaktiere bitte den Entwickler über die " +
-                    "E-Mail-Adresse in den App-Informationen (Einstellungen).")
-            .setPositiveButton("Verstanden") { dialog, _ ->
+            .setMessage(getString(R.string.setup_unverified_program_message, bildungsgang))
+            .setPositiveButton(getString(R.string.setup_understood)) { dialog, _ ->
                 dialog.dismiss()
             }
             .show()
@@ -163,16 +161,13 @@ class SetupActivity : AppCompatActivity() {
 
     private fun showHelpDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Hilfe benötigt?")
-            .setMessage("Du kannst deinen Bildungsgang oder deine Klasse nicht finden?\n\n" +
-                    "Es ist möglich, dass noch nicht alle Bildungsgänge oder Klassen hinzugefügt wurden. " +
-                    "Kontaktiere den Entwickler, und er wird dir so schnell wie möglich helfen!\n\n" +
-                    "E-Mail: theactualcooker@gmail.com")
-            .setPositiveButton("E-Mail senden") { dialog, _ ->
+            .setTitle(getString(R.string.setup_need_help))
+            .setMessage(getString(R.string.setup_missing_program_message))
+            .setPositiveButton(getString(R.string.setup_send_email)) { dialog, _ ->
                 openEmailClient()
                 dialog.dismiss()
             }
-            .setNegativeButton("Abbrechen") { dialog, _ ->
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
                 dialog.dismiss()
             }
             .show()
@@ -180,16 +175,15 @@ class SetupActivity : AppCompatActivity() {
 
     private fun openEmailClient() {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = "mailto:theactualcooker@gmail.com".toUri()
-            putExtra(Intent.EXTRA_SUBJECT, "HKS Vertreter - Fehlender Bildungsgang/Klasse")
-            putExtra(Intent.EXTRA_TEXT, "Hallo,\n\nmir fehlt folgender Bildungsgang/Klasse in der App:\n\n" +
-                    "Bildungsgang: \nKlasse: ")
+            data = getString(R.string.set_act_hks_contact_email).toUri()
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.setup_email_subject))
+            putExtra(Intent.EXTRA_TEXT, getString(R.string.setup_email_body))
         }
 
         try {
-            startActivity(Intent.createChooser(emailIntent, "E-Mail-App auswählen"))
+            startActivity(Intent.createChooser(emailIntent, getString(R.string.set_act_choose_email_app)))
         } catch (_: Exception) {
-            Toast.makeText(this, "Keine E-Mail-App gefunden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.setup_no_email_app_found), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -203,11 +197,70 @@ class SetupActivity : AppCompatActivity() {
             putString("selected_klasse", selectedKlasse)
         }
 
-        Toast.makeText(this, "Auswahl gespeichert: $selectedBildungsgang - $selectedKlasse", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.setup_selection_saved, selectedBildungsgang, selectedKlasse), Toast.LENGTH_SHORT).show()
     }
 
     private fun navigateToMain() {
         val intent = Intent(this, MainActivity::class.java)
+        startActivity(intent)
+        finish()
+    }
+
+    private fun setupLanguageButton() {
+        val btnLanguageSelection = findViewById<ImageButton>(R.id.btnLanguageSelection)
+
+        btnLanguageSelection.setOnClickListener {
+            showLanguageSelectionDialog()
+        }
+    }
+
+    private fun showLanguageSelectionDialog() {
+        val sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+
+        val languages = arrayOf("de", "en")
+        val languageNames = arrayOf(
+            "🇩🇪 ${getString(R.string.german)}",
+            "🇺🇸 ${getString(R.string.english)}"
+        )
+
+        val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.select_language))
+            .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
+                val selectedLanguageCode = languages[which]
+
+                sharedPreferences.edit {
+                    putString("selected_language", selectedLanguageCode)
+                    putBoolean("language_auto_detect", false)
+                }
+
+                showRestartDialog()
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showRestartDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.restart_required))
+            .setMessage(getString(R.string.restart_required_message))
+            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
+                restartApp()
+            }
+            .setNegativeButton(getString(R.string.restart_later), null)
+            .show()
+    }
+
+    private fun restartApp() {
+        val savedLanguage = LanguageUtil.getSavedLanguage(this)
+        LanguageUtil.setLanguage(this, savedLanguage)
+
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
         finish()
     }

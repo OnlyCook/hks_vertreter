@@ -21,6 +21,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONArray
+import androidx.core.content.edit
 
 class AutoUpdateWorker(
     private val context: Context,
@@ -78,7 +79,7 @@ class AutoUpdateWorker(
         }
 
         val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
-        if (klasse.isEmpty() || klasse == "Nicht ausgewählt") {
+        if (klasse.isEmpty() || klasse == context.getString(R.string.auto_not_selected)) { // be cautious about this
             L.d(TAG, "No class selected, skipping update")
             return Result.success()
         }
@@ -131,7 +132,7 @@ class AutoUpdateWorker(
         }
 
         val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
-        if (klasse.isEmpty() || klasse == "Nicht ausgewählt") {
+        if (klasse.isEmpty() || klasse == context.getString(R.string.auto_not_selected)) {
             L.d(TAG, "No class selected, skipping change check")
             return Result.success()
         }
@@ -293,13 +294,13 @@ class AutoUpdateWorker(
 
     private fun createNotificationText(changes: List<SubstituteEntry>): Pair<String, String> {
         if (changes.isEmpty()) {
-            return Pair("Vertretungsplan geändert", "Änderungen erkannt!")
+            return Pair(context.getString(R.string.auto_changes_generic_title), context.getString(R.string.auto_changes_generic_content))
         }
 
         val title = if (changes.size == 1) {
-            "1 neue Vertretung"
+            context.getString(R.string.auto_changes_single)
         } else {
-            "${changes.size} neue Vertretungen"
+            context.getString(R.string.auto_changes_multiple, changes.size)
         }
 
         val message = StringBuilder()
@@ -316,11 +317,11 @@ class AutoUpdateWorker(
             }
 
             val changeType = getChangeType(change.text)
-            message.append("${change.fach} $changeType am $formattedDate ($stundenText Std.)")
+            message.append(context.getString(R.string.auto_subject_message_detail, change.fach, changeType, formattedDate, stundenText))
         }
 
         if (changes.size > maxChangesToShow) {
-            message.append(" und ${changes.size - maxChangesToShow} weitere")
+            message.append(context.getString(R.string.auto_and_more, changes.size - maxChangesToShow))
         }
 
         return Pair(title, message.toString())
@@ -350,9 +351,9 @@ class AutoUpdateWorker(
             val daysDifference = ((targetDate.timeInMillis - today.timeInMillis) / (1000 * 60 * 60 * 24)).toInt()
 
             when (daysDifference) {
-                0 -> "heute"
-                1 -> "morgen"
-                2 -> "übermorgen"
+                0 -> context.getString(R.string.auto_today)
+                1 -> context.getString(R.string.auto_tomorrow)
+                2 -> context.getString(R.string.auto_day_after_tomorrow)
                 else -> outputFormat.format(date)
             }
         } catch (_: Exception) {
@@ -362,10 +363,10 @@ class AutoUpdateWorker(
 
     private fun getChangeType(text: String): String {
         return when {
-            text.contains("entfällt", ignoreCase = true) -> "entfällt"
-            text.contains("vertreten", ignoreCase = true) -> "wird vertreten"
-            text.contains("betreut", ignoreCase = true) -> "wird betreut"
-            else -> "geändert"
+            text.contains("entfällt", ignoreCase = true) -> context.getString(R.string.auto_subject_cancelled)
+            text.contains("vertreten", ignoreCase = true) -> context.getString(R.string.auto_subject_substituted)
+            text.contains("betreut", ignoreCase = true) -> context.getString(R.string.auto_subject_supervised)
+            else -> context.getString(R.string.auto_subject_changed)
         }
     }
 
@@ -446,7 +447,7 @@ class AutoUpdateWorker(
 
             val regex = """<div class="vpstand">Stand: ([^<]+)</div>""".toRegex()
             val matchResult = regex.find(html)
-            matchResult?.groups?.get(1)?.value ?: "Unbekannt"
+            matchResult?.groups?.get(1)?.value ?: context.getString(R.string.unknown)
         } finally {
             connection.disconnect()
         }
@@ -496,8 +497,8 @@ class AutoUpdateWorker(
 
         val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_UPDATE)
             .setSmallIcon(R.drawable.ic_notification) // Make sure you have this icon
-            .setContentTitle("Vertretungsplan aktualisiert")
-            .setContentText("Stand: $lastUpdate")
+            .setContentTitle(context.getString(R.string.auto_update_title))
+            .setContentText(context.getString(R.string.auto_update_content, lastUpdate))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
@@ -542,19 +543,19 @@ class AutoUpdateWorker(
             // Update channel
             val updateChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_UPDATE,
-                "Automatische Updates",
+                context.getString(R.string.auto_update_notification_channel),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Benachrichtigungen über automatische Aktualisierungen"
+                description = context.getString(R.string.auto_update_channel_description)
             }
 
             // Changes channel
             val changesChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_CHANGES,
-                "Änderungen im Vertretungsplan",
+                context.getString(R.string.auto_changes_notification_channel),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Benachrichtigungen über Änderungen im Vertretungsplan"
+                description = context.getString(R.string.auto_changes_channel_description)
             }
 
             notificationManager.createNotificationChannel(updateChannel)
@@ -587,7 +588,7 @@ class AutoUpdateWorker(
             notifiedChangeIds.addAll(idsToKeep)
         }
 
-        sharedPreferences.edit().putStringSet("notified_change_ids", notifiedChangeIds).apply()
+        sharedPreferences.edit { putStringSet("notified_change_ids", notifiedChangeIds) }
         L.d(TAG, "Marked ${changes.size} changes as notified")
     }
 

@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Fehlerprotokoll"
+        android:text="@string/dialog_err_details_title"
         android:textSize="18sp"
         android:textStyle="bold"
         android:gravity="center"
@@ -47,14 +47,14 @@
             android:layout_height="48dp"
             android:src="@drawable/ic_import_clipboard"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="In Zwischenablage kopieren"
+            android:contentDescription="@string/dialog_err_details_copy"
             android:layout_marginEnd="8dp" />
 
         <Button
             android:id="@+id/closeButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Schließen"
+            android:text="@string/dialog_err_details_close"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp"
             android:maxLines="1" />

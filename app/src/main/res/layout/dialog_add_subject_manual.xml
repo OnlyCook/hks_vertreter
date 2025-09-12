@@ -8,7 +8,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Gebe die Fach-Informationen ein:"
+        android:text="@string/dia_add_sub_manual_enter_info"
         android:textSize="14sp"
         android:layout_marginBottom="12dp" />
 
@@ -17,7 +17,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"
-        android:hint="Fach (erforderlich)"
+        android:hint="@string/dia_add_sub_manual_subject_hint"
         android:inputType="text"
         android:maxLines="1"
         android:padding="12dp"
@@ -30,7 +30,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"
-        android:hint="Lehrer (optional)"
+        android:hint="@string/dia_add_sub_manual_teacher_hint"
         android:inputType="textPersonName"
         android:maxLines="1"
         android:padding="12dp"
@@ -43,7 +43,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"
-        android:hint="Raum (optional)"
+        android:hint="@string/dia_add_sub_manual_room_hint"
         android:inputType="text"
         android:maxLines="1"
         android:padding="12dp"
@@ -63,7 +63,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Alternative Räume"
+            android:text="@string/dia_add_sub_manual_alt_rooms"
             android:textSize="14sp"
             android:textColor="@android:color/black" />
 
@@ -84,7 +84,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Alternative Räume (max. 2):"
+            android:text="@string/dia_add_sub_manual_alt_rooms_max"
             android:textSize="12sp"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="8dp" />
@@ -95,7 +95,7 @@
             android:id="@+id/btnAddAlternativeRoom"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="+ Raum hinzufügen"
+            android:text="@string/dia_add_sub_manual_add_room_btn"
             android:textSize="12sp"
             android:layout_marginTop="4dp" />
 

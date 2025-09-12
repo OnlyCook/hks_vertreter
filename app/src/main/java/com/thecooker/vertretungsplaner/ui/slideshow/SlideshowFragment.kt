@@ -34,6 +34,7 @@ import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.core.content.edit
+import kotlin.reflect.KProperty
 
 class SlideshowFragment : Fragment() {
 
@@ -85,7 +86,7 @@ class SlideshowFragment : Fragment() {
         var checklistItems: MutableList<ChecklistItem> = mutableListOf(),
         var hasTextContent: Boolean = false
     ) {
-        fun getDueDateString(): String {
+        fun getDueDateString(context: Context): String {
             Calendar.getInstance()
             Calendar.getInstance().apply { time = dueDate }
 
@@ -114,52 +115,52 @@ class SlideshowFragment : Fragment() {
                             val hoursDiff = TimeUnit.MILLISECONDS.toHours(timeDiff)
                             val minutesDiff = TimeUnit.MILLISECONDS.toMinutes(timeDiff)
                             when {
-                                hoursDiff > 0 -> "fällig in ${hoursDiff}h"
-                                minutesDiff > 0 -> "fällig in ${minutesDiff}min"
-                                else -> "jetzt fällig"
+                                hoursDiff > 0 -> context.getString(R.string.slide_time_in_hours, hoursDiff)
+                                minutesDiff > 0 -> context.getString(R.string.slide_time_in_minutes, minutesDiff)
+                                else -> context.getString(R.string.slide_due_now)
                             }
                         } else {
                             // time passed -> overdue
                             if (lessonNumber != null) {
-                                "überfällig"
+                                context.getString(R.string.slide_overdue)
                             } else {
-                                "heute überfällig"
+                                context.getString(R.string.slide_overdue_today)
                             }
                         }
-                    } ?: "heute fällig"
+                    } ?: context.getString(R.string.slide_due_today)
                 }
-                daysDiff == 1L -> "morgen fällig"
-                daysDiff == -1L -> "gestern fällig"
+                daysDiff == 1L -> context.getString(R.string.slide_due_tomorrow)
+                daysDiff == -1L -> context.getString(R.string.slide_due_yesterday)
                 daysDiff > 1 -> {
                     val weeks = daysDiff / 7
-                    if (weeks > 0) "fällig in $weeks Woche${if (weeks > 1) "n" else ""}"
-                    else "fällig in $daysDiff Tag${"en"}"
+                    if (weeks > 0) context.getString(R.string.slide_due_in_weeks, weeks, (if (weeks > 1) "n" else ""))
+                    else context.getString(R.string.slide_due_in_days, daysDiff, ("en"))
                 }
                 else -> {
                     val daysPast = -daysDiff
-                    "vor $daysPast Tag${if (daysPast > 1) "en" else ""} fällig"
+                    context.getString(R.string.slide_due_days_ago, daysPast, (if (daysPast > 1) "en" else ""))
                 }
             }
 
             return if (lessonNumber != null) {
-                "$dateStr (${lessonNumber}. Stunde)"
+                context.getString(R.string.slide_due_lesson, dateStr, lessonNumber)
             } else {
                 dateStr
             }
         }
 
-        fun getDetailedDueDateString(): String {
+        fun getDetailedDueDateString(context: Context): String {
             val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
             val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
 
-            var result = "Fällig am: ${dateFormat.format(dueDate)}"
+            var result = context.getString(R.string.slide_due_date_format, dateFormat.format(dueDate))
 
             if (dueTime != null) {
-                result += " um ${timeFormat.format(dueTime!!)}"
+                result += context.getString(R.string.slide_due_date_time, timeFormat.format(dueTime!!))
             }
 
             if (lessonNumber != null) {
-                result += " (${lessonNumber}. Stunde)"
+                result += context.getString(R.string.slide_due_date_lesson, lessonNumber)
             }
 
             return result
@@ -309,7 +310,7 @@ class SlideshowFragment : Fragment() {
 
         val loadingText = loadingView.findViewById<TextView>(android.R.id.text1)
         loadingText.apply {
-            text = "Hausaufgaben werden geladen..."
+            text = getString(R.string.slide_homework_loading)
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -433,10 +434,10 @@ class SlideshowFragment : Fragment() {
 
     private fun showMenuPopup() {
         val popup = PopupMenu(requireContext(), btnMenu)
-        popup.menu.add(0, 1, 0, "Exportieren").apply {
+        popup.menu.add(0, 1, 0, getString(R.string.act_set_export)).apply {
             setIcon(R.drawable.ic_export)
         }
-        popup.menu.add(0, 2, 0, "Importieren").apply {
+        popup.menu.add(0, 2, 0, getString(R.string.act_set_import)).apply {
             setIcon(R.drawable.ic_import)
         }
 
@@ -488,7 +489,7 @@ class SlideshowFragment : Fragment() {
         val isAutoEnabled = if (editHomework != null) {
             false // force uncheck when editing
         } else {
-            sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false) // Use saved preference when creating new
+            sharedPreferences.getBoolean(PREFS_AUTO_HOMEWORK, false)
         }
         switchAutoHomework.isChecked = isAutoEnabled
 
@@ -610,9 +611,9 @@ class SlideshowFragment : Fragment() {
         }
 
         val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(if (editHomework != null) "Hausaufgabe bearbeiten" else "Hausaufgabe hinzufügen")
+            .setTitle(if (editHomework != null) getString(R.string.slide_edit_homework) else getString(R.string.slide_add_homework))
             .setView(dialogView)
-            .setPositiveButton(if (editHomework != null) "Speichern" else "Hinzufügen") { _, _ ->
+            .setPositiveButton(if (editHomework != null) getString(R.string.slide_save) else getString(R.string.slide_add)) { _, _ ->
                 val subject = if (hasTimetableData) {
                     spinnerSubject.selectedItem?.toString() ?: ""
                 } else {
@@ -628,10 +629,10 @@ class SlideshowFragment : Fragment() {
                         addHomework(subject, selectedDate, selectedLessonNumber, content)
                     }
                 } else {
-                    Toast.makeText(requireContext(), "Gebe ein Fach ein", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.slide_enter_subject), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .create()
 
         dialog.show()
@@ -666,7 +667,7 @@ class SlideshowFragment : Fragment() {
 
     private fun setupSubjectSpinner(spinner: Spinner, selectedSubject: String?) {
         val allSubjects = getAvailableSubjects()
-        val subjects = allSubjects.filterNot { it.equals("Freistunde", ignoreCase = true) } // ignore "Freistunde"
+        val subjects = allSubjects.filterNot { it.equals(getString(R.string.slide_free_lesson), ignoreCase = true) } // ignore "Freistunde"
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, subjects)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
@@ -723,12 +724,12 @@ class SlideshowFragment : Fragment() {
                 if (suggestedLesson != null) {
                     // confirmation for recommended lesson
                     AlertDialog.Builder(requireContext())
-                        .setTitle("Stunde vorschlagen")
-                        .setMessage("Du hast $selectedSubject an diesem Tag in der ${suggestedLesson}. Stunde. Soll diese automatisch ausgewählt werden?")
-                        .setPositiveButton("Ja") { _, _ ->
+                        .setTitle(getString(R.string.slide_suggest_lesson))
+                        .setMessage(getString(R.string.slide_suggest_lesson_message, selectedSubject, suggestedLesson))
+                        .setPositiveButton(getString(R.string.slide_yes)) { _, _ ->
                             onDateSelected(newDate, suggestedLesson)
                         }
-                        .setNegativeButton("Nein") { _, _ ->
+                        .setNegativeButton(getString(R.string.slide_no)) { _, _ ->
                             onDateSelected(newDate, null)
                         }
                         .show()
@@ -796,10 +797,10 @@ class SlideshowFragment : Fragment() {
 
     private fun setupLessonSpinner(spinner: Spinner, selectedLessonNumber: Int?) {
         val lessonNumbers = getLessonNumbers()
-        val lessonOptions = mutableListOf("Zeit (optional)")
+        val lessonOptions = mutableListOf(getString(R.string.slide_time_optional))
 
         lessonOptions.addAll(lessonNumbers.map { lessonNum ->
-            "${lessonNum}. Stunde (${lessonTimes[lessonNum]})"
+            getString(R.string.slide_lesson_format, lessonNum, lessonTimes[lessonNum])
         })
 
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, lessonOptions)
@@ -815,7 +816,7 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun getLessonNumbers(): List<Int> {
-        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "Nicht ausgewählt")
+        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", getString(R.string.set_act_not_selected))
 
         return when (bildungsgang) {
             "FST" -> listOf(11, 12, 13, 14, 15)
@@ -860,7 +861,7 @@ class SlideshowFragment : Fragment() {
         saveHomework()
         updateHomeworkCount()
 
-        Toast.makeText(requireContext(), "Hausaufgabe hinzugefügt", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.slide_homework_added), Toast.LENGTH_SHORT).show()
     }
 
     private fun updateHomework(homework: HomeworkEntry, subject: String, dueDate: Date, lessonNumber: Int?, content: String) {
@@ -890,7 +891,7 @@ class SlideshowFragment : Fragment() {
         saveHomework()
         updateHomeworkCount()
 
-        Toast.makeText(requireContext(), "Hausaufgabe aktualisiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.slide_homework_added), Toast.LENGTH_SHORT).show()
     }
 
     private fun parseContentWithChecklistItems(content: String): Pair<MutableList<ChecklistItem>, Boolean> {
@@ -912,16 +913,16 @@ class SlideshowFragment : Fragment() {
 
     private fun deleteHomework(homework: HomeworkEntry) {
         AlertDialog.Builder(requireContext())
-            .setTitle("Hausaufgabe löschen")
-            .setMessage("Willst du diese Hausaufgabe wirklich löschen?")
-            .setPositiveButton("Ja, löschen") { _, _ ->
+            .setTitle(getString(R.string.slide_delete_homework))
+            .setMessage(getString(R.string.slide_delete_confirm))
+            .setPositiveButton(getString(R.string.set_act_yes_delete)) { _, _ ->
                 homeworkList.remove(homework)
                 adapter.notifyDataSetChanged()
                 saveHomework()
                 updateHomeworkCount()
-                Toast.makeText(requireContext(), "Hausaufgabe gelöscht", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.slide_homework_deleted), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -932,7 +933,7 @@ class SlideshowFragment : Fragment() {
         val layoutContent = dialogView.findViewById<LinearLayout>(R.id.layoutContent)
 
         textSubject.text = homework.subject
-        textDueDate.text = homework.getDetailedDueDateString()
+        textDueDate.text = homework.getDetailedDueDateString(requireContext())
 
         if (homework.checklistItems.isNotEmpty()) {
             for (item in homework.checklistItems) {
@@ -981,9 +982,9 @@ class SlideshowFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Hausaufgabe Details")
+            .setTitle(getString(R.string.slide_homework_details))
             .setView(dialogView)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.slide_close), null)
             .show()
     }
 
@@ -1083,7 +1084,7 @@ class SlideshowFragment : Fragment() {
     private fun updateHomeworkCount() {
         val uncompletedCount = homeworkList.count { !it.isCompleted }
         val totalCount = homeworkList.size
-        "$uncompletedCount / $totalCount Hausaufgaben".also { tvHomeworkCount.text = it }
+        getString(R.string.slide_homework_count, uncompletedCount, totalCount)
     }
 
     private fun cleanupCompletedAndOverdueHomework() {
@@ -1113,8 +1114,8 @@ class SlideshowFragment : Fragment() {
         val content = exportHomeworkData()
 
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_export_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_backup_copy_clipboard), R.drawable.ic_export_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -1133,21 +1134,21 @@ class SlideshowFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Hausaufgaben exportieren")
+            .setTitle(getString(R.string.slide_export_homework))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showImportOptions() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_backup_import_clipboard), R.drawable.ic_import_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -1166,14 +1167,14 @@ class SlideshowFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Hausaufgaben importieren")
+            .setTitle(getString(R.string.slide_import_homework))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFilePicker()
                     1 -> importFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1195,7 +1196,7 @@ class SlideshowFragment : Fragment() {
         try {
             startActivityForResult(intent, EXPORT_FILE_REQUEST_CODE)
         } catch (_: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_export_file_error), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1204,10 +1205,10 @@ class SlideshowFragment : Fragment() {
             requireContext().contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(content.toByteArray())
             }
-            Toast.makeText(requireContext(), "Export erfolgreich gespeichert", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_export_saved), Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             L.e(TAG, "Error saving to file", e)
-            Toast.makeText(requireContext(), "Fehler beim Speichern der Datei", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_save_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1215,7 +1216,7 @@ class SlideshowFragment : Fragment() {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Hausaufgaben Export", content)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(requireContext(), "Export in Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.slide_export_copied), Toast.LENGTH_SHORT).show()
     }
 
     private fun importFromFilePicker() {
@@ -1223,7 +1224,7 @@ class SlideshowFragment : Fragment() {
             type = "*/*"
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        filePickerLauncher.launch(Intent.createChooser(intent, "Hausaufgaben-Datei auswählen"))
+        filePickerLauncher.launch(Intent.createChooser(intent, getString(R.string.slide_choose_homework_file)))
     }
 
     private fun importFromFile(uri: Uri) {
@@ -1234,11 +1235,11 @@ class SlideshowFragment : Fragment() {
             if (content != null) {
                 importHomeworkData(content)
             } else {
-                Toast.makeText(requireContext(), "Fehler beim Lesen der Datei", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), getString(R.string.slide_file_read_error), Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             L.e(TAG, "Error importing from file", e)
-            Toast.makeText(requireContext(), "Fehler beim Importieren der Datei", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_import_file_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1250,7 +1251,7 @@ class SlideshowFragment : Fragment() {
             val content = clip.getItemAt(0).text.toString()
             importHomeworkData(content)
         } else {
-            Toast.makeText(requireContext(), "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_clipboard_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1261,10 +1262,10 @@ class SlideshowFragment : Fragment() {
             loadHomework()
             updateHomeworkCount()
 
-            Toast.makeText(requireContext(), "Hausaufgaben erfolgreich importiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_import_success), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             L.e(TAG, "Error importing homework data via BackupManager", e)
-            Toast.makeText(requireContext(), "Fehler beim Importieren: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1308,12 +1309,12 @@ class SlideshowFragment : Fragment() {
 
     fun getWeekdayName(dayIndex: Int): String {
         return when (dayIndex) {
-            0 -> "Montag"
-            1 -> "Dienstag"
-            2 -> "Mittwoch"
-            3 -> "Donnerstag"
-            4 -> "Freitag"
-            else -> "Unbekannt"
+            0 -> getString(R.string.slide_monday)
+            1 -> getString(R.string.slide_tuesday)
+            2 -> getString(R.string.slide_wednesday)
+            3 -> getString(R.string.slide_thursday)
+            4 -> getString(R.string.slide_friday)
+            else -> getString(R.string.slide_unknown)
         }
     }
 

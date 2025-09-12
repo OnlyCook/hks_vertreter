@@ -9,7 +9,8 @@
     <color name="white">#FFFFFFFF</color>
     <color name="lighter_gray">#F5F5F5</color>
     <color name="dark_red">#CC0000</color>
-    <color name="light_yellow">#FFFFCC</color>
+    <color name="light_yellow">#ffff85</color>
+    <color name="light_green">#caffb0</color>
     <color name="warning_background">#FFF3CD</color>
 
     <!-- Your custom blue colors -->

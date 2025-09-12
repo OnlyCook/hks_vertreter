@@ -2,6 +2,7 @@ package com.thecooker.vertretungsplaner.data
 
 import android.content.Context
 import android.util.Log
+import com.thecooker.vertretungsplaner.R
 import org.json.JSONObject
 import java.io.File
 
@@ -20,7 +21,7 @@ object SubstituteRepository {
 
     fun getSubstituteEntries(context: Context): List<SubstituteEntry> {
         val klasse = getSelectedClass(context)
-        if (klasse == "Nicht ausgewählt") {
+        if (klasse == context.getString(R.string.sub_repo_not_selected)) { // be cautious about this
             return emptyList()
         }
 
@@ -33,7 +34,7 @@ object SubstituteRepository {
 
     private fun getSelectedClass(context: Context): String {
         val sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        return sharedPreferences.getString("selected_klasse", "Nicht ausgewählt") ?: "Nicht ausgewählt"
+        return sharedPreferences.getString("selected_klasse", context.getString(R.string.sub_repo_not_selected)) ?: context.getString(R.string.sub_repo_not_selected)
     }
 
     private fun loadCachedSubstitutePlan(context: Context, klasse: String): List<SubstituteEntry> {

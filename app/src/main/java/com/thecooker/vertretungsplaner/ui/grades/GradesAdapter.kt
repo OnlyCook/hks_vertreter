@@ -38,10 +38,10 @@ class GradesAdapter(
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
         val useComplexGrading = bildungsgang == "BG" && sharedPreferences.getBoolean("use_simple_grading", false).not()
 
-        "${grade.subject} | Lehrer: ${grade.teacher}".also { holder.textSubjectInfo.text = it }
+        holder.textSubjectInfo.text = context.getString(R.string.gra_ada_main_item_format, grade.subject, grade.teacher)
 
-        "MN: ${grade.getFormattedOralGrade(currentHalfyear)}".also { holder.textOralGrade.text = it }
-        "SN: ${grade.getFormattedWrittenAverage(currentHalfyear)}".also { holder.textWrittenGrade.text = it }
+        holder.textOralGrade.text = context.getString(R.string.gra_ada_oral_grade, grade.getFormattedOralGrade(currentHalfyear))
+        holder.textWrittenGrade.text = context.getString(R.string.gra_ada_written_grade, grade.getFormattedWrittenAverage(currentHalfyear))
 
         val finalGradeText = if (useComplexGrading) {
             val requirements = getSubjectRequirements(grade.subject)
@@ -50,7 +50,7 @@ class GradesAdapter(
             val simpleFinalGrade = grade.getSimpleFinalGrade(currentHalfyear)
             if (simpleFinalGrade != null) DecimalFormat("0.0").format(simpleFinalGrade) else "-"
         }
-        "Endgültig: $finalGradeText".also { holder.textFinalGrade.text = it }
+        holder.textFinalGrade.text = context.getString(R.string.gra_ada_final_grade, finalGradeText)
 
         val goalGrade = sharedPreferences.getFloat("goal_grade", 0f)
         val actualFinalGrade = if (useComplexGrading) {
@@ -104,9 +104,9 @@ class ExamGradesAdapter(
         "${exam.subject} | ${dateFormat.format(exam.date)}".also { holder.textExamInfo.text = it }
 
         val gradeText = if (exam.mark != null) {
-            "${exam.mark} Pkt (${exam.getGradeFromMark()})"
+            holder.itemView.context.getString(R.string.gra_ada_points, exam.mark, exam.getGradeFromMark())
         } else {
-            "Nicht benotet"
+            holder.itemView.context.getString(R.string.gra_ada_ungraded)
         }
         holder.textExamGrade.text = gradeText
     }

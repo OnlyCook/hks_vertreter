@@ -170,6 +170,19 @@ class SwipeInterceptorLayout @JvmOverloads constructor(
 
 class GalleryFragment : Fragment() {
 
+    object InternalConstants {
+        const val FREE_LESSON = "FREE_LESSON"
+        const val NO_SCHOOL = "NO_SCHOOL"
+        const val HOLIDAY_TYPE_AUTUMN = "AUTUMN_BREAK"
+        const val HOLIDAY_TYPE_WINTER = "WINTER_BREAK"
+        const val HOLIDAY_TYPE_EASTER = "EASTER_BREAK"
+        const val HOLIDAY_TYPE_SUMMER = "SUMMER_BREAK"
+        const val HOLIDAY_TYPE_WHITSUN = "WHITSUN_BREAK"
+        const val HOLIDAY_TYPE_SPRING = "SPRING_BREAK"
+        const val HOLIDAY_TYPE_GENERIC = "VACATION"
+        const val HOLIDAY_GENERAL = "HOLIDAY"
+    }
+
     private var _binding: FragmentGalleryBinding? = null
     private val binding get() = _binding!!
 
@@ -257,8 +270,12 @@ class GalleryFragment : Fragment() {
         12 to 15
     )
 
-    private val weekdays = listOf("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag")
-    private val weekdaysShort = listOf("Mo", "Di", "Mi", "Do", "Fr")
+    private val weekdays by lazy {
+        listOf(getString(R.string.monday), getString(R.string.tuesday), getString(R.string.wednesday), getString(R.string.thursday), getString(R.string.friday))
+    }
+    private val weekdaysShort by lazy {
+        listOf(getString(R.string.monday_short), getString(R.string.tuesday_short), getString(R.string.wednesday_short), getString(R.string.thursday_short), getString(R.string.friday_short))
+    }
 
     private val colorPriorities = mapOf( // color priorities (largest)
         "homework" to 1,
@@ -357,7 +374,7 @@ class GalleryFragment : Fragment() {
         }
 
         val loadingMessage = TextView(requireContext()).apply {
-            "Kalender wird geladen...".also { text = it }
+            text = getString(R.string.gall_calendar_loading)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -378,7 +395,7 @@ class GalleryFragment : Fragment() {
         calendarGrid.removeAllViews()
 
         val errorMessage = TextView(requireContext()).apply {
-            "Fehler beim Laden des Kalenders.\nTippe hier um es erneut zu versuchen.".also { text = it }
+            text = getString(R.string.gall_error_tap_to_retry)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -420,7 +437,7 @@ class GalleryFragment : Fragment() {
         backupManager = BackupManager(requireContext())
 
         binding.root.findViewById<Button>(R.id.btnEditCalendar).apply {
-            text = if (isDayView) "W" else "T"
+            text = if (isDayView) getString(R.string.frag_gal_btn_edit) else getString(R.string.frag_gal_btn_edit_day)
             setOnClickListener { toggleCalendarView() }
         }
 
@@ -486,10 +503,10 @@ class GalleryFragment : Fragment() {
         isDayView = !isDayView
         if (isDayView) {
             currentDayOffset = getCurrentDayOffset()
-            binding.root.findViewById<Button>(R.id.btnEditCalendar).text = "W"
+            binding.root.findViewById<Button>(R.id.btnEditCalendar).text = getString(R.string.frag_gal_btn_edit)
             stopCurrentHighlight()
         } else {
-            binding.root.findViewById<Button>(R.id.btnEditCalendar).text = "T"
+            binding.root.findViewById<Button>(R.id.btnEditCalendar).text = getString(R.string.frag_gal_btn_edit_day)
         }
         saveViewPreference()
         updateCalendar()
@@ -531,22 +548,22 @@ class GalleryFragment : Fragment() {
     private fun showHamburgerMenu(anchor: View) {
         val popupMenu = PopupMenu(requireContext(), anchor)
 
-        popupMenu.menu.add(0, R.id.action_today, 0, "Heute").apply {
+        popupMenu.menu.add(0, R.id.action_today, 0, getString(R.string.gall_today)).apply {
             setIcon(R.drawable.ic_today)
         }
-        popupMenu.menu.add(0, R.id.action_edit_timetable, 1, "Stundenplan bearbeiten").apply {
+        popupMenu.menu.add(0, R.id.action_edit_timetable, 1, getString(R.string.act_set_edit_timetable)).apply {
             setIcon(R.drawable.ic_pencil)
         }
-        popupMenu.menu.add(0, R.id.action_vacation, 2, "Ferien markieren").apply {
+        popupMenu.menu.add(0, R.id.action_vacation, 2, getString(R.string.gall_mark_vacations)).apply {
             setIcon(R.drawable.ic_vacation)
         }
-        popupMenu.menu.add(0, R.id.action_statistics, 3, "Statistiken").apply {
+        popupMenu.menu.add(0, R.id.action_statistics, 3, getString(R.string.gall_statistics)).apply {
             setIcon(R.drawable.ic_statistics)
         }
-        popupMenu.menu.add(0, R.id.action_export, 4, "Exportieren").apply {
+        popupMenu.menu.add(0, R.id.action_export, 4, getString(R.string.act_set_export)).apply {
             setIcon(R.drawable.ic_export)
         }
-        popupMenu.menu.add(0, R.id.action_import, 5, "Importieren").apply {
+        popupMenu.menu.add(0, R.id.action_import, 5, getString(R.string.act_set_import)).apply {
             setIcon(R.drawable.ic_import)
         }
 
@@ -597,30 +614,30 @@ class GalleryFragment : Fragment() {
     private fun showStatistics() {
         val stats = calculateStatistics()
         val message = buildString {
-            appendLine("Nächste Termine:")
-            appendLine("• Bis nächste Klausur: ${if (stats.daysUntilNextExam == -1) "Keine geplant" else "${stats.daysUntilNextExam} Tage"}")
-            appendLine("• Bis nächste Hausaufgabe: ${if (stats.daysUntilNextHomework == -1) "Keine geplant" else "${stats.daysUntilNextHomework} Tage"}")
-            appendLine("• Bis nächste Ferien: ${if (stats.daysUntilNextVacation == -1) "Keine geplant" else "${stats.daysUntilNextVacation} Tage"}")
-            appendLine("• Bis nächster Feiertag: ${if (stats.daysUntilNextHoliday == -1) "Keiner geplant" else "${stats.daysUntilNextHoliday} Tage"}")
+            appendLine(getString(R.string.gall_next_events))
+            appendLine(getString(R.string.gall_next_exam, (if (stats.daysUntilNextExam == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextExam} Tage")))
+            appendLine(getString(R.string.gall_next_homework, (if (stats.daysUntilNextHomework == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextHomework} Tage")))
+            appendLine(getString(R.string.gall_next_vacation, (if (stats.daysUntilNextVacation == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextVacation} Tage")))
+            appendLine(getString(R.string.gall_next_holiday, (if (stats.daysUntilNextHoliday == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextHoliday} Tage")))
             appendLine()
 
-            appendLine("Nächste 30 Tage:") // this month
-            appendLine("• Klausuren: ${stats.examsThisMonth}")
-            appendLine("• Hausaufgaben: ${stats.homeworkThisMonth}")
-            appendLine("• Feiertage: ${stats.holidaysThisMonth}")
-            appendLine("• Ferientage: ${stats.vacationDaysThisMonth}")
+            appendLine(getString(R.string.gall_next_30_days)) // this month
+            appendLine(getString(R.string.gall_exams_count, stats.examsThisMonth))
+            appendLine(getString(R.string.gall_homework_count, stats.homeworkThisMonth))
+            appendLine(getString(R.string.gall_holidays_count, stats.holidaysThisMonth))
+            appendLine(getString(R.string.gall_vacation_days_count, stats.vacationDaysThisMonth))
             appendLine()
 
-            appendLine("Gesamt (zukünftig):") // != aktuelles halbjahr
-            appendLine("• Klausuren gesamt: ${stats.totalExams}")
-            appendLine("• Hausaufgaben gesamt: ${stats.totalHomework}")
-            appendLine("• Ferientage gesamt: ${stats.totalVacationDays}")
+            appendLine(getString(R.string.gall_total_future)) // != aktuelles halbjahr
+            appendLine(getString(R.string.gall_total_exams, stats.totalExams))
+            appendLine(getString(R.string.gall_total_homework, stats.totalHomework))
+            appendLine(getString(R.string.gall_total_vacation_days, stats.totalVacationDays))
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Statistiken")
+            .setTitle(getString(R.string.gall_statistics))
             .setMessage(message)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.gall_close), null)
             .show()
     }
 
@@ -765,8 +782,8 @@ class GalleryFragment : Fragment() {
             requireContext(), android.R.layout.simple_spinner_item,
             (1..8).map {
                 when (it) {
-                    1 -> "1 Woche"
-                    else -> "$it Wochen"
+                    1 -> getString(R.string.gall_one_weeks)
+                    else -> getString(R.string.gall_multiple_weeks, it)
                 }
             }
         ).apply {
@@ -774,10 +791,10 @@ class GalleryFragment : Fragment() {
         }
 
         val mainDialog = AlertDialog.Builder(requireContext())
-            .setTitle("Ferien verwalten")
-            .setMessage("Markiert/entfernt Ferien ab der aktuellen Woche")
+            .setTitle(getString(R.string.gall_manage_vacation))
+            .setMessage(getString(R.string.gall_mark_remove_vacation))
             .setView(dialogView)
-            .setPositiveButton("MARKIEREN") { dialog, _ ->
+            .setPositiveButton(getString(R.string.gall_mark)) { dialog, _ ->
                 val weeksCount = weeksSpinner.selectedItemPosition + 1
                 if (removeSwitch.isChecked) {
                     removeVacationWeeks(weeksCount)
@@ -786,26 +803,26 @@ class GalleryFragment : Fragment() {
                 }
                 dialog.dismiss()
             }
-            .setNegativeButton("ABBRECHEN") { dialog, _ ->
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
                 dialog.dismiss()
             }
             .create()
 
         removeSwitch.setOnCheckedChangeListener { _, isChecked ->
             val positiveButton = mainDialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            positiveButton.text = if (isChecked) "ENTFERNEN" else "MARKIEREN"
+            positiveButton.text = if (isChecked) getString(R.string.gall_remove) else getString(R.string.gall_mark)
         }
 
         clearAllButton.setOnClickListener {
             AlertDialog.Builder(requireContext())
-                .setTitle("Alle Ferien löschen")
-                .setMessage("Möchten Sie wirklich alle markierten Ferien löschen?")
-                .setPositiveButton("JA") { innerDialog, _ ->
+                .setTitle(getString(R.string.gall_clear_all))
+                .setMessage(getString(R.string.gall_vecation_delete_confirm))
+                .setPositiveButton(getString(R.string.slide_yes)) { innerDialog, _ ->
                     clearAllVacations()
                     innerDialog.dismiss()
                     mainDialog.dismiss()
                 }
-                .setNegativeButton("NEIN") { innerDialog, _ ->
+                .setNegativeButton(getString(R.string.slide_no)) { innerDialog, _ ->
                     innerDialog.dismiss()
                 }
                 .show()
@@ -825,15 +842,15 @@ class GalleryFragment : Fragment() {
         updateCalendar()
         Toast.makeText(
             requireContext(),
-            "Alle Ferien gelöscht ($vacationCount Wochen entfernt)",
+            getString(R.string.gall_vacations_cleared, vacationCount),
             Toast.LENGTH_SHORT
         ).show()
     }
 
     private fun fetchAndMarkHessenVacations(schoolYear: String, clearExisting: Boolean) {
         val progressDialog = AlertDialog.Builder(requireContext())
-            .setTitle("Feriendaten laden")
-            .setMessage("Lade Ferientermine von kultus.hessen.de...")
+            .setTitle(getString(R.string.gall_loading_vacation_data))
+            .setMessage(getString(R.string.gall_loading_vacation_kultus))
             .setCancelable(false)
             .create()
 
@@ -849,7 +866,7 @@ class GalleryFragment : Fragment() {
                     if (vacationPeriods.isEmpty()) {
                         Toast.makeText(
                             requireContext(),
-                            "Keine Feriendaten für $schoolYear gefunden",
+                            getString(R.string.gall_couldnt_find_vacation_data, schoolYear),
                             Toast.LENGTH_LONG
                         ).show()
                         return@withContext
@@ -891,7 +908,7 @@ class GalleryFragment : Fragment() {
 
                     Toast.makeText(
                         requireContext(),
-                        "Ferien für $schoolYear markiert ($markedWeeks Wochen)",
+                        getString(R.string.gall_successfully_marked_vacations, schoolYear, markedWeeks),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -902,7 +919,7 @@ class GalleryFragment : Fragment() {
                     L.e("GalleryFragment", "Error fetching vacation data", e)
                     Toast.makeText(
                         requireContext(),
-                        "Fehler beim Laden der Feriendaten: ${e.message}",
+                        getString(R.string.gall_error_while_loading_vacation_data, e.message),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -936,20 +953,20 @@ class GalleryFragment : Fragment() {
         }
 
         val clearExistingCheckbox = CheckBox(requireContext()).apply {
-            "Vorhandene automatische Ferien löschen".also { text = it }
+            text = getString(R.string.gall_clear_existing)
             isChecked = true
             setPadding(0, 16, 0, 16)
         }
 
         val privacyNotice = TextView(requireContext()).apply {
-            "Hinweis: Diese Funktion lädt Feriendaten von kultus.hessen.de.\nEs werden keine persönlichen Daten übertragen.".also { text = it }
+            text = getString(R.string.gall_privacy_notice)
             textSize = 12f
             setTextColor(Color.GRAY)
             setPadding(0, 16, 0, 16)
         }
 
         container.addView(TextView(requireContext()).apply {
-            "Schuljahr auswählen:".also { text = it }
+            text = getString(R.string.gall_select_school_year)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -958,17 +975,17 @@ class GalleryFragment : Fragment() {
         container.addView(privacyNotice)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Ferien automatisch markieren")
-            .setMessage("Lädt offizielle Ferientermine von kultus.hessen.de")
+            .setTitle(getString(R.string.gall_auto_mark))
+            .setMessage(getString(R.string.gall_load_from_kultus))
             .setView(container)
-            .setPositiveButton("Laden") { dialog, _ ->
+            .setPositiveButton(getString(R.string.gall_load)) { dialog, _ ->
                 val selectedSchoolYear = schoolYears[yearSpinner.selectedItemPosition]
                 val clearExisting = clearExistingCheckbox.isChecked
                 fetchAndMarkHessenVacations(selectedSchoolYear, clearExisting)
                 dialog.dismiss()
                 onComplete()
             }
-            .setNegativeButton("Abbrechen") { dialog, _ ->
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
                 dialog.dismiss()
             }
             .show()
@@ -1032,12 +1049,12 @@ class GalleryFragment : Fragment() {
                 }
 
                 val vacationName = when {
-                    vacationType.contains("Herbst", ignoreCase = true) -> "Herbstferien"
+                    vacationType.contains("Herbst", ignoreCase = true) -> getString(R.string.gall_autumn_break)
                     vacationType.contains("Weihnacht", ignoreCase = true) ||
-                            vacationType.contains("Winter", ignoreCase = true) -> "Winterferien"
-                    vacationType.contains("Oster", ignoreCase = true) -> "Osterferien"
-                    vacationType.contains("Sommer", ignoreCase = true) -> "Sommerferien"
-                    vacationType.contains("Pfingst", ignoreCase = true) -> "Pfingstferien"
+                            vacationType.contains("Winter", ignoreCase = true) -> getString(R.string.gall_winter_break)
+                    vacationType.contains("Oster", ignoreCase = true) -> getString(R.string.gall_easter_break)
+                    vacationType.contains("Sommer", ignoreCase = true) -> getString(R.string.gall_summer_break)
+                    vacationType.contains("Pfingst", ignoreCase = true) -> getString(R.string.gall_whitesun_break)
                     else -> vacationType
                 }
 
@@ -1091,7 +1108,7 @@ class GalleryFragment : Fragment() {
 
         Toast.makeText(
             requireContext(),
-            "Ferien entfernt ($removedCount von $weeksCount Wochen)",
+            getString(R.string.gall_vacations_removed, removedCount, weeksCount),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -1114,7 +1131,7 @@ class GalleryFragment : Fragment() {
         val vacationType = determineVacationType(currentWeekStart.time)
         Toast.makeText(
             requireContext(),
-            "$vacationType markiert ($weeksCount Wochen)",
+            getString(R.string.gall_vacations_marked, vacationType, weeksCount),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -1122,27 +1139,39 @@ class GalleryFragment : Fragment() {
     private fun determineVacationType(date: Date): String {
         val calendar = Calendar.getInstance().apply { time = date }
         val month = calendar.get(Calendar.MONTH)
-        calendar.get(Calendar.DAY_OF_YEAR)
 
         return when (month) {
             Calendar.FEBRUARY, Calendar.MARCH, Calendar.APRIL -> {
-                if (month == Calendar.MARCH && calendar.get(Calendar.DAY_OF_MONTH) > 15) "Osterferien"
-                else if (month == Calendar.APRIL && calendar.get(Calendar.DAY_OF_MONTH) < 20) "Osterferien"
-                else "Frühjahrsferien"
+                if (month == Calendar.MARCH && calendar.get(Calendar.DAY_OF_MONTH) > 15) InternalConstants.HOLIDAY_TYPE_EASTER
+                else if (month == Calendar.APRIL && calendar.get(Calendar.DAY_OF_MONTH) < 20) InternalConstants.HOLIDAY_TYPE_EASTER
+                else InternalConstants.HOLIDAY_TYPE_SPRING
             }
             Calendar.JUNE, Calendar.JULY, Calendar.AUGUST -> {
-                if (month == Calendar.JUNE && calendar.get(Calendar.DAY_OF_MONTH) > 20) "Sommerferien"
-                else if (month == Calendar.JULY) "Sommerferien"
-                else if (month == Calendar.AUGUST && calendar.get(Calendar.DAY_OF_MONTH) < 15) "Sommerferien"
-                else "Ferien"
+                if (month == Calendar.JUNE && calendar.get(Calendar.DAY_OF_MONTH) > 20) InternalConstants.HOLIDAY_TYPE_SUMMER
+                else if (month == Calendar.JULY) InternalConstants.HOLIDAY_TYPE_SUMMER
+                else if (month == Calendar.AUGUST && calendar.get(Calendar.DAY_OF_MONTH) < 15) InternalConstants.HOLIDAY_TYPE_SUMMER
+                else InternalConstants.HOLIDAY_TYPE_GENERIC
             }
-            Calendar.OCTOBER -> "Herbstferien"
+            Calendar.OCTOBER -> InternalConstants.HOLIDAY_TYPE_AUTUMN
             Calendar.DECEMBER, Calendar.JANUARY -> {
-                if (month == Calendar.DECEMBER && calendar.get(Calendar.DAY_OF_MONTH) > 15) "Winterferien"
-                else if (month == Calendar.JANUARY && calendar.get(Calendar.DAY_OF_MONTH) < 15) "Winterferien"
-                else "Ferien"
+                if (month == Calendar.DECEMBER && calendar.get(Calendar.DAY_OF_MONTH) > 15) InternalConstants.HOLIDAY_TYPE_WINTER
+                else if (month == Calendar.JANUARY && calendar.get(Calendar.DAY_OF_MONTH) < 15) InternalConstants.HOLIDAY_TYPE_WINTER
+                else InternalConstants.HOLIDAY_TYPE_GENERIC
             }
-            else -> "Ferien"
+            else -> InternalConstants.HOLIDAY_TYPE_GENERIC
+        }
+    }
+
+    private fun translateVacationType(internalType: String): String { // suggested to use this
+        return when (internalType) {
+            InternalConstants.HOLIDAY_TYPE_AUTUMN -> getString(R.string.gall_autumn_break)
+            InternalConstants.HOLIDAY_TYPE_WINTER -> getString(R.string.gall_winter_break)
+            InternalConstants.HOLIDAY_TYPE_EASTER -> getString(R.string.gall_easter_break)
+            InternalConstants.HOLIDAY_TYPE_SUMMER -> getString(R.string.gall_summer_break)
+            InternalConstants.HOLIDAY_TYPE_WHITSUN -> getString(R.string.gall_whitesun_break)
+            InternalConstants.HOLIDAY_TYPE_SPRING -> getString(R.string.gall_spring_break)
+            InternalConstants.HOLIDAY_GENERAL -> getString(R.string.gall_holiday)
+            else -> getString(R.string.gall_vacation)
         }
     }
 
@@ -1194,7 +1223,7 @@ class GalleryFragment : Fragment() {
         val weekSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(
                 requireContext(), android.R.layout.simple_spinner_item,
-                (1..53).map { "Woche $it" }).apply {
+                (1..53).map { getString(R.string.gall_week_number, it) }).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
@@ -1206,22 +1235,22 @@ class GalleryFragment : Fragment() {
         weekSpinner.setSelection(currentWeek - 1)
 
         container.addView(TextView(requireContext()).apply {
-            "Jahr:".also { text = it }
+            text = getString(R.string.gall_year)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
-            "Kalenderwoche:".also { text = it }
+            text = getString(R.string.gall_calendar_week)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(weekSpinner)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Kalenderwoche auswählen")
+            .setTitle(getString(R.string.gall_select_calendar_week))
             .setView(container)
-            .setPositiveButton("OK") { _, _ ->
+            .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
                 val selectedYear = 2024 + yearSpinner.selectedItemPosition
                 val selectedWeek = weekSpinner.selectedItemPosition + 1
 
@@ -1230,7 +1259,7 @@ class GalleryFragment : Fragment() {
                 currentWeekStart.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                 updateCalendar()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1275,28 +1304,28 @@ class GalleryFragment : Fragment() {
         daySpinner.setSelection(currentDay.get(Calendar.DAY_OF_MONTH) - 1)
 
         container.addView(TextView(requireContext()).apply {
-            "Jahr:".also { text = it }
+            text = getString(R.string.gall_year)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
-            "Monat:".also { text = it }
+            text = getString(R.string.gall_month)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(monthSpinner)
         container.addView(TextView(requireContext()).apply {
-            "Tag:".also { text = it }
+            text = getString(R.string.gall_day)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(daySpinner)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Tag auswählen")
+            .setTitle(getString(R.string.gall_select_day))
             .setView(container)
-            .setPositiveButton("OK") { _, _ ->
+            .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
                 val selectedYear = 2024 + yearSpinner.selectedItemPosition
                 val selectedMonth = monthSpinner.selectedItemPosition
                 val selectedDay = daySpinner.selectedItemPosition + 1
@@ -1320,7 +1349,7 @@ class GalleryFragment : Fragment() {
 
                 updateCalendar()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1351,8 +1380,7 @@ class GalleryFragment : Fragment() {
         val endDay = dateFormat.format(weekEnd.time)
         val monthYear = SimpleDateFormat("MM.yyyy", Locale.GERMANY).format(weekEnd.time)
         val weekNumber = weekFormat.format(currentWeekStart.time)
-
-        "$startDay - $endDay$monthYear\nKalenderwoche $weekNumber".also { currentWeekTextView.text = it }
+        currentWeekTextView.text = getString(R.string.gall_week_text_view, startDay, endDay, monthYear, weekNumber)
     }
 
     private fun buildCalendarGrid() {
@@ -1402,7 +1430,7 @@ class GalleryFragment : Fragment() {
         }
 
         // lesson/time column header
-        val timeHeader = createStyledCell("Stunde", isHeader = true, isLessonColumn = true, isDayView = true)
+        val timeHeader = createStyledCell(getString(R.string.galL_hour_single), isHeader = true, isLessonColumn = true, isDayView = true)
         timeHeader.setOnClickListener { showAllLessonTimes() }
         headerRow.addView(timeHeader)
 
@@ -1413,14 +1441,14 @@ class GalleryFragment : Fragment() {
         }
 
         val dayName = when (currentDayOffset) {
-            0 -> "Montag"
-            1 -> "Dienstag"
-            2 -> "Mittwoch"
-            3 -> "Donnerstag"
-            4 -> "Freitag"
-            5 -> "Samstag"
-            6 -> "Sonntag"
-            else -> "Unbekannt"
+            0 -> getString(R.string.monday)
+            1 -> getString(R.string.tuesday)
+            2 -> getString(R.string.wednesday)
+            3 -> getString(R.string.thursday)
+            4 -> getString(R.string.friday)
+            5 -> getString(R.string.saturday)
+            6 -> getString(R.string.sunday)
+            else -> getString(R.string.unknown)
         }
 
         val dayDate = SimpleDateFormat("dd.MM", Locale.GERMANY).format(currentDay.time)
@@ -1504,7 +1532,7 @@ class GalleryFragment : Fragment() {
         }
 
         val breakView = TextView(requireContext()).apply {
-            "Pause\n($breakMinutes Min.)".also { text = it }
+            text = getString(R.string.gall_break_with_minutes, breakMinutes)
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(8, 8, 8, 8)
@@ -1601,7 +1629,7 @@ class GalleryFragment : Fragment() {
         }
 
         if (shouldMarkAsHoliday || shouldMarkFromLesson4) {
-            cellText = if (shouldMarkAsHoliday) "Feiertag" else "Frei ab 4. Std."
+            cellText = if (shouldMarkAsHoliday) getString(R.string.gall_holiday) else getString(R.string.gall_free_from_4)
             cell.text = cellText
             val drawable = createRoundedDrawable(Color.LTGRAY)
             cell.background = drawable
@@ -1630,10 +1658,12 @@ class GalleryFragment : Fragment() {
 
             val teacherRoomDisplay = formatTeacherRoomDisplay(teacherToShow, roomToShow)
 
+            val displaySubject = translateSubjectForDisplay(timetableEntry.subject)
+
             val mainInfo = if (teacherRoomDisplay.isNotBlank()) {
-                "${timetableEntry.subject} | $teacherRoomDisplay"
+                "$displaySubject | $teacherRoomDisplay"
             } else {
-                timetableEntry.subject
+                displaySubject
             }
 
             cellText = mainInfo
@@ -1653,8 +1683,8 @@ class GalleryFragment : Fragment() {
 
             calendarEntries.forEach { entry ->
                 when (entry.type) {
-                    EntryType.HOMEWORK -> additionalInfo.add("Hausaufgabe")
-                    EntryType.EXAM -> additionalInfo.add("Klausur")
+                    EntryType.HOMEWORK -> additionalInfo.add(getString(R.string.gall_homework_single))
+                    EntryType.EXAM -> additionalInfo.add(getString(R.string.gall_exam_single))
                     EntryType.SUBSTITUTE -> {
                         if (entry.content.contains("statt", ignoreCase = true)) {
                             hasSubstitute = true
@@ -1669,7 +1699,7 @@ class GalleryFragment : Fragment() {
                     }
                     EntryType.SPECIAL_DAY -> {
                         if (entry.content.contains("Feiertag", ignoreCase = true)) {
-                            additionalInfo.add("Feiertag")
+                            additionalInfo.add(getString(R.string.gall_holiday))
                         } else {
                             additionalInfo.add(entry.content)
                         }
@@ -1739,14 +1769,14 @@ class GalleryFragment : Fragment() {
                 calendarInfo?.specialNote ?: ""
             )) {
             cell.alpha = 0.3f
-        } else if (timetableEntry?.subject == "Freistunde") {
+        } else if (timetableEntry?.subject == "FREE_LESSON") {
             cell.alpha = 0.6f
         } else {
             cell.alpha = 1.0f
         }
 
         // search filter
-        val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
+        val baseOpacity = if (timetableEntry?.subject == getString(R.string.slide_free_lesson)) 0.6f else 1.0f
 
         val actualRoom = timetableEntry?.room ?: ""
         val actualTeacher = timetableEntry?.teacher ?: ""
@@ -1796,25 +1826,25 @@ class GalleryFragment : Fragment() {
     }
 
     private fun showLessonTimeDetails(lesson: Int) {
-        val startTime = lessonTimes[lesson] ?: "Unbekannt"
-        val endTime = lessonEndTimes[lesson] ?: "Unbekannt"
+        val startTime = lessonTimes[lesson] ?: getString(R.string.unknown)
+        val endTime = lessonEndTimes[lesson] ?: getString(R.string.unknown)
         val breakAfter = breakTimes[lesson]
 
         val message = buildString {
-            appendLine("${lesson}. Stunde")
+            appendLine(getString(R.string.gall_lesson_number, lesson))
             appendLine()
-            appendLine("Beginn: $startTime")
-            appendLine("Ende: $endTime")
+            appendLine(getString(R.string.gall_lesson_start, startTime))
+            appendLine(getString(R.string.gall_lesson_end, endTime))
             if (breakAfter != null) {
                 appendLine()
-                appendLine("Anschließende Pause: $breakAfter Minuten")
+                appendLine(getString(R.string.gall_subsequent_break, breakAfter))
             }
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Stundenzeiten")
+            .setTitle(getString(R.string.gall_lesson_times))
             .setMessage(message)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1825,30 +1855,30 @@ class GalleryFragment : Fragment() {
         calendarEntries: List<CalendarEntry>
     ) {
         val dateStr = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY).format(date)
-        val startTime = lessonTimes[lesson] ?: "Unbekannt"
-        val endTime = lessonEndTimes[lesson] ?: "Unbekannt"
+        val startTime = lessonTimes[lesson] ?: getString(R.string.unknown)
+        val endTime = lessonEndTimes[lesson] ?: getString(R.string.unknown)
 
         val message = buildString {
-            appendLine("Datum: $dateStr")
-            appendLine("Zeit: $startTime - $endTime (${lesson}. Stunde)")
+            appendLine(getString(R.string.gall_date, dateStr))
+            appendLine(getString(R.string.gall_time, startTime, endTime, lesson))
             appendLine()
-            appendLine("Fach: ${timetableEntry.subject}")
+            appendLine(getString(R.string.gall_subject_details, timetableEntry.subject))
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
-                appendLine("Lehrer: ${timetableEntry.teacher}")
+                appendLine(getString(R.string.gall_teacher, timetableEntry.teacher))
             }
             if (timetableEntry.room.isNotBlank() && timetableEntry.room != "UNKNOWN") {
-                appendLine("Raum: ${timetableEntry.room}")
+                appendLine(getString(R.string.gall_room, timetableEntry.room))
             }
 
             if (calendarEntries.isNotEmpty()) {
                 appendLine()
-                appendLine("Zusätzliche Informationen:")
+                appendLine(getString(R.string.gall_additional_information))
                 calendarEntries.forEach { entry ->
                     when (entry.type) {
-                        EntryType.HOMEWORK -> appendLine("• Hausaufgabe fällig")
-                        EntryType.EXAM -> appendLine("• Klausur")
-                        EntryType.SUBSTITUTE -> appendLine("• Vertretung: ${entry.content}")
+                        EntryType.HOMEWORK -> appendLine(getString(R.string.gall_homework_due))
+                        EntryType.EXAM -> appendLine(getString(R.string.gall_exam_due))
+                        EntryType.SUBSTITUTE -> appendLine(getString(R.string.gall_substitute_detail, entry.content))
                         EntryType.SPECIAL_DAY -> appendLine("• ${entry.content}")
                         else -> appendLine("• ${entry.content}")
                     }
@@ -1857,15 +1887,15 @@ class GalleryFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Stundendetails")
+            .setTitle(getString(R.string.gall_lesson_details))
             .setMessage(message)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.gall_close), null)
             .show()
     }
 
     private fun showEmptyCalendar() {
         val emptyMessage = TextView(requireContext()).apply {
-            "Du musst zuerst deinen Stundenplan scannen, um den Kalender verwenden zu können.".also { text = it }
+            text = getString(R.string.gall_scan_timetable_first)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -1885,7 +1915,7 @@ class GalleryFragment : Fragment() {
             )
         }
 
-        val lessonHeader = createStyledCell("Std.", isHeader = true, isLessonColumn = true).apply {
+        val lessonHeader = createStyledCell(getString(R.string.gall_header_hour), isHeader = true, isLessonColumn = true).apply {
             setTypeface(null, Typeface.BOLD)
             background = createFlatRoundedDrawable("#0f5293")
             setTextColor(Color.WHITE)
@@ -1939,21 +1969,21 @@ class GalleryFragment : Fragment() {
         }
 
         val notesLabel = TextView(requireContext()).apply {
-            "Notizen:".also { text = it }
+            text = getString(R.string.gall_notes)
             textSize = 16f
             setTextColor(Color.BLACK)
             setTypeface(null, Typeface.BOLD)
         }
 
         val notesEditText = EditText(requireContext()).apply {
-            hint = "Persönliche Notizen für diesen Tag..."
+            hint = getString(R.string.gall_notes_hint)
             minLines = 2
             maxLines = 4
             text = Editable.Factory.getInstance().newEditable(getUserNotesForDate(date))
         }
 
         val occasionsLabel = TextView(requireContext()).apply {
-            "Besondere Ereignisse:".also { text = it }
+            text = getString(R.string.gall_special_events)
             textSize = 16f
             setTextColor(Color.BLACK)
             setTypeface(null, Typeface.BOLD)
@@ -1974,7 +2004,7 @@ class GalleryFragment : Fragment() {
             }
 
             val editText = EditText(requireContext()).apply {
-                hint = "z.B. 'Infotag', 'Päd. Tag', 'Feiertag', '3. Std.'"
+                hint = getString(R.string.gall_occasion_hint)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
             }
@@ -2002,7 +2032,7 @@ class GalleryFragment : Fragment() {
         }
 
         val addOccasionButton = Button(requireContext()).apply {
-            "+ Ereignis hinzufügen".also { text = it }
+            text = getString(R.string.gall_add_event)
             setOnClickListener { addOccasionField() }
         }
 
@@ -2013,10 +2043,10 @@ class GalleryFragment : Fragment() {
         container.addView(addOccasionButton)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Tag bearbeiten - $dateStr")
+            .setTitle(getString(R.string.gall_edit_day, dateStr))
             .setView(container)
-            .setNegativeButton("Abbrechen", null)
-            .setPositiveButton("Speichern") { _, _ ->
+            .setNegativeButton(getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.gall_save)) { _, _ ->
                 val notes = notesEditText.text.toString().trim()
                 saveUserNotesForDate(date, notes)
 
@@ -2026,18 +2056,18 @@ class GalleryFragment : Fragment() {
                 saveUserSpecialOccasionsForDate(date, occasions)
 
                 updateCalendar()
-                Toast.makeText(requireContext(), "Änderungen gespeichert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.gall_changes_saved), Toast.LENGTH_SHORT).show()
             }
-            .setNeutralButton("Zurücksetzen") { _, _ ->
+            .setNeutralButton(getString(R.string.gall_reset)) { _, _ ->
                 AlertDialog.Builder(requireContext())
-                    .setTitle("Zurücksetzen bestätigen")
-                    .setMessage("Alle manuell hinzugefügten Notizen und besonderen Ereignisse für diesen Tag werden gelöscht. Fortfahren?")
-                    .setPositiveButton("Ja") { _, _ ->
+                    .setTitle(getString(R.string.gall_reset_confirm))
+                    .setMessage(getString(R.string.gall_reset_hint))
+                    .setPositiveButton(getString(R.string.slide_yes)) { _, _ ->
                         clearUserDataForDate(date)
                         updateCalendar()
-                        Toast.makeText(requireContext(), "Tag zurückgesetzt", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.gall_reset_day), Toast.LENGTH_SHORT).show()
                     }
-                    .setNegativeButton("Nein", null)
+                    .setNegativeButton(getString(R.string.slide_no), null)
                     .show()
             }
             .show()
@@ -2112,26 +2142,26 @@ class GalleryFragment : Fragment() {
 
     private fun showAllLessonTimes() {
         val message = buildString {
-            appendLine("Stundenzeiten Übersicht")
+            appendLine(getString(R.string.gall_lesson_times_overview))
             appendLine()
 
             for (lesson in 1..15) {
                 val startTime = lessonTimes[lesson]
                 val endTime = lessonEndTimes[lesson]
                 if (startTime != null && endTime != null) {
-                    appendLine("${lesson}. Stunde: $startTime - $endTime")
+                    appendLine(getString(R.string.gall_all_lesson_times_lesson, lesson, startTime, endTime))
 
                     breakTimes[lesson]?.let { breakMinutes ->
-                        appendLine("   ➞ Pause: $breakMinutes Minuten")
+                        appendLine(getString(R.string.gall_all_lesson_times_break, breakMinutes))
                     }
                 }
             }
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Alle Stundenzeiten")
+            .setTitle(getString(R.string.gall_all_lesson_times))
             .setMessage(message)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.gall_close), null)
             .show()
     }
 
@@ -2242,7 +2272,7 @@ class GalleryFragment : Fragment() {
         }
 
         if (shouldMarkAsHoliday || shouldMarkFromLesson4) {
-            cellText = if (shouldMarkAsHoliday) "Feiertag" else "Frei"
+            cellText = if (shouldMarkAsHoliday) getString(R.string.gall_holiday) else getString(R.string.gall_free)
             cell.text = cellText
             val drawable = createRoundedDrawable(Color.LTGRAY)
             cell.background = drawable
@@ -2294,7 +2324,7 @@ class GalleryFragment : Fragment() {
             cell.text = cellText
         }
 
-        val baseOpacity = if (timetableEntry?.subject == "Freistunde") 0.6f else 1.0f
+        val baseOpacity = if (timetableEntry?.subject == getString(R.string.slide_free_lesson)) 0.6f else 1.0f
         val actualRoom = timetableEntry?.room ?: ""
         val actualTeacher = timetableEntry?.teacher ?: ""
 
@@ -2431,12 +2461,12 @@ class GalleryFragment : Fragment() {
         colorLegend.orientation = LinearLayout.VERTICAL
 
         val legendItems = listOf(
-            Pair("Hausaufgabe", Color.CYAN),
-            Pair("Klausur", examColor),
-            Pair("Feiertag/Ferien", Color.LTGRAY),
-            Pair("Entfällt", getColorBlindFriendlyColor("red")),
-            Pair("Betreuung", getColorBlindFriendlyColor("orange")),
-            Pair("Vertretung", getColorBlindFriendlyColor("green")),
+            Pair(getString(R.string.gall_homework_single), Color.CYAN),
+            Pair(getString(R.string.gall_exam_single), examColor),
+            Pair(getString(R.string.gall_holiday_or_free), Color.LTGRAY),
+            Pair(getString(R.string.home_is_cancelled), getColorBlindFriendlyColor("red")),
+            Pair(getString(R.string.gall_is_looked_after), getColorBlindFriendlyColor("orange")),
+            Pair(getString(R.string.gall_is_substituted), getColorBlindFriendlyColor("green")),
         )
 
         val firstRow = LinearLayout(requireContext()).apply {
@@ -2538,7 +2568,7 @@ class GalleryFragment : Fragment() {
                         entries.add(
                             CalendarEntry(
                                 EntryType.SPECIAL_DAY,
-                                "Feiertag",
+                                getString(R.string.gall_holiday),
                                 "",
                                 Color.LTGRAY,
                                 colorPriorities["holiday"] ?: 0
@@ -2552,7 +2582,7 @@ class GalleryFragment : Fragment() {
                             entries.add(
                                 CalendarEntry(
                                     EntryType.SPECIAL_DAY,
-                                    "Frei ab 4. Std.",
+                                    getString(R.string.gall_free_from_4),
                                     "",
                                     Color.LTGRAY,
                                     colorPriorities["holiday"] ?: 0
@@ -2630,7 +2660,7 @@ class GalleryFragment : Fragment() {
                     ) {
                         entries.add(
                             CalendarEntry(
-                                EntryType.EXAM, "Klausur", exam.subject,
+                                EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
                                 examColor,
                                 colorPriorities["exam"] ?: 0
                             )
@@ -2649,7 +2679,7 @@ class GalleryFragment : Fragment() {
                     if (dayTimetable?.get(lesson)?.subject == subject) {
                         entries.add(
                             CalendarEntry(
-                                EntryType.EXAM, "Klausur", exam.subject,
+                                EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
                                 examColor,
                                 colorPriorities["exam"] ?: 0
                             )
@@ -2789,7 +2819,7 @@ class GalleryFragment : Fragment() {
         val subjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
 
         if (subjects.isEmpty()) {
-            Toast.makeText(requireContext(), "Keine Fächer gefunden. Scanne zuerst deinen Stundenplan ein.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.gall_no_subjects_found), Toast.LENGTH_LONG).show()
             return
         }
 
@@ -2802,7 +2832,7 @@ class GalleryFragment : Fragment() {
 
         val subjectSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item,
-                listOf("Kein Unterricht") + subjects).apply {
+                listOf(getString(R.string.gall_no_school)) + subjects).apply { // be cautious about this
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
@@ -2810,8 +2840,8 @@ class GalleryFragment : Fragment() {
         val durationSpinner = Spinner(requireContext()).apply {
             val durationOptions = (1..8).map {
                 when (it) {
-                    1 -> "1 Stunde"
-                    else -> "$it Stunden"
+                    1 -> getString(R.string.gall_first_lesson)
+                    else -> getString(R.string.gall_lesson_count, it)
                 }
             }
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, durationOptions).apply {
@@ -2821,7 +2851,7 @@ class GalleryFragment : Fragment() {
         }
 
         val roomLabel = TextView(requireContext()).apply {
-            "Raum:".also { text = it }
+            text = getString(R.string.gall_this_room)
             textSize = 14f
             setTextColor(Color.BLACK)
             visibility = View.GONE
@@ -2901,13 +2931,13 @@ class GalleryFragment : Fragment() {
         }
 
         container.addView(TextView(requireContext()).apply {
-            "Fach:".also { text = it }
+            text = getString(R.string.gall_this_subject)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
         container.addView(subjectSpinner)
         container.addView(TextView(requireContext()).apply {
-            "Dauer:".also { text = it }
+            text = getString(R.string.gall_this_duration)
             textSize = 14f
             setTextColor(Color.BLACK)
         })
@@ -2916,9 +2946,9 @@ class GalleryFragment : Fragment() {
         container.addView(roomSpinner)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Stundenplan bearbeiten - ${weekdays[dayIndex]} ${lesson}. Stunde")
+            .setTitle(getString(R.string.gall_edit_timetable, weekdays[dayIndex], lesson))
             .setView(container)
-            .setPositiveButton("Speichern") { _, _ ->
+            .setPositiveButton(getString(R.string.gall_save)) { _, _ ->
                 val selectedSubject = subjectSpinner.selectedItem.toString()
                 val duration = durationSpinner.selectedItemPosition + 1
                 val selectedRoom = if (roomSpinner.isVisible && roomSpinner.selectedItem != null) {
@@ -2928,7 +2958,7 @@ class GalleryFragment : Fragment() {
                 saveTimetableEntryWithRoom(dayIndex, lesson, selectedSubject, duration, selectedRoom)
                 updateCalendar()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2939,8 +2969,10 @@ class GalleryFragment : Fragment() {
             timetableData[dayKey] = mutableMapOf()
         }
 
+        val NO_SCHOOL_INTERNAL = "NO_SCHOOL"
+
         for (i in lesson until lesson + duration) {
-            if (subject == "Kein Unterricht") {
+            if (subject == getString(R.string.gall_no_school)) { // be cautious about this
                 timetableData[dayKey]?.remove(i)
             } else {
                 val (teacher, defaultRoom) = getTeacherAndRoomForSubject(subject)
@@ -3050,7 +3082,7 @@ class GalleryFragment : Fragment() {
         isEditMode = false
         editModeControls.visibility = View.GONE
         updateCalendar()
-        Toast.makeText(requireContext(), "Stundenplan gespeichert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.gall_timetable_saved), Toast.LENGTH_SHORT).show()
     }
 
     private fun getMaxLessonsForWeek(): Int {
@@ -3140,7 +3172,7 @@ class GalleryFragment : Fragment() {
         }
 
         val titleText = TextView(requireContext()).apply {
-            "Details für $dateStr".also { text = it }
+            text = getString(R.string.gall_details_for, dateStr)
             textSize = 18f
             setTextColor(Color.BLACK)
             setPadding(0, 0, 0, 24)
@@ -3175,7 +3207,7 @@ class GalleryFragment : Fragment() {
             }
 
             val notesLabel = TextView(requireContext()).apply {
-                "Persönliche Notizen:".also { text = it }
+                text = getString(R.string.gall_personal_notes)
                 textSize = 14f
                 setTextColor("#1976D2".toColorInt())
                 setTypeface(null, Typeface.BOLD)
@@ -3199,7 +3231,7 @@ class GalleryFragment : Fragment() {
         val userOccasions = getUserSpecialOccasionsForDate(date)
         if (userOccasions.isNotEmpty()) {
             val occasionsText = TextView(requireContext()).apply {
-                "Besondere Ereignisse (manuell):".also { text = it }
+                text = getString(R.string.gall_special_occasiions_manual)
                 textSize = 16f
                 setTextColor(Color.BLACK)
                 setTypeface(null, Typeface.BOLD)
@@ -3230,7 +3262,7 @@ class GalleryFragment : Fragment() {
         calendarInfo?.specialNote?.let { note ->
             if (note.isNotBlank()) {
                 val calendarNotesText = TextView(requireContext()).apply {
-                    "Besondere Ereignisse (Klausurplan):".also { text = it }
+                    text = getString(R.string.gall_spcieal_occasions_exam_schedule)
                     textSize = 16f
                     setTextColor(Color.BLACK)
                     setTypeface(null, Typeface.BOLD)
@@ -3254,7 +3286,7 @@ class GalleryFragment : Fragment() {
             val dayHomework = homeworkList.filter { isSameDay(it.dueDate, date) }
             if (dayHomework.isNotEmpty()) {
                 val homeworkText = TextView(requireContext()).apply {
-                    "Hausaufgaben:".also { text = it }
+                    text = getString(R.string.gall_homework)
                     textSize = 16f
                     setTextColor(Color.BLACK)
                     setTypeface(null, Typeface.BOLD)
@@ -3266,7 +3298,7 @@ class GalleryFragment : Fragment() {
                     var lessonText = ""
 
                     if (homework.lessonNumber != null && homework.lessonNumber!! > 0) {
-                        lessonText = " (${homework.lessonNumber}. Stunde)"
+                        lessonText = getString(R.string.slide_due_date_lesson, homework.lessonNumber)
                     } else {
                         val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
                         val dayTimetable = timetableData[dayKey]
@@ -3276,7 +3308,7 @@ class GalleryFragment : Fragment() {
                             ?.minByOrNull { it.key }?.key
 
                         if (firstLessonWithSubject != null) {
-                            lessonText = " (${firstLessonWithSubject}. Stunde)"
+                            lessonText = getString(R.string.slide_due_date_lesson, firstLessonWithSubject)
                         }
                     }
 
@@ -3306,7 +3338,7 @@ class GalleryFragment : Fragment() {
         calendarInfo?.exams?.let { exams ->
             if (exams.isNotEmpty()) {
                 val examsText = TextView(requireContext()).apply {
-                    "Klausuren:".also { text = it }
+                    text = getString(R.string.gall_exams)
                     textSize = 16f
                     setTextColor(Color.BLACK)
                     setTypeface(null, Typeface.BOLD)
@@ -3339,7 +3371,7 @@ class GalleryFragment : Fragment() {
         val examsFromManager = ExamManager.getExamsForDate(dateStr2)
         if (examsFromManager.isNotEmpty() && !examsAdded) {
             val examsText = TextView(requireContext()).apply {
-                "Klausuren:".also { text = it }
+                text = getString(R.string.gall_exams)
                 textSize = 16f
                 setTextColor(Color.BLACK)
                 setTypeface(null, Typeface.BOLD)
@@ -3391,7 +3423,7 @@ class GalleryFragment : Fragment() {
 
         if (relevantSubstitutes.isNotEmpty()) {
             val substitutesText = TextView(requireContext()).apply {
-                "Vertretungen:".also { text = it }
+                text = getString(R.string.gall_substitutions)
                 textSize = 16f
                 setTextColor(Color.BLACK)
                 setTypeface(null, Typeface.BOLD)
@@ -3401,9 +3433,9 @@ class GalleryFragment : Fragment() {
 
             relevantSubstitutes.forEach { substitute ->
                 val lessonRange = if (substitute.stundeBis != null && substitute.stundeBis != substitute.stunde) {
-                    "${substitute.stunde}-${substitute.stundeBis}. Stunde"
+                    getString(R.string.gall_lesson_range, substitute.stunde, substitute.stundeBis)
                 } else {
-                    "${substitute.stunde}. Stunde"
+                    getString(R.string.gall_lesson_number, substitute.stunde)
                 }
 
                 val substituteItem = TextView(requireContext()).apply {
@@ -3418,7 +3450,7 @@ class GalleryFragment : Fragment() {
 
         if (container.childCount <= 1) {
             val emptyText = TextView(requireContext()).apply {
-                "Keine besonderen Ereignisse für diesen Tag.".also { text = it }
+                text = getString(R.string.gall_no_special_occasions_for_give_day)
                 textSize = 14f
                 setTextColor(Color.GRAY)
                 setPadding(0, 16, 0, 0)
@@ -3429,10 +3461,10 @@ class GalleryFragment : Fragment() {
         scrollView.addView(container)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Tagesdetails")
+            .setTitle(getString(R.string.gall_day_details))
             .setView(scrollView)
-            .setPositiveButton("Schließen", null)
-            .setNeutralButton("Bearbeiten") { _, _ ->
+            .setPositiveButton(getString(R.string.cancel), null)
+            .setNeutralButton(getString(R.string.gall_edit)) { _, _ ->
                 showEditDayDialog(date)
             }
             .show()
@@ -3454,7 +3486,7 @@ class GalleryFragment : Fragment() {
 
     private fun formatSubstituteText(originalText: String): String {
         return when {
-            originalText == "Auf einen anderen Termin verlegt" -> "Entfällt (verlegt)"
+            originalText == "Auf einen anderen Termin verlegt" -> getString(R.string.home_substitution_moved)
             originalText.matches(Regex(".*entfällt, stattdessen .* in Raum .*", RegexOption.IGNORE_CASE)) -> {
                 val regex = Regex(".*entfällt, stattdessen (.*) in Raum (.*)", RegexOption.IGNORE_CASE)
                 val matchResult = regex.find(originalText)
@@ -3462,7 +3494,7 @@ class GalleryFragment : Fragment() {
                     val newSubject = matchResult.groups[1]?.value ?: ""
                     val room = matchResult.groups[2]?.value ?: ""
                     val originalSubject = originalText.substringBefore(" entfällt")
-                    "$newSubject in Raum $room (statt $originalSubject)"
+                    getString(R.string.home_substitution_replaced, newSubject, room, originalSubject)
                 } else {
                     originalText
                 }
@@ -3474,10 +3506,10 @@ class GalleryFragment : Fragment() {
                 if (matchResult != null) {
                     val originalSubject = matchResult.groups[1]?.value ?: ""
                     val newSubject = matchResult.groups[2]?.value ?: ""
-                    "$newSubject (statt $originalSubject)"
+                    getString(R.string.home_substitution_subject_replaced, newSubject, originalSubject)
                 } else originalText
             }
-            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> "Entfällt (Exk./Prak.)"
+            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.gall_is_cancelled_exc)
             else -> originalText.take(20)
         }
     }
@@ -3486,8 +3518,8 @@ class GalleryFragment : Fragment() {
         val content = exportTimetableData()
 
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_export_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_backup_copy_clipboard), R.drawable.ic_export_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -3506,21 +3538,21 @@ class GalleryFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Stundenplan exportieren")
+            .setTitle(getString(R.string.gall_export_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showImportOptions() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_backup_import_clipboard), R.drawable.ic_import_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -3539,14 +3571,14 @@ class GalleryFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Stundenplan importieren")
+            .setTitle(getString(R.string.gall_import_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFile()
                     1 -> importFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -3558,7 +3590,7 @@ class GalleryFragment : Fragment() {
         try {
             startActivityForResult(intent, 1001)
         } catch (_: Exception) {
-            Toast.makeText(requireContext(), "Dateimanager nicht verfügbar", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.gall_file_manager_error), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -3569,7 +3601,7 @@ class GalleryFragment : Fragment() {
             val content = clipData.getItemAt(0).text.toString()
             importTimetableData(content)
         } else {
-            Toast.makeText(requireContext(), "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_clipboard_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -3585,9 +3617,9 @@ class GalleryFragment : Fragment() {
             loadVacationData()
 
             updateCalendar()
-            Toast.makeText(requireContext(), "Stundenplan erfolgreich importiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_timetable_imported_successfully), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Importieren: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_import_error, e.message), Toast.LENGTH_LONG).show()
             L.e("GalleryFragment", "Error importing timetable", e)
         }
     }
@@ -3597,18 +3629,18 @@ class GalleryFragment : Fragment() {
             val fileName = "stundenplan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(Date())}.hksc"
             val file = File(requireContext().getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
             FileWriter(file).use { it.write(content) }
-            Toast.makeText(requireContext(), "Datei gespeichert: ${file.absolutePath}", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.gall_file_saved_at, file.absolutePath), Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Speichern: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.gall_save_error, e.message), Toast.LENGTH_LONG).show()
             L.e("GalleryFragment", "Error saving file", e)
         }
     }
 
     private fun copyToClipboard(content: String) {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Stundenplan", content)
+        val clip = ClipData.newPlainText(getString(R.string.set_act_timetable), content)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(requireContext(), "In Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.gall_copied_clipboard), Toast.LENGTH_SHORT).show()
     }
 
     private fun createRoundedDrawable(color: Int): GradientDrawable {
@@ -3695,7 +3727,7 @@ class GalleryFragment : Fragment() {
                     val oldData: MutableSet<String> = Gson().fromJson(json, oldType) ?: mutableSetOf()
                     vacationWeeks.clear()
                     oldData.forEach { weekKey ->
-                        val vacationName = "Ferien" // fallback name
+                        val vacationName = getString(R.string.gall_vacation) // fallback name
                         vacationWeeks[weekKey] = VacationWeek(weekKey, vacationName, VacationSource.MANUAL)
                     }
                     saveVacationData()
@@ -4017,7 +4049,6 @@ class GalleryFragment : Fragment() {
 
     private fun getLessonFromRowIndex(rowIndex: Int): Int {
         var lessonCount = 0
-        var breakCount = 0
 
         for (i in 1 until rowIndex) {
             val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
@@ -4025,10 +4056,10 @@ class GalleryFragment : Fragment() {
                 val firstCell = row.getChildAt(0) as? TextView ?: continue
                 val cellText = firstCell.text.toString()
 
-                if (cellText.contains("Pause", ignoreCase = true)) {
-                    breakCount++
+                if (cellText.contains("(") && cellText.contains("Min.)")) {
+                    continue
                 } else if (isDayView) {
-                    if (cellText.contains(".") && !cellText.contains("Pause")) {
+                    if (cellText.contains(".") && !cellText.contains("(")) {
                         lessonCount++
                     }
                 } else {
@@ -4085,7 +4116,7 @@ class GalleryFragment : Fragment() {
                     val cell = row.getChildAt(0) as? TextView ?: continue
                     val cellText = cell.text.toString()
 
-                    if (cellText.contains("Pause", ignoreCase = true)) {
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) { // be cautious
                         val breakPosition = getBreakPositionForDayView(i)
                         if (breakPosition == afterLesson) {
                             startCurrentBreakHighlight(cell)
@@ -4103,7 +4134,7 @@ class GalleryFragment : Fragment() {
                     val cell = row.getChildAt(j) as? TextView ?: continue
                     val cellText = cell.text.toString()
 
-                    if (cellText.contains("Pause", ignoreCase = true)) {
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) { // be cautious
                         val breakPosition = getBreakPositionFromGrid(i)
                         if (breakPosition == afterLesson) {
                             startCurrentBreakHighlight(cell)
@@ -4124,7 +4155,7 @@ class GalleryFragment : Fragment() {
                 val firstCell = row.getChildAt(0) as? TextView ?: continue
                 val cellText = firstCell.text.toString()
 
-                if (!cellText.contains("Pause", ignoreCase = true) && cellText.trim().toIntOrNull() != null) {
+                if (!cellText.contains(getString(R.string.gall_break), ignoreCase = true) && cellText.trim().toIntOrNull() != null) { // be cautious
                     lessonCount++
                 }
             }
@@ -4141,7 +4172,7 @@ class GalleryFragment : Fragment() {
                 val firstCell = row.getChildAt(0) as? TextView ?: continue
                 val cellText = firstCell.text.toString()
 
-                if (cellText.contains(".") && !cellText.contains("Pause", ignoreCase = true)) {
+                if (cellText.contains(".") && !cellText.contains(getString(R.string.gall_break), ignoreCase = true)) { // be cautious
                     lessonCount++
                 }
             }
@@ -4271,6 +4302,8 @@ class GalleryFragment : Fragment() {
     }
 
     private fun identifyFreePeriods() {
+        val FREE_LESSON_INTERNAL = "FREE_LESSON"
+
         for ((_, dayTimetable) in timetableData) {
             val lessons = dayTimetable.toSortedMap()
 
@@ -4284,9 +4317,8 @@ class GalleryFragment : Fragment() {
             for (lessonNum in firstLesson..lastNonEmptyLesson) {
                 val entry = lessons[lessonNum]
                 if (entry == null || entry.subject.isBlank()) {
-                    // freistunde
                     dayTimetable[lessonNum] = TimetableEntry(
-                        subject = "Freistunde",
+                        subject = FREE_LESSON_INTERNAL, // be cautious
                         duration = 1,
                         isBreak = false,
                         teacher = "",
@@ -4297,9 +4329,17 @@ class GalleryFragment : Fragment() {
         }
     }
 
+    private fun translateSubjectForDisplay(internalSubject: String): String { // suggested to use this
+        return when (internalSubject) {
+            "FREE_LESSON" -> getString(R.string.slide_free_lesson)
+            "NO_SCHOOL" -> getString(R.string.gall_no_school)
+            else -> internalSubject
+        }
+    }
+
     private fun cleanDisplayString(input: String): String {
         return input.replace("UNKNOWN", "")
-            .replace("Unbekannt", "")
+            .replace(getString(R.string.unknown), "")
             .trim()
             .takeIf { it.isNotBlank() } ?: ""
     }
@@ -4372,8 +4412,8 @@ class GalleryFragment : Fragment() {
                     var holidayName = ""
 
                     userOccasions.forEach { occasion ->
-                        if (occasion.contains("Feiertag", ignoreCase = true) ||
-                            occasion.contains("Ferientag", ignoreCase = true)) {
+                        if (occasion.contains(getString(R.string.gall_holiday), ignoreCase = true) || // be cautious
+                            occasion.contains(getString(R.string.gall_vacation_day), ignoreCase = true)) { // be cautious
                             isHoliday = true
                             holidayName = occasion
                         }
@@ -4381,8 +4421,8 @@ class GalleryFragment : Fragment() {
 
                     calendarInfo?.let { info ->
                         if (info.isSpecialDay && info.specialNote.isNotBlank()) {
-                            if (info.specialNote.contains("Feiertag", ignoreCase = true) ||
-                                info.specialNote.contains("Ferientag", ignoreCase = true)) {
+                            if (info.specialNote.contains(getString(R.string.gall_holiday), ignoreCase = true) || // be cautious
+                                info.specialNote.contains(getString(R.string.gall_vacation_day), ignoreCase = true)) { // be cautious
                                 isHoliday = true
                                 if (holidayName.isEmpty()) holidayName = info.specialNote
                             }
@@ -4392,7 +4432,7 @@ class GalleryFragment : Fragment() {
                     if (isHoliday) {
                         val holidayObject = JSONObject().apply {
                             put("date", dateStr)
-                            put("name", holidayName.ifEmpty { "Feiertag" })
+                            put("name", holidayName.ifEmpty { getString(R.string.gall_holiday) }) // be cautious
                         }
                         holidaysArray.put(holidayObject)
                         processedDates.add(dateStr)
@@ -4440,7 +4480,7 @@ class GalleryFragment : Fragment() {
                     }.time
 
                     val vacationWeek = vacationWeeks[weekKey]
-                    val vacationName = vacationWeek?.name ?: "Ferien"
+                    val vacationName = vacationWeek?.name ?: getString(R.string.gall_vacation) // be cautious
 
                     if (currentStart == null) {
                         currentStart = weekStart
@@ -4577,9 +4617,9 @@ class GalleryFragment : Fragment() {
             val textView = indicator as TextView
 
             val text = if (isRightSwipe) {
-                if (isDayView) "Vorheriger Tag" else "Vorherige Woche"
+                if (isDayView) getString(R.string.gall_previous_day) else getString(R.string.gall_previous_week)
             } else {
-                if (isDayView) "Nächster Tag" else "Nächste Woche"
+                if (isDayView) getString(R.string.gall_next_day) else getString(R.string.gall_next_week)
             }
 
             textView.text = text
@@ -4774,10 +4814,10 @@ class GalleryFragment : Fragment() {
         }
 
         setArrow(prevButton, R.drawable.ic_arrow_left, sizeDp = 32, paddingDp = 0)
-        prevButton.contentDescription = "Vorherige Woche"
+        prevButton.contentDescription = getString(R.string.gall_previous_week)
 
         setArrow(nextButton, R.drawable.ic_arrow_right, sizeDp = 32, paddingDp = 0)
-        nextButton.contentDescription = "Nächste Woche"
+        nextButton.contentDescription = getString(R.string.gall_next_week)
     }
 
     override fun onResume() {

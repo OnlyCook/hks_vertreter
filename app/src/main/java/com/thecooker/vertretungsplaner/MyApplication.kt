@@ -2,13 +2,20 @@ package com.thecooker.vertretungsplaner
 
 import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.edit
 
 class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
 
+        applyLanguageSettings()
         applyGlobalTheme()
+    }
+
+    private fun applyLanguageSettings() {
+        val savedLanguage = LanguageUtil.getSavedLanguage(this)
+        LanguageUtil.setLanguage(this, savedLanguage)
     }
 
     private fun applyGlobalTheme() {
@@ -18,7 +25,7 @@ class MyApplication : Application() {
         if (followSystemTheme) {
             val hasManualSetting = sharedPreferences.contains("dark_mode_enabled")
             if (hasManualSetting) {
-                sharedPreferences.edit().remove("dark_mode_enabled").apply()
+                sharedPreferences.edit { remove("dark_mode_enabled") }
             }
 
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)

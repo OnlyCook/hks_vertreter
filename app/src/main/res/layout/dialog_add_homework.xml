@@ -13,7 +13,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Fach:"
+            android:text="@string/dia_add_hw_subject_label"
             android:textSize="14sp"
             android:layout_marginBottom="4dp" />
 
@@ -34,7 +34,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:hint="Fach eingeben"
+            android:hint="@string/dia_add_hw_subject_hint"
             android:inputType="text"
             android:maxLines="1"
             android:padding="12dp"
@@ -46,7 +46,7 @@
             android:id="@+id/switchAutoHomework"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Fälligkeit automatisch ausfüllen"
+            android:text="@string/dia_add_hw_auto_fill"
             android:textSize="15dp"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="16dp"/>
@@ -63,7 +63,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Fälligkeitsdatum:"
+                android:text="@string/dia_add_hw_due_date_label"
                 android:textSize="14sp" />
 
             <!-- Lesson Time label -->
@@ -71,7 +71,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Stunde (optional):"
+                android:text="@string/dia_add_hw_lesson_label"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -89,7 +89,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
-                android:text="Datum wählen"
+                android:text="@string/dia_add_hw_date_button"
                 android:backgroundTint="@android:color/holo_blue_light"
                 android:padding="12dp"
                 android:paddingTop="14dp"
@@ -116,7 +116,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Hausaufgaben-Inhalt:"
+            android:text="@string/dia_add_hw_content_label"
             android:textSize="14sp"
             android:layout_marginBottom="4dp" />
 
@@ -124,7 +124,7 @@
             android:id="@+id/tvHint"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Tipp: Beginne Zeilen mit '-' für Checklisten. Du kannst Text und Checklisten mischen."
+            android:text="@string/dia_add_hw_tip"
             android:textSize="12sp"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="8dp"
@@ -134,7 +134,7 @@
             android:id="@+id/editTextContent"
             android:layout_width="match_parent"
             android:layout_height="150dp"
-            android:hint="Beschreibung der Hausaufgabe...&#10;- Aufgabe 1&#10;- Aufgabe 2&#10;Hinweis: Zusätzliche Informationen"
+            android:hint="@string/dia_add_hw_content_hint"
             android:inputType="textMultiLine"
             android:gravity="top|start"
             android:padding="12dp"

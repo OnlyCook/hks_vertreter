@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
+import com.thecooker.vertretungsplaner.R
 import java.text.DecimalFormat
 import kotlin.math.max
 
@@ -12,7 +13,7 @@ class GradeGraphView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
-
+    private val graphContext: Context = context
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -84,7 +85,7 @@ class GradeGraphView @JvmOverloads constructor(
                 canvas.drawLine(padding, goalY, width - padding, goalY, goalLinePaint)
 
                 // Draw goal grade label
-                val goalText = "Ziel: ${DecimalFormat("0.0").format(goal)}"
+                val goalText = graphContext.getString(R.string.gra_gra_goal_grade, DecimalFormat("0.0").format(goal))
                 textPaint.color = Color.RED
                 canvas.drawText(goalText, width - padding - 80f, goalY - 10f, textPaint)
                 textPaint.color = Color.BLACK
@@ -187,19 +188,19 @@ class GradeGraphView @JvmOverloads constructor(
 
     private fun getMonthName(month: Int): String {
         return when (month) {
-            1 -> "Jan"
-            2 -> "Feb"
-            3 -> "Mär"
-            4 -> "Apr"
-            5 -> "Mai"
-            6 -> "Jun"
-            7 -> "Jul"
-            8 -> "Aug"
-            9 -> "Sep"
-            10 -> "Okt"
-            11 -> "Nov"
-            12 -> "Dez"
-            else -> "M$month"
+            1 -> context.getString(R.string.january_short)
+            2 -> context.getString(R.string.february_short)
+            3 -> context.getString(R.string.march_short)
+            4 -> context.getString(R.string.april_short)
+            5 -> context.getString(R.string.may_short)
+            6 -> context.getString(R.string.june_short)
+            7 -> context.getString(R.string.july_short)
+            8 -> context.getString(R.string.august_short)
+            9 -> context.getString(R.string.september_short)
+            10 -> context.getString(R.string.october_short)
+            11 -> context.getString(R.string.november_short)
+            12 -> context.getString(R.string.december_short)
+            else -> context.getString(R.string.gra_gra_month_num, month)
         }
     }
 }

@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Anzahl Ferienwochen:"
+        android:text="@string/dia_mark_vac_txt_weeks_label"
         android:textColor="@android:color/black"
         android:textSize="14sp"
         android:layout_marginBottom="8dp" />
@@ -25,7 +25,7 @@
         android:id="@+id/switch_remove_vacation"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Ferien entfernen"
+        android:text="@string/dia_mark_vac_switch_remove_vacation"
         android:textSize="16sp"
         android:layout_marginBottom="12dp"
         android:paddingVertical="8dp" />
@@ -42,7 +42,7 @@
             android:id="@+id/btn_auto_mark"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Ferien automatisch markieren"
+            android:text="@string/dia_mark_vac_btn_auto_mark"
             android:backgroundTint="@android:color/holo_blue_light"
             android:padding="12dp"
             android:paddingTop="14dp"
@@ -56,7 +56,7 @@
             android:id="@+id/btn_clear_all"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Alle Ferien löschen"
+            android:text="@string/dia_mark_vac_btn_clear_all"
             android:backgroundTint="@android:color/holo_red_light"
             android:padding="12dp"
             android:paddingTop="14dp"

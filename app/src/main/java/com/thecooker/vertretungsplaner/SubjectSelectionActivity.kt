@@ -1,7 +1,7 @@
 package com.thecooker.vertretungsplaner
 
+import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -18,7 +18,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -51,13 +50,13 @@ class SubjectSelectionActivity : BaseActivity() {
         val room: String,
         val alternativeRooms: List<String> = emptyList()
     ) {
-        fun getDisplayText(): String {
+        fun getDisplayText(context: Context): String {
             val parts = mutableListOf<String>()
             if (subject.isNotBlank()) parts.add(subject)
             if (teacher.isNotBlank() && teacher != "UNKNOWN") parts.add(teacher)
             if (room.isNotBlank() && room != "UNKNOWN") {
                 val roomDisplay = if (alternativeRooms.isNotEmpty()) {
-                    "$room (+${alternativeRooms.size} alt.)"
+                    context.getString(R.string.sub_sel_alt_rooms, room, alternativeRooms.size)
                 } else {
                     room
                 }
@@ -113,12 +112,12 @@ class SubjectSelectionActivity : BaseActivity() {
     private fun handleBackPress() {
         if (selectedSubjects.isNotEmpty()) {
             AlertDialog.Builder(this)
-                .setTitle("Auswahl verwerfen?")
-                .setMessage("Du hast ${selectedSubjects.size} Fächer ausgewählt. Möchtest du die Auswahl verwerfen?")
-                .setPositiveButton("Ja, verwerfen") { _, _ ->
+                .setTitle(getString(R.string.sub_sel_discard_selection))
+                .setMessage(getString(R.string.sub_sel_discard_confirm, selectedSubjects.size))
+                .setPositiveButton(getString(R.string.sub_sel_yes_discard)) { _, _ ->
                     finish()
                 }
-                .setNegativeButton("Zurück zur Auswahl", null)
+                .setNegativeButton(getString(R.string.sub_sel_back_to_selection), null)
                 .show()
         } else {
             finish()
@@ -144,7 +143,7 @@ class SubjectSelectionActivity : BaseActivity() {
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
             setDisplayShowHomeEnabled(true)
-            title = "Fächer auswählen"
+            title = getString(R.string.sub_sel_choose_subjects)
         }
     }
 
@@ -276,9 +275,9 @@ class SubjectSelectionActivity : BaseActivity() {
 
     private fun deleteSubject(triplet: SubjectTriplet) {
         AlertDialog.Builder(this)
-            .setTitle("Fach löschen")
-            .setMessage("Willst du das Fach '${triplet.getDisplayText()}' wirklich löschen?")
-            .setPositiveButton("Ja, löschen") { _, _ ->
+            .setTitle(getString(R.string.sub_sel_delete_subject))
+            .setMessage(getString(R.string.sub_sel_delete_subject_confirm, triplet.getDisplayText(this)))
+            .setPositiveButton(getString(R.string.sub_sel_yes_delete)) { _, _ ->
                 val index = allSubjectTriplets.indexOf(triplet)
                 if (index != -1) {
                     allSubjectTriplets.removeAt(index)
@@ -292,10 +291,10 @@ class SubjectSelectionActivity : BaseActivity() {
                 val currentSearch = searchEditText.text.toString().trim()
                 filterSubjects(currentSearch)
 
-                Toast.makeText(this, "Fach '${triplet.subject}' wurde gelöscht", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_subject_deleted, triplet.subject), Toast.LENGTH_SHORT).show()
                 L.d(TAG, "Total subjects now: ${allSubjectTriplets.size}")
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -317,7 +316,7 @@ class SubjectSelectionActivity : BaseActivity() {
 
         fun addAlternativeRoomField(text: String = "") {
             if (alternativeRoomEditTexts.size >= 2) {
-                Toast.makeText(this, "Maximal 2 alternative Räume erlaubt", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_max_alt_rooms), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -327,7 +326,7 @@ class SubjectSelectionActivity : BaseActivity() {
             }
 
             val editText = EditText(this).apply {
-                hint = "Alternativer Raum"
+                hint = getString(R.string.sub_sel_alt_room_hint)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
             }
@@ -395,9 +394,9 @@ class SubjectSelectionActivity : BaseActivity() {
         updateAlternativeRoomsVisibility()
 
         AlertDialog.Builder(this)
-            .setTitle("Fach bearbeiten")
+            .setTitle(R.string.sub_sel_edit_subject)
             .setView(dialogView)
-            .setPositiveButton("Speichern") { _, _ ->
+            .setPositiveButton(R.string.dialog_sec_save) { _, _ ->
                 val subjectText = editTextSubject.text.toString().trim()
                 val teacherText = editTextTeacher.text.toString().trim().ifEmpty { "UNKNOWN" }
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
@@ -412,16 +411,16 @@ class SubjectSelectionActivity : BaseActivity() {
                 if (subjectText.isNotEmpty()) {
                     updateSubject(triplet, subjectText, teacherText, roomText, alternativeRooms)
                 } else {
-                    Toast.makeText(this, "Gebe bitte mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.sub_sel_enter_atleast_one_subject), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun updateSubject(originalTriplet: SubjectTriplet, newSubject: String, newTeacher: String, newRoom: String, alternativeRooms: List<String>) {
         if (newSubject.length < 2) {
-            Toast.makeText(this, "Fach muss mindestens 2 Zeichen lang sein", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.sub_sel_min_length_error), Toast.LENGTH_LONG).show()
             return
         }
 
@@ -432,7 +431,7 @@ class SubjectSelectionActivity : BaseActivity() {
             }
 
             if (conflictingTriplet != null) {
-                Toast.makeText(this, "Ein Fach mit dem Namen '$newSubject' existiert bereits", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_subject_exists, newSubject), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -465,7 +464,7 @@ class SubjectSelectionActivity : BaseActivity() {
             val currentSearch = searchEditText.text.toString().trim()
             filterSubjects(currentSearch)
 
-            Toast.makeText(this, "Fach wurde aktualisiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.sub_sel_subject_updated), Toast.LENGTH_SHORT).show()
             L.d(TAG, "Successfully updated subject: '$newSubject' -> '$newTeacher' -> '$newRoom' + ${alternativeRooms.size} alt rooms")
         } else {
             L.e(TAG, "Failed to find original triplet for update!")
@@ -497,7 +496,7 @@ class SubjectSelectionActivity : BaseActivity() {
             allSubjectTriplets.forEach { triplet ->
                 if (triplet.matchesSearch(searchText)) {
                     filteredSubjectTriplets.add(triplet)
-                    L.d(TAG, "Match found: '${triplet.getDisplayText()}'")
+                    L.d(TAG, "Match found: '${triplet.getDisplayText(this)}'")
                 }
             }
             L.d(TAG, "Found ${filteredSubjectTriplets.size} matching subjects")
@@ -513,7 +512,7 @@ class SubjectSelectionActivity : BaseActivity() {
         tvSearchResults.visibility = View.GONE
     } else {
         tvSearchResults.visibility = View.VISIBLE
-        "${filteredSubjectTriplets.size} Ergebnisse für '$searchText'".also { tvSearchResults.text = it }
+        tvSearchResults.text = getString(R.string.sub_sel_search_results, filteredSubjectTriplets.size, searchText)
     }
 
     private fun setupListeners() {
@@ -540,12 +539,12 @@ class SubjectSelectionActivity : BaseActivity() {
         btnConfirm.setOnClickListener {
             if (selectedSubjects.isEmpty()) {
                 AlertDialog.Builder(this)
-                    .setTitle("Keine Fächer ausgewählt")
-                    .setMessage("Du hast keine Fächer ausgewählt. Trotzdem fortfahren?")
-                    .setPositiveButton("Ja, fortfahren") { _, _ ->
+                    .setTitle(getString(R.string.sub_sel_no_subjects))
+                    .setMessage(getString(R.string.sub_sel_no_subjects_confirm))
+                    .setPositiveButton(getString(R.string.sub_sel_yes_continue)) { _, _ ->
                         confirmSelection()
                     }
-                    .setNegativeButton("Zurück", null)
+                    .setNegativeButton(getString(R.string.sub_sel_return), null)
                     .show()
             } else {
                 confirmSelection()
@@ -573,7 +572,7 @@ class SubjectSelectionActivity : BaseActivity() {
 
         fun addAlternativeRoomField(text: String = "") {
             if (alternativeRoomEditTexts.size >= 2) {
-                Toast.makeText(this, "Maximal 2 alternative Räume erlaubt", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_max_alt_rooms), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -583,7 +582,7 @@ class SubjectSelectionActivity : BaseActivity() {
             }
 
             val editText = EditText(this).apply {
-                hint = "Alternativer Raum"
+                hint = getString(R.string.sub_sel_alt_room_hint)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
             }
@@ -642,9 +641,9 @@ class SubjectSelectionActivity : BaseActivity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Fach manuell hinzufügen")
+            .setTitle(getString(R.string.sub_sel_add_subject_manual))
             .setView(dialogView)
-            .setPositiveButton("Hinzufügen") { _, _ ->
+            .setPositiveButton(getString(R.string.sub_sel_add)) { _, _ ->
                 val subjectText = editTextSubject.text.toString().trim()
                 val teacherText = editTextTeacher.text.toString().trim().ifEmpty { "UNKNOWN" }
                 val roomText = editTextRoom.text.toString().trim().ifEmpty { "UNKNOWN" }
@@ -659,16 +658,16 @@ class SubjectSelectionActivity : BaseActivity() {
                 if (subjectText.isNotEmpty()) {
                     addManualSubject(subjectText, teacherText, roomText, alternativeRooms)
                 } else {
-                    Toast.makeText(this, "Bitte gebe mindestens ein Fach ein", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.sub_sel_enter_subject), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun addManualSubject(subjectText: String, teacherText: String, roomText: String, alternativeRooms: List<String>) {
         if (subjectText.length < 2) {
-            Toast.makeText(this, "Fach muss mindestens 2 Zeichen lang sein", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.sub_sel_min_length_error), Toast.LENGTH_LONG).show()
             return
         }
 
@@ -678,9 +677,9 @@ class SubjectSelectionActivity : BaseActivity() {
             val existingTriplet = allSubjectTriplets[existingIndex]
             if (existingTriplet.teacher != teacherText || existingTriplet.room != roomText || existingTriplet.alternativeRooms != alternativeRooms) {
                 allSubjectTriplets[existingIndex] = SubjectTriplet(subjectText, teacherText, roomText, alternativeRooms)
-                Toast.makeText(this, "Fach '$subjectText' wurde aktualisiert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_subject_name_updated, subjectText), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Fach '$subjectText' mit identischen Daten existiert bereits", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.sub_sel_subject_identical_with_existing, subjectText), Toast.LENGTH_SHORT).show()
             }
 
             if (!selectedSubjects.contains(subjectText)) {
@@ -693,7 +692,7 @@ class SubjectSelectionActivity : BaseActivity() {
 
             selectedSubjects.add(subjectText)
 
-            Toast.makeText(this, "Fach '$subjectText' hinzugefügt und ausgewählt", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.sub_sel_subject_added, subjectText), Toast.LENGTH_SHORT).show()
         }
 
         val alternativeRoomsMap = loadAlternativeRoomsFromPrefs().toMutableMap()
@@ -769,24 +768,24 @@ class SubjectSelectionActivity : BaseActivity() {
         tvTotalCount.text = filteredSubjectTriplets.size.toString()
 
         btnConfirm.text = if (selectedSubjects.isEmpty()) {
-            "Bestätigen"
+            getString(R.string.sub_sel_confirm)
         } else {
-            "Bestätigen (${selectedSubjects.size})"
+            getString(R.string.sub_sel_confirm_with_count, selectedSubjects.size)
         }
 
         val visibleSelectedCount = selectedSubjects.intersect(filteredSubjectTriplets.map { it.subject }.toSet()).size
         val visibleTotalCount = filteredSubjectTriplets.size
 
         btnSelectAll.text = if (visibleTotalCount == 0) {
-            "Alle auswählen"
+            getString(R.string.act_sub_sel_select_all)
         } else {
-            "Alle auswählen ($visibleTotalCount)"
+            getString(R.string.sub_sel_select_all, visibleTotalCount)
         }
 
         btnDeselectAll.text = if (visibleSelectedCount == 0) {
-            "Alle abwählen"
+            getString(R.string.act_sub_sel_deselect_all)
         } else {
-            "Alle abwählen ($visibleSelectedCount)"
+            getString(R.string.sub_sel_deselect_all, visibleTotalCount)
         }
 
         btnSelectAll.isEnabled = visibleSelectedCount < visibleTotalCount
@@ -825,7 +824,7 @@ class SubjectSelectionActivity : BaseActivity() {
             val subject = triplet.subject
 
             // show the full display text (subject | teacher | room)
-            holder.textSubject.text = triplet.getDisplayText()
+            holder.textSubject.text = triplet.getDisplayText(holder.itemView.context)
             holder.checkBox.isChecked = selectedItems.contains(subject)
 
             val selectionClickListener = View.OnClickListener {

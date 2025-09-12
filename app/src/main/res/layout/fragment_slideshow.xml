@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:hint="Nach Fach suchen..."
+            android:hint="@string/frag_slide_search_subject_hint"
             android:inputType="text"
             android:padding="12dp"
             android:background="@drawable/subtle_search_background"
@@ -67,7 +67,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Deine Hausaufgaben:"
+            android:text="@string/frag_slide_your_homework"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -75,7 +75,7 @@
             android:id="@+id/tvHomeworkCount"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0 / 0 Hausaufgaben"
+            android:text="@string/frag_slide_homework_count"
             android:textSize="14sp"
             android:textColor="@android:color/darker_gray" />
 

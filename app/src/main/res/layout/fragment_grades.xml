@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:hint="Nach Fach oder Lehrer suchen..."
+            android:hint="@string/frag_grades_search_hint"
             android:inputType="text"
             android:padding="12dp"
             android:paddingStart="20dp"
@@ -61,7 +61,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Deine Noten:"
+                android:text="@string/frag_grades_your_grades"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -69,7 +69,7 @@
                 android:id="@+id/tvGradeCount"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0 / 0 Fächer benotet"
+                android:text="@string/frag_grades_grade_count"
                 android:textSize="14sp"
                 android:textColor="@android:color/darker_gray" />
 
@@ -79,7 +79,7 @@
             android:id="@+id/tvFinalGrade"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Gesamtnote: -"
+            android:text="@string/frag_grades_final_grade"
             android:textSize="18sp"
             android:textStyle="bold"
             android:textColor="@android:color/black"
@@ -104,14 +104,14 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Deine Fächer haben sich geändert!"
+            android:text="@string/frag_grades_subject_change_title"
             android:textStyle="bold"
             android:textColor="@android:color/black" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Möchtest du die Notenseite mit den neuen Fächern aktualisieren?"
+            android:text="@string/frag_grades_subject_change_message"
             android:textColor="@android:color/black"
             android:layout_marginTop="4dp" />
 
@@ -126,7 +126,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Aktualisieren"
+                android:text="@string/frag_grades_update_button"
                 android:backgroundTint="@android:color/holo_green_light"
                 android:layout_marginEnd="8dp" />
 
@@ -135,7 +135,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Beibehalten"
+                android:text="@string/frag_grades_keep_button"
                 android:backgroundTint="@android:color/holo_red_light"
                 android:layout_marginStart="8dp" />
         </LinearLayout>

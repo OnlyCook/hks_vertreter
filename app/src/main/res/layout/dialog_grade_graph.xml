@@ -16,7 +16,7 @@
         android:id="@+id/btnShowTextData"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Textdaten anzeigen"
+        android:text="@string/dia_gr_gr_show_text"
         android:layout_marginBottom="8dp" />
 
     <ScrollView

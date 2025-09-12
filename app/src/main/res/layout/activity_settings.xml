@@ -30,7 +30,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Allgemeine Einstellungen"
+                android:text="@string/act_set_general_settings"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -55,7 +55,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Aktuelle Auswahl"
+                        android:text="@string/act_set_current_selection"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -65,7 +65,7 @@
                         android:id="@+id/tvCurrentSelection"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Bildungsgang: BG\nKlasse: 11BG1"
+                        android:text="@string/act_set_current_selection_details"
                         android:textSize="14sp"
                         android:lineSpacingExtra="2dp"
                         android:textColor="@android:color/darker_gray"
@@ -74,13 +74,103 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Zum Ändern bitte alle Daten weiter unten zurücksetzen"
+                        android:text="@string/act_set_change_hint"
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:textStyle="italic"
                         android:background="#FFF3E0"
                         android:padding="8dp"
                         android:radius="6dp" />
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- language settings -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:elevation="3dp"
+                android:radius="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/language_settings"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorPrimary"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/language_description"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        android:lineSpacingExtra="2dp"
+                        android:layout_marginBottom="16dp" />
+
+                    <!-- auto detect user phone lang -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/auto_detect_language"
+                            android:textSize="14sp"
+                            android:textColor="@android:color/black" />
+
+                        <Switch
+                            android:id="@+id/switchAutoDetectLanguage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                    </LinearLayout>
+
+                    <!-- manual lang selection -->
+                    <LinearLayout
+                        android:id="@+id/layoutManualLanguage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <Button
+                            android:id="@+id/btnSelectLanguage"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/german"
+                            android:textColor="@android:color/black"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:gravity="start|center_vertical"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp"
+                            android:minHeight="48dp"
+                            android:layout_marginBottom="8dp" />
+
+                    </LinearLayout>
+
+                    <!-- cur lang display -->
+                    <TextView
+                        android:id="@+id/tvCurrentLanguage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/current_language_german"
+                        android:textSize="12sp"
+                        android:textColor="@android:color/holo_blue_dark" />
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -104,7 +194,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Stundenplan Management"
+                        android:text="@string/act_set_timetable_management"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -113,7 +203,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Scanne deinen Stundenplan als PDF ein, um die App zu personalisieren"
+                        android:text="@string/act_set_timetable_description"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -142,7 +232,7 @@
                             android:id="@+id/btnScanTimetable"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Stundenplan einscannen"
+                            android:text="@string/act_set_scan_timetable"
                             android:textColor="@android:color/white"
                             android:layout_marginEnd="8dp"
                             android:paddingHorizontal="24dp"
@@ -174,7 +264,7 @@
                             android:id="@+id/btnEditTimetable"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Stundenplan bearbeiten"
+                            android:text="@string/act_set_edit_timetable"
                             android:textColor="@android:color/black"
                             android:background="?android:attr/selectableItemBackground"
                             android:layout_marginBottom="4dp"
@@ -200,7 +290,7 @@
                             android:id="@+id/btnImportTimetable"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Stundenplan importieren"
+                            android:text="@string/act_set_import_timetable"
                             android:textColor="@android:color/black"
                             android:background="?android:attr/selectableItemBackground"
                             android:gravity="start|center_vertical"
@@ -230,7 +320,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Startseite"
+                        android:text="@string/act_set_startup_page"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -239,7 +329,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Wähle die Seite, die beim App-Start angezeigt werden soll"
+                        android:text="@string/act_set_startup_description"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -249,7 +339,7 @@
                         android:id="@+id/btnStartupPage"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Startseite: Vertretungsplan"
+                        android:text="@string/act_set_startup_current"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -271,7 +361,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Vertretungsplan"
+                android:text="@string/act_set_substitution_plan"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -296,7 +386,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="Nur meine Fächer anzeigen"
+                        android:text="@string/act_set_filter_subjects"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -317,7 +407,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Zeigt nur Vertretungen für deine gescannten oder importierten Fächer an"
+                                android:text="@string/act_set_filter_subjects_desc"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:lineSpacingExtra="2dp" />
@@ -335,7 +425,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Nur verfügbar, wenn ein Stundenplan erfasst wurde"
+                        android:text="@string/act_set_filter_available_hint"
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:textStyle="italic"
@@ -364,7 +454,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="Filter-Aufheber Position"
+                        android:text="@string/act_set_filter_button_position"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -385,7 +475,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Position des temporären Filter-Aufhebungs-Buttons im Header"
+                                android:text="@string/act_set_filter_button_desc"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:lineSpacingExtra="2dp" />
@@ -401,7 +491,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Aus: Links (Standard) | Ein: Rechts"
+                        android:text="@string/act_set_filter_position_hint"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:textStyle="italic"
@@ -429,7 +519,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Automatische Updates"
+                        android:text="@string/act_set_auto_updates"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -438,7 +528,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Vertretungsplan automatisch im Hintergrund aktualisieren"
+                        android:text="@string/act_set_auto_updates_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -456,7 +546,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Automatische Updates aktivieren"
+                            android:text="@string/act_set_enable_auto_updates"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -472,7 +562,7 @@
                         android:id="@+id/btnAutoUpdateTime"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Update-Zeit: 06:00"
+                        android:text="@string/act_set_update_time"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -492,7 +582,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Update-Benachrichtigungen anzeigen"
+                            android:text="@string/act_set_show_update_notifications"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -532,7 +622,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Änderungs-Benachrichtigungen"
+                            android:text="@string/act_set_change_notifications"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorPrimary" />
@@ -544,7 +634,7 @@
                             android:src="@drawable/ic_info"
                             android:background="?android:attr/selectableItemBackgroundBorderless"
                             android:padding="2dp"
-                            android:contentDescription="Informationen zu Benachrichtigungen"
+                            android:contentDescription="@string/act_set_information_notification"
                             android:layout_marginStart="8dp"
                             android:tint="?attr/colorPrimary"/>
 
@@ -553,7 +643,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Bei Änderungen im Vertretungsplan benachrichtigen"
+                        android:text="@string/act_set_change_notifications_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -571,7 +661,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Änderungs-Benachrichtigungen aktivieren"
+                            android:text="@string/act_set_enable_change_notifications"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -587,7 +677,7 @@
                         android:id="@+id/btnChangeNotificationInterval"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Prüfintervall: Alle 15 Minuten"
+                        android:text="@string/act_set_check_interval"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -600,7 +690,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Benachrichtigen bei Änderungen von:"
+                        android:text="@string/act_set_notify_for_changes"
                         android:textSize="14sp"
                         android:textColor="@android:color/black"
                         android:layout_marginBottom="8dp" />
@@ -636,7 +726,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Netzwerk-Einstellungen"
+                        android:text="@string/act_set_network_settings"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -658,14 +748,14 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Nur über WLAN automatisch aktualisieren"
+                                android:text="@string/act_set_wifi_only"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/black" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Spart mobile Daten"
+                                android:text="@string/act_set_wifi_only_desc"
                                 android:textSize="12sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:layout_marginTop="2dp" />
@@ -696,7 +786,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="1-Minute Abkühlzeit beim Aktualisieren"
+                                android:text="@string/act_set_update_cooldown"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/black"
                                 android:layout_marginTop="8dp"/>
@@ -704,7 +794,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Verringert Internetverbrauch"
+                                android:text="@string/act_set_update_cooldown_desc"
                                 android:textSize="12sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:layout_marginTop="2dp" />
@@ -741,7 +831,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="Farbschwächen-Einstellungen"
+                        android:text="@string/act_set_colorblind_settings"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -762,7 +852,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Passt wichtige Farben basierend auf der ausgewählten Farbschwäche an"
+                                android:text="@string/act_set_colorblind_desc"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:lineSpacingExtra="2dp" />
@@ -796,7 +886,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Kalender"
+                android:text="@string/act_set_calendar"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -820,7 +910,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Echtzeit-Anzeige"
+                        android:text="@string/act_set_real_time_display"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -829,7 +919,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Zeigt und aktualisiert in Echtzeit an, welche Stunde gerade läuft und welches Fach du hast"
+                        android:text="@string/act_set_real_time_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -850,14 +940,14 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Echtzeit-Kalender aktivieren"
+                                android:text="@string/act_set_enable_real_time"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/black" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Aktualisiert alle 60 Sekunden"
+                                android:text="@string/act_set_real_time_update"
                                 android:textSize="12sp"
                                 android:textColor="@android:color/darker_gray"
                                 android:layout_marginTop="2dp" />
@@ -893,7 +983,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Wochenende miteinbeziehen"
+                        android:text="@string/act_set_include_weekend"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -902,7 +992,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Fügt das Wochenende mit in die Tages-Übersicht ein"
+                        android:text="@string/act_set_include_weekend_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -923,7 +1013,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Wochenende miteinbeziehen"
+                                android:text="@string/act_set_include_weekend"
                                 android:textSize="14sp"
                                 android:textColor="@android:color/black" />
 
@@ -952,7 +1042,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Hausaufgaben"
+                android:text="@string/act_set_homework"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -976,7 +1066,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Fälligkeits-Erinnerungen"
+                        android:text="@string/act_set_due_date_reminders"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -985,7 +1075,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnert dich vor der Fälligkeit deiner Hausaufgaben"
+                        android:text="@string/act_set_due_date_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1003,7 +1093,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Fälligkeits-Erinnerungen aktivieren"
+                            android:text="@string/act_set_enable_due_date_reminders"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -1019,7 +1109,7 @@
                         android:id="@+id/btnDueDateReminderHours"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnerung: 16 Stunden vorher"
+                        android:text="@string/act_set_reminder_hours"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -1047,7 +1137,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Tägliche Hausaufgaben-Erinnerung"
+                        android:text="@string/act_set_daily_reminder"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1056,7 +1146,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnert dich täglich an offene Hausaufgaben"
+                        android:text="@string/act_set_daily_reminder_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1074,7 +1164,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Tägliche Erinnerung aktivieren"
+                            android:text="@string/act_set_enable_daily_reminder"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -1090,7 +1180,7 @@
                         android:id="@+id/btnDailyReminderTime"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnerungszeit: 19:00"
+                        android:text="@string/act_set_reminder_time"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -1118,7 +1208,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Automatisches Löschen"
+                        android:text="@string/act_set_auto_delete"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1135,7 +1225,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Erledigte Hausaufgaben automatisch löschen"
+                            android:text="@string/act_set_auto_delete_desc"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -1150,7 +1240,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erledigte Hausaufgaben werden nach 3 Tagen automatisch gelöscht"
+                        android:text="@string/act_set_auto_delete_hint"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp" />
@@ -1169,7 +1259,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Klausuren"
+                android:text="@string/act_set_exams"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -1193,7 +1283,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Fälligkeits-Erinnerungen"
+                        android:text="@string/act_set_exam_due_date_reminders"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1202,7 +1292,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnert dich vor der Fälligkeit deiner Klausuren"
+                        android:text="@string/act_set_exam_due_date_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1220,7 +1310,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Fälligkeits-Erinnerungen aktivieren"
+                            android:text="@string/act_set_enable_exam_reminders"
                             android:textSize="14sp"
                             android:textColor="@android:color/black" />
 
@@ -1236,7 +1326,7 @@
                         android:id="@+id/btnExamDueDateReminderDays"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Erinnerung: 3 Tage vorher"
+                        android:text="@string/act_set_exam_reminder_days"
                         android:textColor="@android:color/black"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
@@ -1258,7 +1348,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="App-Darstellung"
+                android:text="@string/act_set_app_appearance"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -1282,7 +1372,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="App-Darstellung"
+                        android:text="@string/act_set_app_appearance"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1305,13 +1395,13 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="System-Design folgen"
+                                android:text="@string/act_set_follow_system_theme"
                                 android:textSize="14sp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Verwendet die Systemeinstellung für helles/dunkles Design"
+                                android:text="@string/act_set_follow_system_theme_desc"
                                 android:textSize="12sp"
                                 android:layout_marginTop="2dp" />
 
@@ -1342,13 +1432,13 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Dunkler Modus"
+                                android:text="@string/act_set_dark_mode"
                                 android:textSize="14sp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="App-Neustart erforderlich"
+                                android:text="@string/act_set_dark_mode_desc"
                                 android:textSize="12sp"
                                 android:layout_marginTop="2dp" />
 
@@ -1378,13 +1468,13 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Querformat zulassen"
+                                android:text="@string/act_set_landscape_mode"
                                 android:textSize="14sp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Ermöglicht das Drehen des Bildschirms"
+                                android:text="@string/act_set_landscape_mode_desc"
                                 android:textSize="12sp"
                                 android:layout_marginTop="2dp" />
 
@@ -1412,7 +1502,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Daten"
+                android:text="@string/act_set_data"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -1435,7 +1525,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Vollständige Datensicherung"
+                        android:text="@string/act_set_full_backup"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1444,7 +1534,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Sichere alle deine App-Daten in einer einzigen .hks-Datei (Stundenplan, Kalender, Hausaufgaben, Klausuren und Noten)"
+                        android:text="@string/act_set_backup_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1461,7 +1551,7 @@
                             android:id="@+id/btnImportFullBackup"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Importieren"
+                            android:text="@string/act_set_import"
                             android:textColor="@android:color/white"
                             android:layout_marginEnd="8dp"
                             android:paddingHorizontal="24dp" />
@@ -1470,7 +1560,7 @@
                             android:id="@+id/btnExportFullBackup"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Exportieren"
+                            android:text="@string/act_set_export"
                             android:textColor="@android:color/white"
                             android:paddingHorizontal="24dp" />
 
@@ -1498,7 +1588,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Daten zurücksetzen"
+                        android:text="@string/act_set_reset_data"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="@color/dark_red"
@@ -1507,7 +1597,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Alle gespeicherten Daten löschen und zur Ersteinrichtung zurückkehren"
+                        android:text="@string/act_set_reset_data_desc"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1517,7 +1607,7 @@
                         android:id="@+id/btnResetData"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Daten zurücksetzen"
+                        android:text="@string/act_set_reset_data"
                         android:layout_gravity="end"
                         android:textColor="@android:color/white"
                         android:backgroundTint="@color/dark_red"
@@ -1537,7 +1627,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="App-Informationen"
+                android:text="@string/act_set_app_info"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -1563,7 +1653,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Schule"
+                        android:text="@string/act_set_school"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1572,7 +1662,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Heinrich-Kleyer-Schule\nKühhornshofweg 27\n60320 Frankfurt am Main"
+                        android:text="@string/act_set_school_address"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="4dp" />
@@ -1599,7 +1689,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Datenschutz &amp; Nutzungsbedingungen"
+                        android:text="@string/act_set_privacy_terms"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1609,7 +1699,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Datenschutz"
+                        android:text="@string/act_set_privacy"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1618,7 +1708,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Keine Datensammlung durch den Entwickler\n• Alle Daten bleiben auf deinem Gerät\n• Internetverbindung nur zu: heinrich-kleyer-schule.de (und optional zu: kultus.hessen.de)"
+                        android:text="@string/act_set_privacy_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1628,7 +1718,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="App-Features"
+                        android:text="@string/act_set_app_features"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1637,7 +1727,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Keine Werbung oder In-App-Käufe\n• Hintergrundprozesse nur bei manueller Aktivierung\n• Benachrichtigungen standardmäßig deaktiviert\n• Völlig kostenlos und Open Source"
+                        android:text="@string/act_set_features_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1647,7 +1737,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Hinweis"
+                        android:text="@string/act_set_disclaimer"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1656,7 +1746,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Die App kann Fehler oder falsche Informationen enthalten. Algorithmen sind nicht 100% fehlerfrei. Die Schule kann das Format des Vertretungs-, Klausur- oder Stundenplans ändern. Nutzung auf eigene Verantwortung."
+                        android:text="@string/act_set_disclaimer_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:lineSpacingExtra="2dp"
@@ -1686,7 +1776,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Kontakt &amp; Credits"
+                        android:text="@string/act_set_contact_credits"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1696,7 +1786,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Entwickler"
+                        android:text="@string/act_set_developer"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1705,7 +1795,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Nikodem Karol Jastrzab (Schüler der HKS)"
+                        android:text="@string/act_set_developer_name"
                         android:textSize="14sp"
                         android:textColor="@android:color/darker_gray"
                         android:layout_marginBottom="12dp" />
@@ -1714,7 +1804,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Kontakt"
+                        android:text="@string/act_set_contact"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1723,7 +1813,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Für Fehlerberichte, Vorschläge oder fehlende Inhalte:"
+                        android:text="@string/act_set_contact_desc"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:layout_marginBottom="4dp" />
@@ -1732,7 +1822,7 @@
                         android:id="@+id/btnContactEmail"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="theactualcooker@gmail.com"
+                        android:text="@string/act_set_contact_email"
                         android:textSize="14sp"
                         android:textColor="?attr/colorPrimary"
                         android:textStyle="bold"
@@ -1764,7 +1854,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Rechtliche Informationen"
+                        android:text="@string/act_set_legal_info"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="?attr/colorPrimary"
@@ -1774,7 +1864,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Impressum"
+                        android:text="@string/act_set_imprint"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1783,7 +1873,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Verantwortlich für den Inhalt:\nNikodem Karol Jastrzab\ntheactualcooker@gmail.com"
+                        android:text="@string/act_set_imprint_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1793,7 +1883,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Datenverarbeitung (DSGVO)"
+                        android:text="@string/act_set_data_processing"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1802,7 +1892,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Diese App verarbeitet keine personenbezogenen Daten. Alle Einstellungen und Daten werden ausschließlich lokal auf deinem Gerät gespeichert. Es findet keine Übertragung an Dritte statt."
+                        android:text="@string/act_set_data_processing_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp"
@@ -1812,7 +1902,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Haftungsausschluss"
+                        android:text="@string/act_set_liability"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@android:color/black"
@@ -1821,7 +1911,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Der Entwickler übernimmt keine Haftung für die Richtigkeit der angezeigten Informationen. Die App dient nur zur Information. Verbindliche Auskünfte erhältst du direkt von der Schule."
+                        android:text="@string/act_set_liability_details"
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:lineSpacingExtra="2dp" />
@@ -1853,7 +1943,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="App-Version"
+                            android:text="@string/act_set_app_version"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="@android:color/black" />
@@ -1862,7 +1952,7 @@
                             android:id="@+id/tvAppVersion"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Loading..."
+                            android:text="@string/act_set_loading"
                             android:textSize="12sp"
                             android:textColor="@android:color/darker_gray"
                             android:layout_marginTop="2dp" />

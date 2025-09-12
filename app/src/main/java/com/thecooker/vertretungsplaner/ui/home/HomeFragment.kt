@@ -238,10 +238,10 @@ class HomeFragment : Fragment() {
         val currentTime = System.currentTimeMillis()
         val timeSinceLastLoad = currentTime - lastLoadTime
 
-        val klasse = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt")
+        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
 
-        if (klasse == "Nicht ausgewählt") {
-            showError("Keine Klasse ausgewählt. Bitte wählen Sie eine Klasse in den Einstellungen.")
+        if (klasse == getString(R.string.home_not_selected)) { // be cautious about this
+            showError(getString(R.string.home_no_class_selected))
             return
         }
 
@@ -322,7 +322,7 @@ class HomeFragment : Fragment() {
         }
 
         refreshButton = Button(requireContext()).apply {
-            "Aktualisieren".also { text = it }
+            text = getString(R.string.home_refresh)
             textSize = 16f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setBackgroundColor(resources.getColor(android.R.color.white, null))
@@ -506,14 +506,14 @@ class HomeFragment : Fragment() {
             scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         }
 
-        val klasse = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt")
+        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
 
-        if (klasse == "Nicht ausgewählt") {
-            showError("Keine Klasse ausgewählt. Bitte wählen Sie eine Klasse in den Einstellungen.")
+        if (klasse == getString(R.string.home_not_selected)) {
+            showError(getString(R.string.home_no_class_selected))
             return
         }
 
-        "Klasse: $klasse".also { classText.text = it }
+        classText.text = getString(R.string.home_class_prefix, klasse)
 
         if (!isNetworkAvailable()) {
             L.d("HomeFragment", "No internet connection, trying to load cached data")
@@ -533,7 +533,7 @@ class HomeFragment : Fragment() {
                 if (::contentLayout.isInitialized) {
                     contentLayout.removeAllViews()
                     val loadingText = TextView(requireContext()).apply {
-                        "Lade Vertretungsplan...".also { text = it }
+                        text = getString(R.string.home_loading_plan)
                         gravity = android.view.Gravity.CENTER
                         textSize = 16f
                         layoutParams = LinearLayout.LayoutParams(
@@ -574,7 +574,7 @@ class HomeFragment : Fragment() {
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
                 if (::lastUpdateText.isInitialized) {
-                    "Stand: $lastUpdate".also { lastUpdateText.text = it }
+                lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
                 }
                 displaySubstitutePlan(substitutePlan)
 
@@ -589,7 +589,7 @@ class HomeFragment : Fragment() {
                 }
 
                 view?.let {
-                    Snackbar.make(it, "Netzwerkfehler: ${e.message}", Snackbar.LENGTH_LONG).show()
+                    Snackbar.make(it, getString(R.string.home_network_error, e.message), Snackbar.LENGTH_LONG).show()
                 }
 
                 loadCachedSubstitutePlan(klasse!!)
@@ -607,7 +607,7 @@ class HomeFragment : Fragment() {
 
             val jsonData = JSONObject(cachedData)
             if (::lastUpdateText.isInitialized) {
-                "Stand: $lastUpdate (Offline)".also { lastUpdateText.text = it }
+                lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
             }
             displaySubstitutePlan(jsonData)
 
@@ -647,7 +647,7 @@ class HomeFragment : Fragment() {
             // Extract the "Stand" information
             val regex = """<div class="vpstand">Stand: ([^<]+)</div>""".toRegex()
             val matchResult = regex.find(html)
-            matchResult?.groups?.get(1)?.value ?: "Unbekannt"
+            matchResult?.groups?.get(1)?.value ?: "Unbekannt" // be cautious about this
         } finally {
             connection.disconnect()
         }
@@ -685,7 +685,7 @@ class HomeFragment : Fragment() {
 
         if (dates == null || dates.length() == 0) {
             val noEntriesText = TextView(requireContext()).apply {
-                "Leider entfällt nichts. 😭".also { text = it }
+                text = getString(R.string.home_no_entries_all)
                 gravity = android.view.Gravity.CENTER
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -763,9 +763,9 @@ class HomeFragment : Fragment() {
 
         if (!hasVisibleEntries) {
             val message = if (filterOnlyMySubjects && studentSubjects.isNotEmpty() && totalEntries > 0) {
-                "Deine Fächer sind nicht betroffen! 😭"
+                getString(R.string.home_no_entries_filtered)
             } else {
-                "Leider entfällt nichts. 😭"
+                getString(R.string.home_no_entries_all)
             }
 
             val noEntriesText = TextView(requireContext()).apply {
@@ -808,8 +808,8 @@ class HomeFragment : Fragment() {
         if ((filterOnlyMySubjects || isTemporaryFilterDisabled) && studentSubjects.isNotEmpty() && totalEntries > 0) {
             val filterInfo = TextView(requireContext()).apply {
                 text = when {
-                    isTemporaryFilterDisabled -> "Filter temporär deaktiviert: Alle $totalEntries Einträge angezeigt"
-                    totalEntries > filteredEntries -> "Filter aktiv: $filteredEntries von $totalEntries Einträgen angezeigt"
+                    isTemporaryFilterDisabled -> getString(R.string.home_filter_temp_disabled, totalEntries)
+                    totalEntries > filteredEntries -> getString(R.string.home_filter_active, filteredEntries, totalEntries)
                     else -> null
                 }
 
@@ -866,10 +866,10 @@ class HomeFragment : Fragment() {
             daysDifference == 0
 
             when {
-                daysDifference == 0 -> Pair("$formattedDate (heute)", true)
-                daysDifference == 1 -> Pair("$formattedDate (morgen)", false)
-                daysDifference == 2 -> Pair("$formattedDate (übermorgen)", false)
-                daysDifference >= 7 -> Pair("$formattedDate (nächste Woche)", false)
+                daysDifference == 0 -> Pair("$formattedDate ${getString(R.string.home_today_suffix)}", true)
+                daysDifference == 1 -> Pair("$formattedDate ${getString(R.string.home_tomorrow_suffix)}", false)
+                daysDifference == 2 -> Pair("$formattedDate ${getString(R.string.home_day_after_tomorrow_suffix)}", false)
+                daysDifference >= 7 -> Pair("$formattedDate ${getString(R.string.home_next_week_suffix)}", false)
                 else -> Pair(formattedDate, false)
             }
         } catch (_: Exception) {
@@ -912,7 +912,7 @@ class HomeFragment : Fragment() {
             }
         }
 
-        val headers = arrayOf("Stunde", "Fach", "Raum", "Art")
+        val headers = arrayOf(getString(R.string.home_table_lesson), getString(R.string.home_table_subject), getString(R.string.home_table_room), getString(R.string.home_table_type))
         val headerWeights = arrayOf(0.9f, 1f, 0.8f, 2.3f)
 
         headers.forEachIndexed { index, headerText ->
@@ -942,9 +942,9 @@ class HomeFragment : Fragment() {
             val stundeBis = entry.optInt("stundebis", -1)
             val stundeText = if (stundeBis != -1 && stundeBis != stunde) {
                 val duration = stundeBis - stunde + 1
-                "$stunde.-$stundeBis.\n($duration Std.)"
+                getString(R.string.home_lesson_duration_multiple, stunde, stundeBis, duration)
             } else {
-                "$stunde.\n(1 Std.)"
+                getString(R.string.home_lesson_duration, stunde)
             }
 
             val stundeCell = TextView(requireContext()).apply {
@@ -1036,7 +1036,7 @@ class HomeFragment : Fragment() {
     private fun formatArtText(originalText: String): String {
         return when {
             // "Auf einen anderen Termin verlegt"
-            originalText == "Auf einen anderen Termin verlegt" -> "Entfällt (verlegt)"
+            originalText == "Auf einen anderen Termin verlegt" -> getString(R.string.home_substitution_moved)
 
             // "Sp-3 entfällt, stattdessen De-3 in Raum A403"
             originalText.matches(Regex(".*entfällt, stattdessen .* in Raum .*")) -> {
@@ -1046,7 +1046,7 @@ class HomeFragment : Fragment() {
                     val newSubject = matchResult.groups[1]?.value ?: ""
                     val room = matchResult.groups[2]?.value ?: ""
                     val originalSubject = originalText.substringBefore(" entfällt")
-                    "$newSubject in Raum $room (statt $originalSubject)"
+                    getString(R.string.home_substitution_replaced, newSubject, room, originalSubject)
                 } else {
                     originalText
                 }
@@ -1059,14 +1059,16 @@ class HomeFragment : Fragment() {
                 if (matchResult != null) {
                     val originalSubject = matchResult.groups[1]?.value ?: ""
                     val newSubject = matchResult.groups[2]?.value ?: ""
-                    "$newSubject (statt $originalSubject)"
+                    getString(R.string.home_substitution_subject_replaced, newSubject, originalSubject)
                 } else {
                     originalText
                 }
             }
 
             // hard coded cases
-            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> "Entfällt (Exk., Prak., Veran.)"
+            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.home_substitution_canceled_event)
+            originalText == "Entfällt" -> getString(R.string.home_is_cancelled)
+            // translate more cases
 
             else -> originalText
         }
@@ -1108,7 +1110,7 @@ class HomeFragment : Fragment() {
 
         contentLayout.removeAllViews()
         val noInternetText = TextView(requireContext()).apply {
-            "Keine Internetverbindung.\nBitte überprüfe deine Verbindung und versuche es erneut.".also { text = it }
+            text = getString(R.string.home_no_internet)
             gravity = android.view.Gravity.CENTER
             textSize = 16f
             setTextColor(resources.getColor(android.R.color.holo_orange_dark, null))

@@ -14,7 +14,7 @@
             android:id="@+id/tvSubjectInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Fach-Informationen"
+            android:text="@string/dlg_edit_sub_subject_info"
             android:textSize="12sp"
             android:textStyle="italic"
             android:background="@android:color/background_light"
@@ -36,7 +36,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Anzahl Klausuren dieses Halbjahr"
+                    android:text="@string/dlg_edit_sub_exam_count"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -50,7 +50,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="2 Klausuren"
+                        android:text="@string/dlg_edit_sub_two_exams"
                         android:textSize="12sp" />
 
                     <Switch
@@ -62,7 +62,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1 Klausur"
+                        android:text="@string/dlg_edit_sub_one_exam"
                         android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -84,7 +84,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Prüfungsfach-Einstellungen"
+                    android:text="@string/dlg_edit_sub_exam_subject_settings"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -100,7 +100,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Als Prüfungsfach wählen"
+                        android:text="@string/dlg_edit_sub_choose_exam_subject"
                         android:textSize="12sp" />
 
                     <Switch
@@ -120,7 +120,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Prüfungsergebnis (4x gewichtet):"
+                        android:text="@string/dlg_edit_sub_exam_result"
                         android:textSize="12sp"
                         android:textStyle="italic"
                         android:layout_marginBottom="4dp" />
@@ -129,7 +129,7 @@
                         android:id="@+id/editPruefungsergebnis"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="z.B. 12 (Punkte 0-15)"
+                        android:hint="@string/dlg_edit_sub_exam_result_hint"
                         android:inputType="numberDecimal"
                         android:padding="8dp"
                         android:background="@drawable/subtle_search_background"
@@ -155,7 +155,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Halbjahre-Auswahl"
+                    android:text="@string/dlg_edit_sub_half_years_selection"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -164,7 +164,7 @@
                     android:id="@+id/tvHalfYearsCount"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="2 beste Halbjahre zählen"
+                    android:text="@string/dlg_edit_sub_half_years_count"
                     android:textSize="12sp"
                     android:gravity="center"
                     android:background="@android:color/background_light"
@@ -196,7 +196,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Mündliche Note (aktuelles Halbjahr)"
+                    android:text="@string/dlg_edit_sub_oral_grade"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -212,7 +212,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Noten"
+                        android:text="@string/dlg_edit_sub_grades"
                         android:textSize="11sp" />
 
                     <Switch
@@ -227,13 +227,13 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Punkte"
+                        android:text="@string/dlg_edit_sub_points"
                         android:textSize="11sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Exakt"
+                        android:text="@string/dlg_edit_sub_exact"
                         android:textSize="11sp" />
 
                     <Switch
@@ -247,7 +247,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bereich"
+                        android:text="@string/dlg_edit_sub_range"
                         android:textSize="11sp" />
                 </LinearLayout>
 
@@ -262,7 +262,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:hint="z.B. 11 (Punkte 0-15)"
+                        android:hint="@string/dlg_edit_sub_oral_grade_hint"
                         android:inputType="numberDecimal"
                         android:padding="8dp"
                         android:background="@drawable/subtle_search_background"
@@ -298,7 +298,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Verhältnis Mündlich : Schriftlich"
+                    android:text="@string/dlg_edit_sub_ratio"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -307,7 +307,7 @@
                     android:id="@+id/tvRatioDisplay"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Verhältnis: 50% : 50%"
+                    android:text="@string/dlg_edit_sub_ratio_display"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:gravity="center"
@@ -318,7 +318,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Mündlich:"
+                    android:text="@string/dlg_edit_sub_oral"
                     android:textSize="11sp"
                     android:layout_marginBottom="4dp" />
 
@@ -333,7 +333,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Schriftlich:"
+                    android:text="@string/dlg_edit_sub_written"
                     android:textSize="11sp"
                     android:layout_marginBottom="4dp" />
 

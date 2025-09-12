@@ -132,23 +132,23 @@ class ExamReminderWorker(
         )
 
         val title = if (exams.size == 1) {
-            "Klausur steht bevor"
+            context.getString(R.string.exam_rem_single_title)
         } else {
-            "${exams.size} Klausuren stehen bevor"
+            context.getString(R.string.exam_rem_multiple_title, exams.size)
         }
 
         val content = if (exams.size == 1) {
             val exam = exams.first()
             val daysUntil = exam.getDaysUntilExam()
             val timeText = when (daysUntil) {
-                0L -> "heute"
-                1L -> "morgen"
-                else -> "in $daysUntil Tag${if (daysUntil > 1) "en" else ""}"
+                0L -> context.getString(R.string.exam_rem_today)
+                1L -> context.getString(R.string.exam_rem_tomorrow)
+                else -> context.getString(R.string.exam_rem_days, daysUntil, (if (daysUntil > 1) "en" else ""))
             }
             "${exam.subject}: $timeText"
         } else {
             val subjects = exams.take(3).joinToString(", ") { it.subject }
-            if (exams.size > 3) "$subjects und ${exams.size - 3} weitere" else subjects
+            if (exams.size > 3) context.getString(R.string.exam_rem_multiple_content, subjects, exams.size - 3) else subjects
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_EXAM)
@@ -171,10 +171,10 @@ class ExamReminderWorker(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID_EXAM,
-                "Klausur Erinnerungen",
+                context.getString(R.string.exam_rem_channel_name),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Erinnerungen für bevorstehende Klausuren"
+                description = context.getString(R.string.exam_rem_channel_description)
             }
 
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

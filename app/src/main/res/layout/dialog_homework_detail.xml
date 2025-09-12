@@ -14,7 +14,7 @@
             android:id="@+id/textSubject"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Mathematik"
+            android:text="@string/dia_ho_de_subject"
             android:textSize="20sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp" />
@@ -23,7 +23,7 @@
             android:id="@+id/textDueDate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="heute fällig"
+            android:text="@string/dia_ho_de_due_date"
             android:textSize="16sp"
             android:textColor="@android:color/holo_red_dark"
             android:layout_marginBottom="16dp" />

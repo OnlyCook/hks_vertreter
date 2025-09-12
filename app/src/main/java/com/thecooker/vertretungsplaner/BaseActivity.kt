@@ -1,15 +1,21 @@
 package com.thecooker.vertretungsplaner
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import java.util.Locale
 
 open class BaseActivity : AppCompatActivity() {
 
     protected lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val savedLanguage = LanguageUtil.getSavedLanguage(this)
+        LanguageUtil.setLanguage(this, savedLanguage)
+
         super.onCreate(savedInstanceState)
 
         sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
@@ -32,5 +38,21 @@ open class BaseActivity : AppCompatActivity() {
         if (requestedOrientation != targetOrientation) {
             requestedOrientation = targetOrientation
         }
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        val savedLanguage = LanguageUtil.getSavedLanguage(newBase)
+        val context = updateBaseContextLocale(newBase, savedLanguage)
+        super.attachBaseContext(context)
+    }
+
+    private fun updateBaseContextLocale(context: Context, languageCode: String): Context {
+        val locale = Locale(languageCode)
+        Locale.setDefault(locale)
+
+        val config = Configuration(context.resources.configuration)
+        config.setLocale(locale)
+
+        return context.createConfigurationContext(config)
     }
 }

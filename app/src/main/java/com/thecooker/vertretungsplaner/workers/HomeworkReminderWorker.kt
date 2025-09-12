@@ -158,7 +158,7 @@ class HomeworkReminderWorker(
     private fun showDueDateNotification(
         homework: List<SlideshowFragment.HomeworkEntry>
     ) {
-        createNotificationChannel(CHANNEL_ID_DUE_DATE, "Hausaufgaben Fälligkeitserinnerung", "Erinnerungen vor Fälligkeit")
+        createNotificationChannel(CHANNEL_ID_DUE_DATE, context.getString(R.string.hw_notification_channel_due), context.getString(R.string.hw_notification_channel_due_desc))
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -171,17 +171,17 @@ class HomeworkReminderWorker(
         )
 
         val title = if (homework.size == 1) {
-            "Hausaufgabe wird bald fällig"
+            context.getString(R.string.hw_due_soon_single)
         } else {
-            "${homework.size} Hausaufgaben werden bald fällig"
+            context.getString(R.string.hw_due_soon_multiple, homework.size)
         }
 
         val content = if (homework.size == 1) {
             val hw = homework.first()
-            "${hw.subject}: ${hw.getDueDateString()}"
+            "${hw.subject}: ${hw.getDueDateString(context)}"
         } else {
             val subjects = homework.take(3).joinToString(", ") { it.subject }
-            if (homework.size > 3) "$subjects und ${homework.size - 3} weitere" else subjects
+            if (homework.size > 3) context.getString(R.string.hw_subject_and_more, subjects, homework.size - 3) else subjects
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_DUE_DATE)
@@ -214,17 +214,17 @@ class HomeworkReminderWorker(
         )
 
         val title = if (homework.size == 1) {
-            "1 offene Hausaufgabe"
+            context.getString(R.string.hw_daily_single)
         } else {
-            "${homework.size} offene Hausaufgaben"
+            context.getString(R.string.hw_daily_multiple, homework.size)
         }
 
         val content = if (homework.size == 1) {
             val hw = homework.first()
-            "${hw.subject}: ${hw.getDueDateString()}"
+            "${hw.subject}: ${hw.getDueDateString(context)}"
         } else {
             val subjects = homework.take(3).joinToString(", ") { it.subject }
-            if (homework.size > 3) "$subjects und ${homework.size - 3} weitere" else subjects
+            if (homework.size > 3) context.getString(R.string.hw_subject_and_more, subjects, homework.size - 3) else subjects
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_DAILY)

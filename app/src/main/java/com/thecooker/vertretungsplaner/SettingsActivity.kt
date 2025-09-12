@@ -160,6 +160,7 @@ class SettingsActivity : BaseActivity() {
         setupCalendarWeekendSetting()
         setupBackUpManager()
         setupFilterLift()
+        setupLanguageSettings()
 
         isInitializing = false
     }
@@ -222,7 +223,7 @@ class SettingsActivity : BaseActivity() {
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
             setDisplayShowHomeEnabled(true)
-            title = "Einstellungen"
+            title = getString(R.string.set_act_title)
         }
     }
 
@@ -265,8 +266,8 @@ class SettingsActivity : BaseActivity() {
 
                 L.d(TAG, "Subject filtering ${if (isChecked) "enabled" else "disabled"}")
                 Toast.makeText(this,
-                    if (isChecked) "Nur eigene Fächer werden angezeigt"
-                    else "Alle Fächer werden angezeigt",
+                    if (isChecked) getString(R.string.set_act_subject_filter_enabled)
+                    else getString(R.string.set_act_subject_filter_disabled),
                     Toast.LENGTH_SHORT).show()
             } else {
                 sharedPreferences.edit {
@@ -284,8 +285,8 @@ class SettingsActivity : BaseActivity() {
                 }
 
                 Toast.makeText(this,
-                    if (isChecked) "Update-Cooldown deaktiviert"
-                    else "Update-Cooldown aktiviert",
+                    if (isChecked) getString(R.string.set_act_update_cooldown_disabled)
+                    else getString(R.string.set_act_update_cooldown_enabled),
                     Toast.LENGTH_SHORT).show()
             } else {
                 sharedPreferences.edit {
@@ -336,10 +337,10 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun loadCurrentSelection() {
-        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "Nicht ausgewählt")
-        val klasse = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt")
+        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", getString(R.string.set_act_not_selected))
+        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.set_act_not_selected))
 
-        val selectionText = "Bildungsgang: $bildungsgang\nKlasse: $klasse"
+        val selectionText = getString(R.string.set_act_current_selection_format, bildungsgang, klasse)
         tvCurrentSelection.text = selectionText
     }
 
@@ -423,7 +424,7 @@ class SettingsActivity : BaseActivity() {
         editor.putString("all_extracted_rooms", extractedRooms.joinToString(","))
 
         val klasse = sharedPreferences.getString("selected_klasse", "")
-        editor.putString("scanned_document_info", "Klasse: $klasse")
+        editor.putString("scanned_document_info", "${getString(R.string.set_act_class)}: $klasse")
 
         val success = editor.commit() // commit instead apply (i died here)
         L.d(TAG, "SharedPreferences save success: $success")
@@ -438,9 +439,8 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "Saved all_extracted_rooms: '$verifyRooms'")
 
         updateTimetableButton()
-        Toast.makeText(this,
-            "Stundenplan erfolgreich gespeichert\n${selectedSubjects.size} Fächer ausgewählt",
-            Toast.LENGTH_SHORT).show()
+        val message = getString(R.string.set_act_timetable_save_success_format, selectedSubjects.size)
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
         L.d(TAG, "Selected data saved successfully:")
         for (i in selectedSubjects.indices) {
@@ -468,12 +468,12 @@ class SettingsActivity : BaseActivity() {
         extractedRooms.clear()
         knownSubjectRooms.clear()
         updateTimetableButton()
-        Toast.makeText(this, "Stundenplan gelöscht", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.set_act_timetable_deleted), Toast.LENGTH_SHORT).show()
     }
 
     private fun updateTimetableButton() {
         if (isDocumentScanned()) {
-            "Stundenplan löschen".also { btnScanTimetable.text = it }
+            btnScanTimetable.text = getString(R.string.set_act_delete_timetable_btn)
             val documentInfo = sharedPreferences.getString("scanned_document_info", "")
             val selectedSubjects = sharedPreferences.getString("student_subjects", "")?.split(",") ?: emptyList()
             val alternativeRooms = sharedPreferences.getString("alternative_rooms", "")
@@ -481,14 +481,15 @@ class SettingsActivity : BaseActivity() {
                 val subjectCount = if (!alternativeRooms.isNullOrBlank()) JSONObject(
                     alternativeRooms
                 ).length() else 0
-                "\nAusgewählte Fächer: ${selectedSubjects.size} ($subjectCount mit alt. Räumen)"
+                getString(R.string.set_act_selected_subjects_format, selectedSubjects.size, subjectCount)
             } else {
-                "\nKeine Fächer ausgewählt"
+                getString(R.string.set_act_no_subjects_selected)
             }
-            "Gescanntes Dokument:\n$documentInfo$subjectInfo".also { tvScannedDocument.text = it }
+            val fullText = getString(R.string.set_act_scanned_document_format, documentInfo, subjectInfo)
+            tvScannedDocument.text = fullText
             tvScannedDocument.visibility = TextView.VISIBLE
         } else {
-            "Stundenplan einscannen".also { btnScanTimetable.text = it }
+            btnScanTimetable.text = getString(R.string.set_act_scan_timetable)
             tvScannedDocument.visibility = TextView.GONE
         }
 
@@ -514,11 +515,11 @@ class SettingsActivity : BaseActivity() {
 
         try {
             startActivityForResult(
-                Intent.createChooser(intent, "PDF-Datei auswählen"),
+                Intent.createChooser(intent, getString(R.string.set_act_choose_pdf_file)),
                 PDF_PICKER_REQUEST_CODE
             )
         } catch (_: Exception) {
-            Toast.makeText(this, "Keine PDF-Reader App gefunden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_pdf_app), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -602,7 +603,7 @@ class SettingsActivity : BaseActivity() {
                         L.e(TAG, "pdf validation failed: ${validationResult.errorMessage}")
                         Toast.makeText(
                             this@SettingsActivity,
-                            "Ungültige PDF-Datei: ${validationResult.errorMessage}",
+                            getString(R.string.set_act_invalid_pdf, validationResult.errorMessage),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -612,7 +613,7 @@ class SettingsActivity : BaseActivity() {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         this@SettingsActivity,
-                        "Fehler beim Lesen der PDF: ${e.message}",
+                        getString(R.string.set_act_pdf_error, e.message),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -621,7 +622,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun extractTextFromPdf(uri: Uri): String { // dont ask what this does🗣️
-        val inputStream = contentResolver.openInputStream(uri) ?: throw Exception("Konnte PDF nicht öffnen")
+        val inputStream = contentResolver.openInputStream(uri) ?: throw Exception(getString(R.string.set_act_couldnt_open_pdf))
 
         return inputStream.use { stream ->
             val reader = PdfReader(stream)
@@ -670,7 +671,7 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "=== STARTING PDF VALIDATION ===")
         L.d(TAG, "Text length: ${text.length}")
 
-        // Extract school year
+        // Extract school year - keep German keywords for parsing
         val schuljahrRegex = Regex("Schuljahr\\s+(\\d{4}/\\d{4})")
         val schuljahrMatch = schuljahrRegex.find(text)
         val schuljahr = schuljahrMatch?.groupValues?.get(1)
@@ -678,14 +679,14 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "Found Schuljahr: $schuljahr")
 
         if (schuljahr == null) {
-            return ValidationResult(false, "Schuljahr nicht gefunden", "", "", emptyList())
+            return ValidationResult(false, getString(R.string.set_act_schoolyear_not_found), "", "", emptyList())
         }
 
-        // Check school identifier
+        // Check school identifier - keep German school names
         L.d(TAG, "Looking for school identifier: $VALID_SCHOOL_IDENTIFIER")
         if (!text.contains(VALID_SCHOOL_IDENTIFIER, ignoreCase = true) && !text.contains(VALID_SCHOOL_IDENTIFIER_ALT, ignoreCase = true)) {
             L.d(TAG, "School identifier not found")
-            return ValidationResult(false, "Ungültige Schule", "", "", emptyList())
+            return ValidationResult(false, getString(R.string.set_act_invalid_school), "", "", emptyList())
         }
         L.d(TAG, "School identifier found")
 
@@ -694,10 +695,10 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "User selected class: $userKlasse")
 
         if (userKlasse.isEmpty()) {
-            return ValidationResult(false, "Keine Klasse ausgewählt", "", "", emptyList())
+            return ValidationResult(false, getString(R.string.set_act_no_class_selected), "", "", emptyList())
         }
 
-        val klassePrefix = userKlasse.replace(Regex("\\d+$"), "") // Remove trailing numbers
+        val klassePrefix = userKlasse.replace(Regex("\\d+$"), "")
         L.d(TAG, "Looking for class prefix: $klassePrefix")
 
         // Look for the class in the text more flexibly
@@ -722,7 +723,7 @@ class SettingsActivity : BaseActivity() {
 
         if (foundKlasse.isEmpty()) {
             L.d(TAG, "Class not found in PDF")
-            return ValidationResult(false, "Klasse $userKlasse nicht in PDF gefunden", "", "", emptyList())
+            return ValidationResult(false, getString(R.string.set_act_class_not_found_format, userKlasse), "", "", emptyList())
         }
 
         // Extract subjects
@@ -732,7 +733,7 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "Final validation - Extracted ${subjects.size} subjects: $subjects")
 
         if (subjects.isEmpty()) {
-            return ValidationResult(false, "Keine Fächer gefunden", "", "", emptyList())
+            return ValidationResult(false, getString(R.string.set_act_no_subjects_found), "", "", emptyList())
         }
 
         return ValidationResult(
@@ -1227,7 +1228,7 @@ class SettingsActivity : BaseActivity() {
         L.d(TAG, "Launching SubjectSelectionActivity with ${extractedSubjects.size} subjects")
 
         if (extractedSubjects.isEmpty()) {
-            Toast.makeText(this, "Keine Fächer zum Auswählen gefunden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_subjects_to_select_found), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1255,26 +1256,26 @@ class SettingsActivity : BaseActivity() {
 
     private fun showDeleteTimetableDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Stundenplan löschen")
-            .setMessage("Willst du den gescannten Stundenplan wirklich löschen?")
-            .setPositiveButton("Ja, löschen") { _, _ ->
+            .setTitle(getString(R.string.set_act_delete_timetable))
+            .setMessage(getString(R.string.set_act_delete_confirm))
+            .setPositiveButton(getString(R.string.set_act_yes_delete)) { _, _ ->
                 updateDeleteTimetableData()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.set_act_cancel), null)
             .show()
     }
 
     private fun showResetConfirmationDialog() {
         val builder = AlertDialog.Builder(this)
-        builder.setTitle("Daten zurücksetzen")
-        builder.setMessage("Bist du sicher, dass du alle gespeicherten Daten zurücksetzen möchten?\n\nDas wird dich zur Ersteinrichtung zurückführen.")
+        builder.setTitle(getString(R.string.set_act_reset))
+        builder.setMessage(getString(R.string.set_act_reset_confirm))
         builder.setIcon(android.R.drawable.ic_dialog_alert)
 
-        builder.setPositiveButton("Ja, zurücksetzen") { _, _ ->
+        builder.setPositiveButton(getString(R.string.set_act_yes_reset)) { _, _ ->
             resetAppData()
         }
 
-        builder.setNegativeButton("Abbrechen") { dialog, _ ->
+        builder.setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
             dialog.dismiss()
         }
 
@@ -1287,6 +1288,22 @@ class SettingsActivity : BaseActivity() {
         }
 
         extractedSubjects.clear()
+        extractedTeachers.clear()
+        extractedRooms.clear()
+        knownSubjectRooms.clear()
+
+        tempImportContent = null
+        tempImportSections = null
+
+        WorkScheduler.cancelAutoUpdate(this)
+        WorkScheduler.cancelChangeNotification(this)
+        WorkScheduler.cancelDueDateReminder(this)
+        WorkScheduler.cancelDailyHomeworkReminder(this)
+        WorkScheduler.cancelExamReminder(this)
+
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+        Toast.makeText(this, getString(R.string.set_act_reset_complete), Toast.LENGTH_SHORT).show()
 
         val intent = Intent(this, SetupActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -1314,7 +1331,7 @@ class SettingsActivity : BaseActivity() {
 
     private fun exportTimetable() {
         if (!isDocumentScanned()) {
-            Toast.makeText(this, "Kein Stundenplan zum Exportieren verfügbar", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_timetable_found_to_export), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1322,7 +1339,7 @@ class SettingsActivity : BaseActivity() {
             showExportOptions()
         } catch (e: Exception) {
             L.e(TAG, "Error exporting timetable", e)
-            Toast.makeText(this, "Fehler beim Exportieren: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "${getString(R.string.set_act_error_while_exporting)}: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1341,14 +1358,14 @@ class SettingsActivity : BaseActivity() {
         val alternativeRoomsJson = sharedPreferences.getString("alternative_rooms", "{}")
 
         val content = StringBuilder()
-        content.appendLine("# Heinrich-Kleyer-Schule Stundenplan Export")
-        content.appendLine("# Exportiert am: ${SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMAN).format(Date())}")
+        content.appendLine(getString(R.string.set_act_export_header))
+        content.appendLine(getString(R.string.set_act_export_timestamp, SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMAN).format(Date())))
         content.appendLine()
         content.appendLine("SCHULJAHR=$schuljahr")
         content.appendLine("KLASSE=$klasse")
         content.appendLine("BILDUNGSGANG=$bildungsgang")
         content.appendLine()
-        content.appendLine("# Fächer (Format: Fach|Lehrer|Raum)")
+        content.appendLine(getString(R.string.set_act_export_subjects_header))
 
         for (i in subjects.indices) {
             val subject = subjects[i]
@@ -1358,7 +1375,7 @@ class SettingsActivity : BaseActivity() {
         }
 
         content.appendLine()
-        content.appendLine("# Alternative Räume (JSON)")
+        content.appendLine(getString(R.string.set_act_export_alt_rooms_header))
         content.appendLine("ALTERNATIVE_ROOMS=$alternativeRoomsJson")
 
         return content.toString()
@@ -1379,8 +1396,8 @@ class SettingsActivity : BaseActivity() {
     private fun showExportOptions() {
         val content = generateExportContent()
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_export_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_export_clipboard), R.drawable.ic_export_clipboard)
         )
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
             this,
@@ -1397,14 +1414,14 @@ class SettingsActivity : BaseActivity() {
             }
         }
         AlertDialog.Builder(this)
-            .setTitle("Stundenplan exportieren")
+            .setTitle(getString(R.string.act_set_export_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveToFile(content)
                     1 -> copyToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1424,22 +1441,22 @@ class SettingsActivity : BaseActivity() {
         try {
             startActivityForResult(intent, EXPORT_FILE_REQUEST_CODE)
         } catch (_: Exception) {
-            Toast.makeText(this, "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_error_while_opening_file_dialog), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun copyToClipboard(content: String) {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Stundenplan", content)
+        val clip = ClipData.newPlainText(getString(R.string.set_act_timetable), content)
         clipboard.setPrimaryClip(clip)
 
-        Toast.makeText(this, "Stundenplan in die Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.set_act_timetable_saved_to_clipboard), Toast.LENGTH_SHORT).show()
     }
 
     private fun showImportOptions() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_import_clipboard), R.drawable.ic_import_clipboard)
         )
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
             this,
@@ -1456,14 +1473,14 @@ class SettingsActivity : BaseActivity() {
             }
         }
         AlertDialog.Builder(this)
-            .setTitle("Stundenplan importieren")
+            .setTitle(getString(R.string.act_set_import_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFile()
                     1 -> importFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1475,11 +1492,11 @@ class SettingsActivity : BaseActivity() {
 
         try {
             startActivityForResult(
-                Intent.createChooser(intent, "HKS-Datei auswählen"),
+                Intent.createChooser(intent, getString(R.string.set_act_select_hks_file)),
                 IMPORT_FILE_REQUEST_CODE
             )
         } catch (_: Exception) {
-            Toast.makeText(this, "Keine Datei-Manager App gefunden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_file_manager_app_found), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1492,10 +1509,10 @@ class SettingsActivity : BaseActivity() {
             if (!clipText.isNullOrEmpty()) {
                 processImportContent(clipText)
             } else {
-                Toast.makeText(this, "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_clipboard_is_empty), Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(this, "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_clipboard_is_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1505,11 +1522,11 @@ class SettingsActivity : BaseActivity() {
             if (importResult.isValid) {
                 showImportConfirmationDialog(importResult)
             } else {
-                Toast.makeText(this, "Ungültige Datei: ${importResult.errorMessage}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "${getString(R.string.set_act_invalid_fild)}: ${importResult.errorMessage}", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             L.e(TAG, "Error processing import content", e)
-            Toast.makeText(this, "Fehler beim Importieren: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "${getString(R.string.set_act_error_while_importing)}: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1541,46 +1558,41 @@ class SettingsActivity : BaseActivity() {
             }
         }
 
-        // validation
         if (schuljahr.isEmpty()) {
-            return ImportResult(false, "Schuljahr nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, getString(R.string.set_act_school_year_not_found), "", "", "", emptyList(), emptyList(), emptyList())
         }
 
         if (klasse.isEmpty()) {
-            return ImportResult(false, "Klasse nicht gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, getString(R.string.set_act_class_not_found), "", "", "", emptyList(), emptyList(), emptyList())
         }
 
         if (subjects.isEmpty()) {
-            return ImportResult(false, "Keine Fächer gefunden", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, getString(R.string.set_act_no_subjects_found), "", "", "", emptyList(), emptyList(), emptyList())
         }
 
         // validate class matches users selection
         val userKlasse = sharedPreferences.getString("selected_klasse", "") ?: ""
         if (userKlasse.isNotEmpty() && klasse != userKlasse) {
-            return ImportResult(false, "Klasse stimmt nicht überein (Datei: $klasse, Ausgewählt: $userKlasse)", "", "", "", emptyList(), emptyList(), emptyList())
+            return ImportResult(false, getString(R.string.set_act_class_mismatch_format, klasse, userKlasse), "", "", "", emptyList(), emptyList(), emptyList())
         }
 
         return ImportResult(true, "", schuljahr, klasse, bildungsgang, subjects, teachers, rooms, alternativeRoomsJson)
     }
 
     private fun showImportConfirmationDialog(importResult: ImportResult) {
-        val message = """
-        Stundenplan importieren?
-        
-        Schuljahr: ${importResult.schuljahr}
-        Klasse: ${importResult.klasse}
-        Fächer: ${importResult.subjects.size}
-        
-        Dies wird den aktuellen Stundenplan ersetzen.
-    """.trimIndent()
+        val message = getString(R.string.set_act_import_confirmation_format,
+            importResult.schuljahr,
+            importResult.klasse,
+            importResult.subjects.size
+        )
 
         AlertDialog.Builder(this)
-            .setTitle("Import bestätigen")
+            .setTitle(getString(R.string.set_act_confirm_import))
             .setMessage(message)
-            .setPositiveButton("Importieren") { _, _ ->
+            .setPositiveButton(getString(R.string.act_set_import)) { _, _ ->
                 executeImport(importResult)
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1611,19 +1623,16 @@ class SettingsActivity : BaseActivity() {
             putString("all_extracted_rooms", importResult.rooms.joinToString(","))
             putString(
                 "scanned_document_info",
-                "Schuljahr ${importResult.schuljahr}\n${importResult.klasse} (Importiert)"
+                getString(R.string.set_act_document_info_format, importResult.schuljahr, importResult.klasse)
             )
-
             putString("alternative_rooms", importResult.alternativeRooms)
-
         }
 
         updateTimetableButton()
         setupFilterSwitch()
 
-        Toast.makeText(this,
-            "Stundenplan erfolgreich importiert\n${importResult.subjects.size} Fächer geladen",
-            Toast.LENGTH_LONG).show()
+        val message = getString(R.string.set_act_import_success_format, importResult.subjects.size)
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
         isOptionsExpanded = false
         layoutTimetableOptions.visibility = View.GONE
@@ -1633,7 +1642,7 @@ class SettingsActivity : BaseActivity() {
 
     private fun editTimetable() {
         if (!isDocumentScanned()) {
-            Toast.makeText(this, "Kein Stundenplan zum Bearbeiten verfügbar", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_timetable_available_to_edit), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1653,7 +1662,7 @@ class SettingsActivity : BaseActivity() {
             val klasse = sharedPreferences.getString("selected_klasse", "")
 
             if (allExtractedSubjects.isEmpty()) {
-                Toast.makeText(this, "Keine Fächer zum Bearbeiten verfügbar", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_no_subjects_found_to_edit), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -1674,7 +1683,7 @@ class SettingsActivity : BaseActivity() {
 
         } catch (e: Exception) {
             L.e(TAG, "Error launching edit timetable", e)
-            Toast.makeText(this, "Fehler beim Öffnen der Bearbeitung: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_error_trying_to_open_edit, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1686,27 +1695,32 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun setupStartupPageSetting() {
-        val startupPages = arrayOf("Kalender", "Vertretungsplan (empfohlen)", "Hausaufgaben", "Klausuren", "Noten")
+        val startupPages = arrayOf(
+            getString(R.string.act_set_calendar),
+            getString(R.string.set_act_substitute_plan_recommended),
+            getString(R.string.act_set_homework),
+            getString(R.string.act_set_exams),
+            getString(R.string.dlg_edit_sub_grades)
+        )
         val currentSelection = sharedPreferences.getInt("startup_page_index", 1)
 
-        "Startseite: ${startupPages[currentSelection]}".also { btnStartupPage.text = it }
+        btnStartupPage.text = getString(R.string.set_act_startup_page_format, startupPages[currentSelection])
 
         btnStartupPage.setOnClickListener {
             AlertDialog.Builder(this)
-                .setTitle("Startseite auswählen")
+                .setTitle(getString(R.string.set_act_choose_start_up_page))
                 .setSingleChoiceItems(startupPages, currentSelection) { dialog, which ->
                     sharedPreferences.edit {
                         putInt("startup_page_index", which)
                     }
 
-                    "Startseite: ${startupPages[which]}".also { btnStartupPage.text = it }
+                    btnStartupPage.text = getString(R.string.set_act_startup_page_format, startupPages[which])
                     dialog.dismiss()
 
-                    Toast.makeText(this,
-                        "Startseite geändert zu: ${startupPages[which]}",
-                        Toast.LENGTH_SHORT).show()
+                    val message = getString(R.string.set_act_startup_changed_format, startupPages[which])
+                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
                 }
-                .setNegativeButton("Abbrechen", null)
+                .setNegativeButton(getString(R.string.cancel), null)
                 .show()
         }
     }
@@ -1718,7 +1732,7 @@ class SettingsActivity : BaseActivity() {
         val showUpdateNotifications = sharedPreferences.getBoolean("show_update_notifications", true)
 
         switchAutoUpdate.isChecked = autoUpdateEnabled
-        "Update-Zeit: $autoUpdateTime".also { btnAutoUpdateTime.text = it }
+        btnAutoUpdateTime.text = getString(R.string.set_act_update_time_format, autoUpdateTime)
         switchUpdateWifiOnly.isChecked = updateWifiOnly
         switchShowUpdateNotifications.isChecked = showUpdateNotifications
 
@@ -1731,10 +1745,10 @@ class SettingsActivity : BaseActivity() {
 
             if (isChecked) {
                 WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
-                Toast.makeText(this, "Automatische Updates aktiviert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_automatic_updates_activated), Toast.LENGTH_SHORT).show()
             } else {
                 WorkScheduler.cancelAutoUpdate(this)
-                Toast.makeText(this, "Automatische Updates deaktiviert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_automatic_updates_deactivated), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -1742,11 +1756,12 @@ class SettingsActivity : BaseActivity() {
             TimePickerDialogHelper.showTimePicker(this, autoUpdateTime) { selectedTime ->
                 sharedPreferences.edit { putString("auto_update_time", selectedTime) }
 
-                "Update-Zeit: $selectedTime".also { btnAutoUpdateTime.text = it }
+                btnAutoUpdateTime.text = getString(R.string.set_act_update_time_format, selectedTime)
 
                 if (switchAutoUpdate.isChecked) {
                     WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
-                    Toast.makeText(this, "Update-Zeit geändert: $selectedTime", Toast.LENGTH_SHORT).show()
+                    val message = getString(R.string.set_act_update_time_changed_format, selectedTime)
+                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1762,8 +1777,8 @@ class SettingsActivity : BaseActivity() {
             }
 
             Toast.makeText(this,
-                if (isChecked) "Updates nur über WLAN aktiviert"
-                else "Updates über alle Verbindungen aktiviert",
+                if (isChecked) getString(R.string.set_act_updates_only_through_wifi_activated)
+                else getString(R.string.set_act_updates_through_all_connections_enabled),
                 Toast.LENGTH_SHORT).show()
         }
 
@@ -1771,8 +1786,8 @@ class SettingsActivity : BaseActivity() {
             sharedPreferences.edit { putBoolean("show_update_notifications", isChecked)}
 
             Toast.makeText(this,
-                if (isChecked) "Update-Benachrichtigungen aktiviert"
-                else "Update-Benachrichtigungen deaktiviert",
+                if (isChecked) getString(R.string.set_act_update_notis_activated)
+                else getString(R.string.set_act_update_notis_deactivated),
                 Toast.LENGTH_SHORT).show()
         }
     }
@@ -1796,10 +1811,10 @@ class SettingsActivity : BaseActivity() {
 
             if (isChecked) {
                 WorkScheduler.scheduleChangeNotification(this, sharedPreferences)
-                Toast.makeText(this, "Änderungs-Benachrichtigungen aktiviert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_change_notifications_enabled), Toast.LENGTH_SHORT).show()
             } else {
                 WorkScheduler.cancelChangeNotification(this)
-                Toast.makeText(this, "Änderungs-Benachrichtigungen deaktiviert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_change_notifications_disabled), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -1811,7 +1826,7 @@ class SettingsActivity : BaseActivity() {
 
                 if (switchChangeNotification.isChecked) {
                     WorkScheduler.scheduleChangeNotification(this, sharedPreferences)
-                    Toast.makeText(this, "Prüfintervall geändert: ${formatInterval(selectedInterval)}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "${getString(R.string.set_act_check_interval_changed)}: ${formatInterval(selectedInterval)}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1828,8 +1843,8 @@ class SettingsActivity : BaseActivity() {
 
         val typeTexts = types.map { type ->
             when (type) {
-                "all_class_subjects" -> "Alle Fächer der Klasse"
-                "my_subjects_only" -> "Nur meine Fächer"
+                "all_class_subjects" -> getString(R.string.set_act_all_subjects_of_my_class)
+                "my_subjects_only" -> getString(R.string.set_act_only_my_subjects)
                 else -> type
             }
         }
@@ -1884,9 +1899,9 @@ class SettingsActivity : BaseActivity() {
 
     private fun formatInterval(minutes: Int): String {
         return when {
-            minutes < 60 -> "Alle $minutes Minuten"
-            minutes == 60 -> "Alle 1 Stunde"
-            else -> "Alle ${minutes / 60} Stunden"
+            minutes < 60 -> "${getString(R.string.set_act_all)} $minutes ${getString(R.string.set_act_minutes)}"
+            minutes == 60 -> getString(R.string.set_act_one_hour)
+            else -> getString(R.string.set_act_all_hours, minutes / 60)
         }
     }
 
@@ -1948,7 +1963,7 @@ class SettingsActivity : BaseActivity() {
                 }
                 startActivity(intent)
             } catch (_: Exception) {
-                Toast.makeText(this, "Einstellungen konnten nicht geöffnet werden", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_settings_error), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1962,7 +1977,7 @@ class SettingsActivity : BaseActivity() {
                 val intent = Intent(Settings.ACTION_SETTINGS)
                 startActivity(intent)
             } catch (_: Exception) {
-                Toast.makeText(this, "Einstellungen konnten nicht geöffnet werden", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_settings_error), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1976,9 +1991,9 @@ class SettingsActivity : BaseActivity() {
             HomeworkUtils.setAutoDeleteEnabled(this, isChecked)
 
             val message = if (isChecked) {
-                "Automatisches Löschen aktiviert"
+                getString(R.string.set_act_auto_delete_enabled)
             } else {
-                "Automatisches Löschen deaktiviert"
+                getString(R.string.set_act_auto_delete_disabled)
             }
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
@@ -2037,26 +2052,29 @@ class SettingsActivity : BaseActivity() {
         val dailyReminderTime = sharedPreferences.getString("daily_homework_reminder_time", "19:00")
 
         switchDueDateReminder.isChecked = dueDateReminderEnabled
-        "Erinnerung: $dueDateReminderHours Stunden vorher".also { btnDueDateReminderHours.text = it }
+        btnDueDateReminderHours.text = getString(R.string.set_act_remind_hours_before_format, dueDateReminderHours)
 
         switchDailyHomeworkReminder.isChecked = dailyHomeworkReminderEnabled
-        "Erinnerungszeit: $dailyReminderTime".also { btnDailyReminderTime.text = it }
+        btnDailyReminderTime.text = getString(R.string.set_act_reminder_time_format, dailyReminderTime)
     }
 
     private fun showDueDateReminderHoursDialog() {
         val currentHours = sharedPreferences.getInt("due_date_reminder_hours", 16)
-        val hoursOptions = arrayOf("1 Stunde", "2 Stunden", "4 Stunden", "8 Stunden", "12 Stunden", "16 Stunden", "18 Stunden", "20 Stunden", "22 Stunden", "24 Stunden", "48 Stunden")
+        val hoursOptions = arrayOf(getString(R.string.set_act_1_hour), getString(R.string.set_act_2_hours),
+            getString(R.string.set_act_4_hours), getString(R.string.set_act_8_hours), getString(R.string.set_act_12_hours),
+            getString(R.string.set_act_16_hours), getString(R.string.set_act_18_hours), getString(R.string.set_act_20_hours),
+            getString(R.string.set_act_22_hours), getString(R.string.set_act_24_hours), getString(R.string.set_act_48_hours))
         val hoursValues = arrayOf(1, 2, 4, 8, 12, 16, 18,  20,22, 24, 48)
 
         val currentIndex = hoursValues.indexOf(currentHours).let { if (it == -1) 5 else it } // default 16
 
         AlertDialog.Builder(this)
-            .setTitle("Erinnerung vor Fälligkeit")
+            .setTitle(getString(R.string.set_act_due_date_reminder))
             .setSingleChoiceItems(hoursOptions, currentIndex) { dialog, which ->
                 val selectedHours = hoursValues[which]
                 sharedPreferences.edit { putInt("due_date_reminder_hours", selectedHours) }
 
-                "Erinnerung: $selectedHours Stunden vorher".also { btnDueDateReminderHours.text = it }
+                btnDueDateReminderHours.text = getString(R.string.set_act_remind_hours_before, selectedHours)
 
                 if (switchDueDateReminder.isChecked) {
                     WorkScheduler.scheduleDueDateReminder(this, sharedPreferences)
@@ -2064,7 +2082,7 @@ class SettingsActivity : BaseActivity() {
 
                 dialog.dismiss()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2082,7 +2100,7 @@ class SettingsActivity : BaseActivity() {
                     putString("daily_homework_reminder_time", timeString)
                 }
 
-                "Erinnerungszeit: $timeString".also { btnDailyReminderTime.text = it }
+                btnDailyReminderTime.text = getString(R.string.set_act_reminder_time, timeString)
 
                 if (switchDailyHomeworkReminder.isChecked) {
                     WorkScheduler.scheduleDailyHomeworkReminder(this, sharedPreferences)
@@ -2103,15 +2121,15 @@ class SettingsActivity : BaseActivity() {
 
     private fun openEmailClientFromSettings() {
         val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = "mailto:theactualcooker@gmail.com".toUri()
-            putExtra(Intent.EXTRA_SUBJECT, "HKS Vertreter - Kontakt")
-            putExtra(Intent.EXTRA_TEXT, "Hallo,\n\nich habe eine Frage/ein Problem mit der App:\n\n")
+            data = getString(R.string.set_act_hks_contact_email).toUri()
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.set_act_hks_contact))
+            putExtra(Intent.EXTRA_TEXT, getString(R.string.set_act_hks_contact_extra))
         }
 
         try {
-            startActivity(Intent.createChooser(emailIntent, "E-Mail-App auswählen"))
+            startActivity(Intent.createChooser(emailIntent, getString(R.string.set_act_choose_email_app)))
         } catch (_: Exception) {
-            Toast.makeText(this, "Keine E-Mail-App gefunden. Bitte kopiere die E-Mail-Adresse manuell: theactualcooker@gmail.com", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_no_email_app), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2182,35 +2200,35 @@ class SettingsActivity : BaseActivity() {
         switchExamDueDateReminder.isChecked = examDueDateReminderEnabled
 
         val daysText = when (examDueDateReminderDays) {
-            1 -> "1 Tag vorher"
-            in 2..6 -> "$examDueDateReminderDays Tage vorher"
-            7 -> "1 Woche vorher"
-            14 -> "2 Wochen vorher"
-            21 -> "3 Wochen vorher"
-            else -> "$examDueDateReminderDays Tage vorher"
+            1 -> getString(R.string.set_act_one_day_before)
+            in 2..6 -> getString(R.string.set_act_days_before_format, examDueDateReminderDays)
+            7 -> getString(R.string.set_act_one_week_before)
+            14 -> getString(R.string.set_act_two_weeks_before)
+            21 -> getString(R.string.set_act_three_weeks_before)
+            else -> getString(R.string.set_act_days_before_format, examDueDateReminderDays)
         }
-        "Erinnerung: $daysText".also { btnExamDueDateReminderDays.text = it }
-        //btnExamDueDateReminderDays.isEnabled = examDueDateReminderEnabled
+        btnExamDueDateReminderDays.text = getString(R.string.set_act_exam_due_date_reminder_format, daysText)
     }
 
     private fun showExamDueDateReminderDaysDialog() {
         val currentDays = sharedPreferences.getInt("exam_due_date_reminder_days", 7)
         val daysOptions = arrayOf(
-            "1 Tag vorher", "2 Tage vorher", "3 Tage vorher", "4 Tage vorher", "5 Tage vorher",
-            "6 Tage vorher", "1 Woche vorher", "2 Wochen vorher", "3 Wochen vorher"
+            getString(R.string.set_act_one_day_before), getString(R.string.set_act_two_days_before), getString(R.string.set_act_three_days_before),
+            getString(R.string.set_act_four_days_before), getString(R.string.set_act_five_days_before), getString(R.string.set_act_six_days_before),
+            getString(R.string.set_act_one_week_before), getString(R.string.set_act_two_weeks_before), getString(R.string.set_act_three_weeks_before)
         )
         val daysValues = arrayOf(1, 2, 3, 4, 5, 6, 7, 14, 21)
 
         val currentIndex = daysValues.indexOf(currentDays).let { if (it == -1) 6 else it } // default 1 week
 
         AlertDialog.Builder(this)
-            .setTitle("Erinnerung vor Klausur")
+            .setTitle(getString(R.string.set_act_reminder_before_exam))
             .setSingleChoiceItems(daysOptions, currentIndex) { dialog, which ->
                 val selectedDays = daysValues[which]
                 sharedPreferences.edit { putInt("exam_due_date_reminder_days", selectedDays) }
 
                 val daysText = daysOptions[which]
-                "Erinnerung: $daysText".also { btnExamDueDateReminderDays.text = it }
+                btnExamDueDateReminderDays.text = getString(R.string.set_act_exam_due_date_reminder_format, daysText)
 
                 if (switchExamDueDateReminder.isChecked) {
                     WorkScheduler.scheduleExamReminder(this, sharedPreferences)
@@ -2218,7 +2236,7 @@ class SettingsActivity : BaseActivity() {
 
                 dialog.dismiss()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2239,8 +2257,8 @@ class SettingsActivity : BaseActivity() {
                 applyOrientationSetting(isChecked)
 
                 Toast.makeText(this,
-                    if (isChecked) "Querformat aktiviert"
-                    else "Querformat deaktiviert",
+                    if (isChecked) getString(R.string.set_act_landscape_enabled)
+                    else getString(R.string.set_act_landscape_disabled),
                     Toast.LENGTH_SHORT).show()
             } else {
                 sharedPreferences.edit {
@@ -2311,7 +2329,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun restartAppSafely() {
-        Toast.makeText(this, "Einstellungen gespeichert. App wird neu gestartet...", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, getString(R.string.set_act_settings_saved), Toast.LENGTH_LONG).show()
 
         Handler(Looper.getMainLooper()).postDelayed({
             val intent = Intent(this, MainActivity::class.java)
@@ -2335,8 +2353,8 @@ class SettingsActivity : BaseActivity() {
                 sharedPreferences.edit {putBoolean("calendar_real_time_enabled", isChecked) }
 
                 Toast.makeText(this,
-                    if (isChecked) "Echtzeit-Kalender aktiviert"
-                    else "Echtzeit-Kalender deaktiviert",
+                    if (isChecked) getString(R.string.set_act_real_time_calendar_enabled)
+                    else getString(R.string.set_act_real_time_calendar_disabled),
                     Toast.LENGTH_SHORT).show()
             } else {
                 sharedPreferences.edit {putBoolean("calendar_real_time_enabled", isChecked) }
@@ -2358,8 +2376,8 @@ class SettingsActivity : BaseActivity() {
                 }
 
                 Toast.makeText(this,
-                    if (isChecked) "Wochenenden im Kalender aktiviert"
-                    else "Wochenenden im Kalender deaktiviert",
+                    if (isChecked) getString(R.string.set_act_weekends_enabled)
+                    else getString(R.string.set_act_weekends_disabled),
                     Toast.LENGTH_SHORT
                 ).show()
             } else {
@@ -2387,7 +2405,7 @@ class SettingsActivity : BaseActivity() {
             }
         } catch (e: Exception) {
             L.e(TAG, "Error starting full backup", e)
-            Toast.makeText(this, "Fehler beim Starten der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2408,7 +2426,7 @@ class SettingsActivity : BaseActivity() {
                     runOnUiThread {
                         progressDialog.dismiss()
                         L.e(TAG, "Error creating backup", e)
-                        Toast.makeText(this@SettingsActivity, "Fehler beim Erstellen der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@SettingsActivity, getString(R.string.set_act_error_while_backing_up, e.message), Toast.LENGTH_LONG).show()
                     }
                 }
             }.start()
@@ -2422,12 +2440,12 @@ class SettingsActivity : BaseActivity() {
         onSectionsSelected: (Set<String>) -> Unit
     ) {
         val sections = availableSections ?: listOf(
-            BackupManager.BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
-            BackupManager.BackupSection("CALENDAR_DATA", "Kalender-Daten"),
-            BackupManager.BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
-            BackupManager.BackupSection("EXAM_DATA", "Klausuren"),
-            BackupManager.BackupSection("GRADE_DATA", "Noten"),
-            BackupManager.BackupSection("APP_SETTINGS", "App-Einstellungen")
+            BackupManager.BackupSection("TIMETABLE_DATA", getString(R.string.set_act_timetable_data)),
+            BackupManager.BackupSection("CALENDAR_DATA", getString(R.string.set_act_calendar_data)),
+            BackupManager.BackupSection("HOMEWORK_DATA", getString(R.string.act_set_homework)),
+            BackupManager.BackupSection("EXAM_DATA", getString(R.string.act_set_exams)),
+            BackupManager.BackupSection("GRADE_DATA", getString(R.string.dlg_edit_sub_grades)),
+            BackupManager.BackupSection("APP_SETTINGS", getString(R.string.set_act_app_settings))
         )
 
         val dialog = SectionSelectionDialog(this, isExport, sections, currentSelection)
@@ -2502,8 +2520,8 @@ class SettingsActivity : BaseActivity() {
     private fun showFullBackupExportOptions(content: String) {
         //val content = backupManager.createFullBackup()
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_backup_save_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_backup_copy_clipboard), R.drawable.ic_export_clipboard)
         )
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
             this,
@@ -2520,14 +2538,14 @@ class SettingsActivity : BaseActivity() {
             }
         }
         AlertDialog.Builder(this)
-            .setTitle("Vollständige Sicherung exportieren")
+            .setTitle(getString(R.string.set_act_export_full_backup))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveFullBackupToFile(content)
                     1 -> copyFullBackupToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2546,22 +2564,22 @@ class SettingsActivity : BaseActivity() {
         try {
             startActivityForResult(intent, FULL_BACKUP_EXPORT_REQUEST_CODE)
         } catch (_: Exception) {
-            Toast.makeText(this, "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_error_while_opening_file_dialog), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun copyFullBackupToClipboard(content: String) {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("HKS Vollständige Sicherung", content)
+        val clip = ClipData.newPlainText(getString(R.string.set_act_hks_full_backup), content)
         clipboard.setPrimaryClip(clip)
 
-        Toast.makeText(this, "Vollständige Sicherung in die Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.set_act_full_backup_clipboard_success), Toast.LENGTH_SHORT).show()
     }
 
     private fun importFullBackup() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_backup_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_import_clipboard), R.drawable.ic_import_clipboard)
         )
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
             this,
@@ -2578,14 +2596,14 @@ class SettingsActivity : BaseActivity() {
             }
         }
         AlertDialog.Builder(this)
-            .setTitle("Vollständige Sicherung importieren")
+            .setTitle(getString(R.string.set_act_import_full_backup))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFullBackupFromFile()
                     1 -> importFullBackupFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2597,11 +2615,11 @@ class SettingsActivity : BaseActivity() {
 
         try {
             startActivityForResult(
-                Intent.createChooser(intent, "HKS-Sicherungsdatei auswählen"),
+                Intent.createChooser(intent, getString(R.string.set_act_select_hks_backup_file)),
                 FULL_BACKUP_IMPORT_REQUEST_CODE
             )
         } catch (_: Exception) {
-            Toast.makeText(this, "Keine Datei-Manager App gefunden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_no_file_manager_app_found), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2614,10 +2632,10 @@ class SettingsActivity : BaseActivity() {
             if (!clipText.isNullOrEmpty()) {
                 processFullBackupImport(clipText)
             } else {
-                Toast.makeText(this, "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.set_act_clipboard_is_empty), Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(this, "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_clipboard_is_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2632,7 +2650,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             if (sectionsWithData.isEmpty()) {
-                Toast.makeText(this, "Die Sicherungsdatei enthält keine verwendbaren Daten", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.set_act_backup_no_data), Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -2645,40 +2663,39 @@ class SettingsActivity : BaseActivity() {
 
         } catch (e: Exception) {
             L.e(TAG, "Error processing full backup import", e)
-            Toast.makeText(this, "Fehler beim Analysieren der Sicherung: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_analyze_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
     private fun showFullBackupImportConfirmationDialog(content: String, selectedSections: Set<String>) {
         val sectionNames = listOf(
-            "TIMETABLE_DATA" to "Stundenplan",
-            "CALENDAR_DATA" to "Kalender-Daten",
-            "HOMEWORK_DATA" to "Hausaufgaben",
-            "EXAM_DATA" to "Klausuren",
-            "GRADE_DATA" to "Noten",
-            "APP_SETTINGS" to "App-Einstellungen"
+            "TIMETABLE_DATA" to getString(R.string.set_act_timetable),
+            "CALENDAR_DATA" to getString(R.string.set_act_calendar_data),
+            "HOMEWORK_DATA" to getString(R.string.act_set_homework),
+            "EXAM_DATA" to getString(R.string.act_set_exams),
+            "GRADE_DATA" to getString(R.string.dlg_edit_sub_grades),
+            "APP_SETTINGS" to getString(R.string.set_act_app_settings)
         ).toMap()
 
         val selectedSectionsList = selectedSections.mapNotNull { sectionNames[it] }
         val sectionText = selectedSectionsList.joinToString("\n• ", "• ")
 
         val message = """
-        Die folgenden Bereiche werden wiederhergestellt:
-        
-        $sectionText
-        
-        Dies wird die aktuellen Daten in diesen Bereichen ersetzen!
-        
-        Diese Aktion kann nicht rückgängig gemacht werden!
-    """.trimIndent()
+        ${getString(R.string.set_act_backup_sections_restore)}
 
+        $sectionText
+
+        ${getString(R.string.set_act_backup_data_replaced)}
+
+        ${getString(R.string.set_act_backup_no_undo)}
+    """.trimIndent()
         AlertDialog.Builder(this)
-            .setTitle("Sicherung wiederherstellen")
+            .setTitle(getString(R.string.set_act_backup_dialog_title))
             .setMessage(message)
-            .setPositiveButton("Wiederherstellen") { _, _ ->
+            .setPositiveButton(getString(R.string.set_act_backup_restore)) { _, _ ->
                 executeImport(content, selectedSections)
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .show()
     }
@@ -2701,17 +2718,17 @@ class SettingsActivity : BaseActivity() {
 
                             val hasEmptySections = result.restoredSections < result.totalSections
                             val message = if (hasEmptySections) {
-                                "Sicherung teilweise wiederhergestellt: ${result.restoredSections}/${result.totalSections} Bereiche"
+                                getString(R.string.set_act_backup_restore_partial, result.restoredSections, result.totalSections)
                             } else {
-                                "Sicherung erfolgreich wiederhergestellt!\n${result.restoredSections}/${result.totalSections} Bereiche wiederhergestellt"
+                                getString(R.string.set_act_backup_restore_success, result.restoredSections, result.totalSections)
                             }
 
                             Toast.makeText(this@SettingsActivity, message, Toast.LENGTH_LONG).show()
                         } else {
                             val errorMessage = if (result.errors.isEmpty()) {
-                                "Unbekannter Fehler beim Wiederherstellen"
+                                getString(R.string.set_act_unknown_error_while_recovering)
                             } else {
-                                "Teilweise wiederhergestellt: ${result.restoredSections}/${result.totalSections} Bereiche\nFehler: ${result.errors.joinToString(", ")}"
+                                getString(R.string.set_act_backup_restore_partial_errors, result.restoredSections, result.totalSections, result.errors.joinToString(", "))
                             }
 
                             Toast.makeText(this@SettingsActivity, errorMessage, Toast.LENGTH_LONG).show()
@@ -2725,7 +2742,7 @@ class SettingsActivity : BaseActivity() {
                 } catch (e: Exception) {
                     runOnUiThread {
                         L.e(TAG, "Error executing backup restore", e)
-                        Toast.makeText(this@SettingsActivity, "Fehler beim Wiederherstellen: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@SettingsActivity, getString(R.string.set_act_backup_restore_error, e.message), Toast.LENGTH_LONG).show()
                     }
                 }
             }.start()
@@ -2734,16 +2751,19 @@ class SettingsActivity : BaseActivity() {
 
     private fun showRestartRecommendationDialog() {
         AlertDialog.Builder(this)
-            .setTitle("App-Neustart empfohlen")
-            .setMessage("Um alle Änderungen korrekt zu laden, wird ein App-Neustart empfohlen. Soll die App jetzt neu gestartet werden?")
-            .setPositiveButton("Jetzt neustarten") { _, _ ->
+            .setTitle(getString(R.string.set_act_restart_recommended))
+            .setMessage(getString(R.string.set_act_restart_message))
+            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
                 restartApp()
             }
-            .setNegativeButton("Später", null)
+            .setNegativeButton(getString(R.string.set_act_restart_later), null)
             .show()
     }
 
     private fun restartApp() {
+        val savedLanguage = LanguageUtil.getSavedLanguage(this)
+        LanguageUtil.setLanguage(this, savedLanguage)
+
         val intent = packageManager.getLaunchIntentForPackage(packageName)
         intent?.let {
             it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -2756,7 +2776,7 @@ class SettingsActivity : BaseActivity() {
     private fun writeFullBackupToFileUri(uri: Uri) {
         val content = sharedPreferences.getString("temp_full_backup_content", "")
         if (content.isNullOrEmpty()) {
-            Toast.makeText(this, "Kein Inhalt zum Exportieren", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_no_export_content), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -2767,10 +2787,10 @@ class SettingsActivity : BaseActivity() {
 
             sharedPreferences.edit {remove("temp_full_backup_content") }
 
-            Toast.makeText(this, "Vollständige Sicherung erfolgreich exportiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_success), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             L.e(TAG, "Error writing full backup to file", e)
-            Toast.makeText(this, "Fehler beim Speichern der Sicherungsdatei: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_save_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2782,8 +2802,98 @@ class SettingsActivity : BaseActivity() {
             }
         } catch (e: Exception) {
             L.e(TAG, "Error reading full backup from file", e)
-            Toast.makeText(this, "Fehler beim Lesen der Sicherungsdatei: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.set_act_backup_import_error, e.message), Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun setupLanguageSettings() {
+        val switchAutoDetectLanguage = findViewById<Switch>(R.id.switchAutoDetectLanguage)
+        val layoutManualLanguage = findViewById<LinearLayout>(R.id.layoutManualLanguage)
+        val btnSelectLanguage = findViewById<Button>(R.id.btnSelectLanguage)
+        val tvCurrentLanguage = findViewById<TextView>(R.id.tvCurrentLanguage)
+
+        val autoDetect = sharedPreferences.getBoolean("language_auto_detect", true)
+        val savedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+
+        switchAutoDetectLanguage.isChecked = autoDetect
+        layoutManualLanguage.visibility = if (autoDetect) View.GONE else View.VISIBLE
+
+        updateCurrentLanguageDisplay(tvCurrentLanguage)
+
+        val languageName = if (savedLanguage == "de") getString(R.string.german) else getString(R.string.english)
+        btnSelectLanguage.text = languageName
+
+        switchAutoDetectLanguage.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit { putBoolean("language_auto_detect", isChecked) }
+            layoutManualLanguage.visibility = if (isChecked) View.GONE else View.VISIBLE
+            updateCurrentLanguageDisplay(tvCurrentLanguage)
+            showRestartDialog()
+        }
+
+        btnSelectLanguage.setOnClickListener {
+            showLanguageSelectionDialog(btnSelectLanguage, tvCurrentLanguage)
+        }
+    }
+
+    private fun updateCurrentLanguageDisplay(tvCurrentLanguage: TextView) {
+        val autoDetect = sharedPreferences.getBoolean("language_auto_detect", true)
+
+        val displayText = if (autoDetect) {
+            val currentLocale = resources.configuration.locales[0]
+            val languageCode = currentLocale.language
+            when (languageCode) {
+                "de" -> getString(R.string.current_language_german)
+                "en" -> getString(R.string.current_language_english)
+                else -> getString(R.string.current_language_german) // fallback
+            }
+        } else {
+            val selectedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+            when (selectedLanguage) {
+                "de" -> getString(R.string.current_language_german)
+                "en" -> getString(R.string.current_language_english)
+                else -> getString(R.string.current_language_german) // fallback
+            }
+        }
+
+        tvCurrentLanguage.text = displayText
+    }
+
+    private fun showLanguageSelectionDialog(btnSelectLanguage: Button, tvCurrentLanguage: TextView) {
+        val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+
+        val languages = arrayOf("de", "en")
+        val languageNames = arrayOf(
+            "🇩🇪 ${getString(R.string.german)}",
+            "🇺🇸 ${getString(R.string.english)}"
+        )
+
+        val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.select_language))
+            .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
+                val selectedLanguageCode = languages[which]
+                val selectedLanguageName = languageNames[which]
+
+                sharedPreferences.edit { putString("selected_language", selectedLanguageCode) }
+                btnSelectLanguage.text = selectedLanguageName
+                showRestartDialog()
+
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showRestartDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.restart_required))
+            .setMessage(getString(R.string.restart_required_message))
+            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
+                restartApp()
+            }
+            .setNegativeButton(getString(R.string.restart_later), null)
+            .show()
     }
 
     data class ValidationResult(

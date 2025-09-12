@@ -148,21 +148,21 @@ class GradesFragment : Fragment() {
             return if (avg != null) DecimalFormat("0.0").format(avg) else "-"
         }
 
-        fun getWeightingInfo(requirements: SubjectRequirements, currentHalfyear: Int): String {
+        fun getWeightingInfo(requirements: SubjectRequirements, currentHalfyear: Int, context: Context): String {
             val info = mutableListOf<String>()
 
-            if (isLK()) info.add("LK - alle Halbjahre zählen")
-            else if (isCoreSubject()) info.add("Kernfach - alle Halbjahre zählen")
-            else if (requirements.mustCountAllHalfYears) info.add("Alle Halbjahre zählen")
-            else info.add("${getBestHalfYears(requirements, currentHalfyear).size} beste Halbjahre zählen")
+            if (isLK()) info.add(context.getString(R.string.grades_lk_all_semesters_count))
+            else if (isCoreSubject()) info.add(context.getString(R.string.grades_core_subject_all_semesters_count))
+            else if (requirements.mustCountAllHalfYears) info.add(context.getString(R.string.grades_all_semesters_count))
+            else info.add(context.getString(R.string.grades_best_semesters_count, getBestHalfYears(requirements, currentHalfyear).size))
 
             if (isPruefungsfach) {
-                info.add("Prüfungsfach")
-                if (pruefungsergebnis != null) info.add("Prüfungsergebnis: 4x Gewichtung")
+                info.add(context.getString(R.string.grades_examination_subject))
+                if (pruefungsergebnis != null) info.add(context.getString(R.string.grades_examination_score_4x_count))
             }
 
             if (requirements.minRequiredHalfYears > 1) {
-                info.add("Mind. ${requirements.minRequiredHalfYears} Halbjahre erforderlich")
+                info.add(context.getString(R.string.grades_atleast_count_semester_required, requirements.minRequiredHalfYears))
             }
 
             return info.joinToString(" • ")
@@ -251,7 +251,7 @@ class GradesFragment : Fragment() {
 
         val loadingText = loadingView.findViewById<TextView>(android.R.id.text1)
         loadingText.apply {
-            "Noten werden geladen...".also { text = it }
+            text = getString(R.string.grades_loading)
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -308,7 +308,7 @@ class GradesFragment : Fragment() {
                                 importGradeData(content)
                             }
                         } catch (e: Exception) {
-                            Toast.makeText(requireContext(), "Fehler beim Lesen der Datei: ${e.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(requireContext(), getString(R.string.grades_error_trying_to_read_file, e.message), Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -318,7 +318,7 @@ class GradesFragment : Fragment() {
 
     private fun showNoTimetableMessage(view: View) {
         val messageView = TextView(requireContext()).apply {
-            "Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.".also { text = it }
+            text = getString(R.string.grades_scan_timetable_first)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -366,22 +366,22 @@ class GradesFragment : Fragment() {
 
     private fun showMenuPopup() {
         val popup = PopupMenu(requireContext(), btnMenu)
-        popup.menu.add(0, 1, 0, "Neues Halbjahr beginnen").apply {
+        popup.menu.add(0, 1, 0, getString(R.string.grades_new_halfyear_title)).apply {
             setIcon(R.drawable.ic_rocket)
         }
-        popup.menu.add(0, 2, 0, "Ziel-Note setzen").apply {
+        popup.menu.add(0, 2, 0, getString(R.string.grades_menu_set_goal)).apply {
             setIcon(R.drawable.ic_goal)
         }
-        popup.menu.add(0, 3, 0, "Graph anzeigen").apply {
+        popup.menu.add(0, 3, 0, getString(R.string.grades_menu_show_graph)).apply {
             setIcon(R.drawable.ic_statistics)
         }
-        popup.menu.add(0, 4, 0, "Graph zurücksetzen").apply {
+        popup.menu.add(0, 4, 0, getString(R.string.grades_reset_graph_title)).apply {
             setIcon(R.drawable.ic_statistics_clear)
         }
-        popup.menu.add(0, 5, 0, "Exportieren").apply {
+        popup.menu.add(0, 5, 0, getString(R.string.grades_menu_export)).apply {
             setIcon(R.drawable.ic_export)
         }
-        popup.menu.add(0, 6, 0, "Importieren").apply {
+        popup.menu.add(0, 6, 0, getString(R.string.grades_menu_import)).apply {
             setIcon(R.drawable.ic_import)
         }
 
@@ -400,7 +400,7 @@ class GradesFragment : Fragment() {
         val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
         if (bildungsgang == "BG") {
             val useSimple = sharedPreferences.getBoolean(PREFS_USE_SIMPLE_GRADING, false)
-            val toggleText = if (useSimple) "Abitur-Modus aktivieren" else "Einfachen Modus aktivieren"
+            val toggleText = if (useSimple) getString(R.string.grades_mode_abi) else getString(R.string.grades_mode_simple_activated)
             popup.menu.add(0, 7, 0, toggleText).apply {
                 icon = if (useSimple) {
                     ContextCompat.getDrawable(context, R.drawable.ic_grades_easy)
@@ -455,7 +455,7 @@ class GradesFragment : Fragment() {
             putBoolean(PREFS_USE_SIMPLE_GRADING, newValue)
         }
 
-        val message = if (newValue) "Einfacher Modus aktiviert" else "Abitur-Modus aktiviert"
+        val message = if (newValue) getString(R.string.grades_mode_simple_activated) else getString(R.string.grades_mode_abi_activated)
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
 
         loadGrades()
@@ -468,7 +468,7 @@ class GradesFragment : Fragment() {
         val history: List<GradeHistoryEntry> = Gson().fromJson(historyJson, historyType) ?: emptyList()
 
         if (history.isEmpty()) {
-            Toast.makeText(requireContext(), "Keine Notenverlaufsdaten vorhanden", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.grades_no_history_data), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -483,7 +483,7 @@ class GradesFragment : Fragment() {
         chart.setData(history, sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f))
 
         val textData = buildString {
-            appendLine("Notenverlauf (Textdaten):")
+            appendLine(getString(R.string.grades_history_text))
             appendLine()
             for (entry in history) {
                 val monthName = getMonthName(entry.month)
@@ -497,34 +497,34 @@ class GradesFragment : Fragment() {
             isTextVisible = !isTextVisible
             if (isTextVisible) {
                 scrollViewTextData.visibility = View.VISIBLE
-                "Textdaten ausblenden".also { btnShowTextData.text = it }
+                btnShowTextData.text = getString(R.string.grades_hide_text)
             } else {
                 scrollViewTextData.visibility = View.GONE
-                "Textdaten anzeigen".also { btnShowTextData.text = it }
+                btnShowTextData.text = getString(R.string.grades_show_text)
             }
         }
 
-        dialog.setTitle("Notenverlauf")
+        dialog.setTitle(getString(R.string.grades_history_title))
             .setView(dialogView)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.grades_close), null)
             .show()
     }
 
     private fun getMonthName(month: Int): String {
         return when (month) {
-            1 -> "Januar"
-            2 -> "Februar"
-            3 -> "März"
-            4 -> "April"
-            5 -> "Mai"
-            6 -> "Juni"
-            7 -> "Juli"
-            8 -> "August"
-            9 -> "September"
-            10 -> "Oktober"
-            11 -> "November"
-            12 -> "Dezember"
-            else -> "Monat $month"
+            1 -> getString(R.string.january)
+            2 -> getString(R.string.february)
+            3 -> getString(R.string.march)
+            4 -> getString(R.string.april)
+            5 -> getString(R.string.may)
+            6 -> getString(R.string.june)
+            7 -> getString(R.string.june)
+            8 -> getString(R.string.august)
+            9 -> getString(R.string.september)
+            10 -> getString(R.string.october)
+            11 -> getString(R.string.november)
+            12 -> getString(R.string.december)
+            else -> getString(R.string.grades_month, month)
         }
     }
 
@@ -663,7 +663,7 @@ class GradesFragment : Fragment() {
             val requirements = getSubjectRequirements(it.subject)
             it.getFinalGrade(requirements, currentHalfyear) != null
         }
-        "$subjectsWithGrades / $totalSubjects Fächer benotet".also { tvGradeCount.text = it }
+        tvGradeCount.text = getString(R.string.grades_count, subjectsWithGrades, totalSubjects)
     }
 
     private fun updateFinalGrade() {
@@ -694,12 +694,12 @@ class GradesFragment : Fragment() {
             if (allCourseGrades.isNotEmpty()) {
                 val average = allCourseGrades.average()
                 val courseCountText = if (totalCourseCount <= 44) {
-                    "$totalCourseCount/44 Kurse"
+                    getString(R.string.grades_courses_count, totalCourseCount)
                 } else {
-                    "$totalCourseCount/44 Kurse (ÜBERSCHRITTEN!)"
+                    getString(R.string.grades_courses_count_exceeded, totalCourseCount)
                 }
 
-                "Gesamtnote: ${DecimalFormat("0.0").format(average)} ($courseCountText)".also { tvFinalGrade.text = it }
+                tvFinalGrade.text = getString(R.string.grades_total_grade_formatted, DecimalFormat("0.0").format(average), courseCountText)
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
@@ -710,7 +710,7 @@ class GradesFragment : Fragment() {
                 }
                 tvFinalGrade.setTextColor(resources.getColor(color))
             } else {
-                "Gesamtnote: -".also { tvFinalGrade.text = it }
+                tvFinalGrade.text = getString(R.string.grades_total_grade_none)
                 tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
             }
         } else { // simple grading logic
@@ -738,7 +738,7 @@ class GradesFragment : Fragment() {
 
             if (currentGrades.isNotEmpty()) {
                 val average = currentGrades.average()
-                "Gesamtnote: ${DecimalFormat("0.0").format(average)}".also { tvFinalGrade.text = it }
+                tvFinalGrade.text = getString(R.string.grades_total_grade, DecimalFormat("0.0").format(average))
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
@@ -748,7 +748,7 @@ class GradesFragment : Fragment() {
                 }
                 tvFinalGrade.setTextColor(resources.getColor(color))
             } else {
-                "Gesamtnote: -".also { tvFinalGrade.text = it }
+                tvFinalGrade.text = getString(R.string.grades_total_grade_none)
                 tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
             }
         }
@@ -769,11 +769,11 @@ class GradesFragment : Fragment() {
         val recyclerExamGrades = dialogView.findViewById<RecyclerView>(R.id.recyclerExamGrades)
 
         tvSubjectName.text = subject.subject
-        "Lehrer: ${subject.teacher}".also { tvTeacher.text = it }
-        "Mündlich: ${subject.getFormattedOralGrade(currentHalfyear)}".also { tvOralGrade.text = it }
-        "Schriftlich: ${subject.getFormattedWrittenAverage(currentHalfyear)}".also { tvWrittenAverage.text = it }
-        "Verhältnis: ${subject.ratio.first}% : ${subject.ratio.second}%".also { tvRatio.text = it }
-        "Endnote: ${subject.getFormattedFinalGrade(requirements, currentHalfyear)}".also { tvFinalGrade.text = it }
+        tvTeacher.text = getString(R.string.grades_subject_teacher, subject.teacher)
+        tvOralGrade.text = getString(R.string.grades_subject_oral, subject.getFormattedOralGrade(currentHalfyear))
+        tvWrittenAverage.text = getString(R.string.grades_subject_written, subject.getFormattedWrittenAverage(currentHalfyear))
+        tvRatio.text = getString(R.string.grades_subject_ratio, subject.ratio.first, subject.ratio.second)
+        tvFinalGrade.text = getString(R.string.grades_subject_final, subject.getFormattedFinalGrade(requirements, currentHalfyear))
 
         val examJson = sharedPreferences.getString("exam_list", "[]")
         val examType = object : TypeToken<List<ExamFragment.ExamEntry>>() {}.type
@@ -787,7 +787,7 @@ class GradesFragment : Fragment() {
 
         dialog.setTitle("Details: ${subject.subject}")
             .setView(dialogView)
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.grades_close), null)
             .show()
     }
 
@@ -897,7 +897,7 @@ class GradesFragment : Fragment() {
             if (useComplexGrading) gradeList.count { it.isPruefungsfach } else 0
 
         if (useComplexGrading) {
-            tvSubjectInfo.text = subject.getWeightingInfo(requirements, currentHalfyear)
+            tvSubjectInfo.text = subject.getWeightingInfo(requirements, currentHalfyear, requireContext())
         }
 
         val currentOralGrade = subject.oralGradeHistory[currentHalfyear]
@@ -934,11 +934,11 @@ class GradesFragment : Fragment() {
             if (useComplexGrading) {
                 if (requirements.mustCountAllHalfYears) {
                     val allGrades = subject.getHalfYearGrades(currentHalfyear)
-                    "Alle Halbjahre zählen (${allGrades.size})".also { tvHalfYearsCount.text = it }
+                    tvHalfYearsCount.text = getString(R.string.grades_all_semesters_count_with_count, allGrades.size)
                 } else {
                     val minHalfYears = requirements.minRequiredHalfYears
                     val count = maxOf(minHalfYears, seekBarHalfYears.progress)
-                    "$count beste Halbjahre zählen".also { tvHalfYearsCount.text = it }
+                    tvHalfYearsCount.text = getString(R.string.grades_best_semesters_count, count)
                 }
             }
         }
@@ -1060,7 +1060,7 @@ class GradesFragment : Fragment() {
         val updateRatioDisplay = {
             val oral = seekBarOral.progress
             val written = seekBarWritten.progress
-            "Verhältnis: $oral% : $written%".also { tvRatioDisplay.text = it }
+            tvRatioDisplay.text = getString(R.string.grades_subject_ratio, oral, written)
         }
         updateRatioDisplay()
 
@@ -1078,7 +1078,7 @@ class GradesFragment : Fragment() {
                     if (selectedPruefungsfaecher >= 5) {
                         Toast.makeText(
                             requireContext(),
-                            "Maximal 5 Prüfungsfächer erlaubt",
+                            getString(R.string.grades_max_exam_subjects),
                             Toast.LENGTH_SHORT
                         ).show()
                         switchPruefungsfach.isChecked = false
@@ -1107,9 +1107,9 @@ class GradesFragment : Fragment() {
                         val nextBetterPoints = (currentPoints + 1).coerceAtMost(15)
 
                         if (nextBetterPoints != currentPoints) {
-                            "≈ $currentPoints-$nextBetterPoints Punkte".also { tvGradeRange.text = it }
+                            tvGradeRange.text = getString(R.string.grades_points_range, currentPoints, nextBetterPoints)
                         } else {
-                            "≈ $currentPoints Punkte".also { tvGradeRange.text = it }
+                            tvGradeRange.text = getString(R.string.grades_points_single, currentPoints)
                         }
                         tvGradeRange.visibility = View.VISIBLE
                     } else {
@@ -1120,9 +1120,9 @@ class GradesFragment : Fragment() {
                         val betterGrade = if (nextBetterPoints <= 15) convertPointsToGrade(nextBetterPoints) else snappedGrade
 
                         if (betterGrade != snappedGrade) {
-                            "≈ ${DecimalFormat("0.0").format(snappedGrade)}-${DecimalFormat("0.0").format(betterGrade)}".also { tvGradeRange.text = it }
+                            tvGradeRange.text = getString(R.string.grades_grade_range, DecimalFormat("0.0").format(snappedGrade), DecimalFormat("0.0").format(betterGrade))
                         } else {
-                            "≈ ${DecimalFormat("0.0").format(snappedGrade)}".also { tvGradeRange.text = it }
+                            tvGradeRange.text = getString(R.string.grades_grade_single, DecimalFormat("0.0").format(snappedGrade))
                         }
                         tvGradeRange.visibility = View.VISIBLE
                     }
@@ -1150,14 +1150,14 @@ class GradesFragment : Fragment() {
 
         val updateHints = {
             if (isPointSystem) {
-                editOralGrade.hint = "z.B. 11 (Punkte 0-15)"
+                editOralGrade.hint = getString(R.string.dlg_edit_sub_oral_grade_hint)
                 if (useComplexGrading) {
-                    editPruefungsergebnis.hint = "z.B. 12 (Punkte 0-15)"
+                    editPruefungsergebnis.hint = getString(R.string.dlg_edit_sub_exam_result_hint)
                 }
             } else {
-                editOralGrade.hint = "z.B. 2.5 (Note 1.0-6.0)"
+                editOralGrade.hint = getString(R.string.grades_edit_grade_hint)
                 if (useComplexGrading) {
-                    editPruefungsergebnis.hint = "z.B. 2.3 (Note 1.0-6.0)"
+                    editPruefungsergebnis.hint = getString(R.string.grades_edit_exam_grade_hint)
                 }
             }
         }
@@ -1267,9 +1267,9 @@ class GradesFragment : Fragment() {
             })
         }
 
-        dialog.setTitle("${subject.subject} bearbeiten")
+        dialog.setTitle(getString(R.string.grades_edit_title, subject.subject))
             .setView(dialogView)
-            .setPositiveButton("Speichern") { _, _ ->
+            .setPositiveButton(getString(R.string.grades_save)) { _, _ ->
                 val oralGradeText = editOralGrade.text.toString().trim()
                 val pruefungsergebnisText =
                     if (useComplexGrading) editPruefungsergebnis.text.toString().trim() else ""
@@ -1339,9 +1339,9 @@ class GradesFragment : Fragment() {
                 loadGrades()
                 updateFinalGrade()
 
-                Toast.makeText(requireContext(), "Gespeichert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.grades_saved), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen") { _, _ ->
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                 saveSwitchStates()
             }
             .show()
@@ -1424,12 +1424,12 @@ class GradesFragment : Fragment() {
 
     private fun showStartNewHalfyearDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Neues Halbjahr beginnen")
-            .setMessage("Dies wird die Notenberechnung zurücksetzen, aber deine bisherigen Noten für die Grafik behalten. Möchtest du fortfahren?")
-            .setPositiveButton("Ja, neues Halbjahr") { _, _ ->
+            .setTitle(getString(R.string.grades_new_halfyear_title))
+            .setMessage(getString(R.string.grades_new_halfyear_message))
+            .setPositiveButton(getString(R.string.grades_new_halfyear_confirm)) { _, _ ->
                 startNewHalfyear()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1538,7 +1538,7 @@ class GradesFragment : Fragment() {
         loadGrades()
         updateFinalGrade()
 
-        Toast.makeText(requireContext(), "Neues Halbjahr ($newHalfyear) begonnen", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.grades_new_halfyear_started, newHalfyear), Toast.LENGTH_SHORT).show()
     }
 
     private fun saveGradeToHistory(grade: Double) {
@@ -1579,10 +1579,10 @@ class GradesFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Ziel-Note setzen")
-            .setMessage("Deine Ziel-Note für dieses Halbjahr:")
+            .setTitle(getString(R.string.grades_menu_set_goal))
+            .setMessage(getString(R.string.grades_set_goal_message))
             .setView(editText)
-            .setPositiveButton("Speichern") { _, _ ->
+            .setPositiveButton(getString(R.string.grades_save)) { _, _ ->
                 try {
                     val goalGrade = editText.text.toString().replace(",", ".").toFloat()
                     if (goalGrade >= 1.0f && goalGrade <= 6.0f) {
@@ -1590,29 +1590,30 @@ class GradesFragment : Fragment() {
                             putFloat(PREFS_GOAL_GRADE, goalGrade)
                         }
                         updateFinalGrade()
-                        Toast.makeText(requireContext(), "Ziel-Note gespeichert", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.grades_set_goal_saved), Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(requireContext(), "Bitte gib eine Note zwischen 1.0 und 6.0 ein", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.grades_set_goal_invalid_range), Toast.LENGTH_SHORT).show()
                     }
                 } catch (_: NumberFormatException) {
-                    Toast.makeText(requireContext(), "Ungültige Eingabe", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.grades_set_goal_invalid_input), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showResetGraphDialog() {
         AlertDialog.Builder(requireContext())
             .setTitle("Graph zurücksetzen")
-            .setMessage("WARNUNG: Dies wird alle deine gespeicherten Notenverlaufsdaten permanent löschen. Diese Aktion kann nicht rückgängig gemacht werden!")
-            .setPositiveButton("Ja, Graph löschen") { _, _ ->
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setMessage(getString(R.string.grades_reset_graph_message))
+            .setPositiveButton(getString(R.string.grades_reset_graph_confirm)) { _, _ ->
                 sharedPreferences.edit {
                     remove(PREFS_GRADE_HISTORY)
                 }
-                Toast.makeText(requireContext(), "Graph wurde zurückgesetzt", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.grades_reset_graph_complete), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1620,8 +1621,8 @@ class GradesFragment : Fragment() {
         val content = exportGradeData()
 
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_export_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_backup_copy_clipboard), R.drawable.ic_export_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -1640,21 +1641,21 @@ class GradesFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Noten exportieren")
+            .setTitle(getString(R.string.grades_export_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveExportToFile(content)
                     1 -> copyToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showImportOptions() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_backup_import_clipboard), R.drawable.ic_import_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -1673,14 +1674,14 @@ class GradesFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Noten importieren")
+            .setTitle(getString(R.string.grades_import_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFilePicker()
                     1 -> importFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1704,7 +1705,7 @@ class GradesFragment : Fragment() {
             val content = clip.getItemAt(0).text.toString()
             importGradeData(content)
         } else {
-            Toast.makeText(requireContext(), "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_clipboard_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1715,9 +1716,9 @@ class GradesFragment : Fragment() {
             loadGrades()
             updateFinalGrade()
 
-            Toast.makeText(requireContext(), "Noten erfolgreich importiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.grades_import_success), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Importieren: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1736,7 +1737,7 @@ class GradesFragment : Fragment() {
         try {
             exportLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_error_while_opening_file_dialog), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1745,9 +1746,9 @@ class GradesFragment : Fragment() {
             requireContext().contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(content.toByteArray())
             }
-            Toast.makeText(requireContext(), "Export erfolgreich gespeichert", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_export_saved), Toast.LENGTH_LONG).show()
         } catch (_: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Speichern der Datei", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.grades_export_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1755,7 +1756,7 @@ class GradesFragment : Fragment() {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Noten Export", content)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(requireContext(), "Export in Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.slide_export_copied), Toast.LENGTH_SHORT).show()
     }
 
     private fun getSubjectRequirements(subject: String): SubjectRequirements {
@@ -1888,29 +1889,30 @@ class GradesFragment : Fragment() {
 
     private fun acceptSubjectChanges() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Fächer aktualisieren")
-            .setMessage("Alle bisherigen Notendaten werden gelöscht und die neuen Fächer werden geladen. Möchtest du fortfahren?")
-            .setPositiveButton("Ja, aktualisieren") { _, _ ->
+            .setTitle(getString(R.string.grades_subject_update_title))
+            .setMessage(getString(R.string.grades_subject_update_message))
+            .setPositiveButton(getString(R.string.grades_subject_update_confirm)) { _, _ ->
                 clearAllGradeData()
                 saveCurrentSubjectsAsGradesSubjects()
                 hasSubjectChanges = false
                 hideSubjectChangeWarning()
                 loadGrades()
                 updateFinalGrade()
-                Toast.makeText(requireContext(), "Fächer wurden aktualisiert", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.grades_subject_update_complete), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showDeclineSubjectChangesDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Änderungen verwerfen")
-            .setMessage("Warnung: Dies wird deine aktuellen Stundenplan-Einstellungen auf den Stand der Notenseite zurücksetzen. Möchtest du fortfahren?")
-            .setPositiveButton("Ja, zurücksetzen") { _, _ ->
+            .setTitle(getString(R.string.grades_subject_reset_title))
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setMessage(getString(R.string.grades_subject_reset_message))
+            .setPositiveButton(getString(R.string.set_act_yes_reset)) { _, _ ->
                 restoreSubjectsFromGradesData()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1927,7 +1929,7 @@ class GradesFragment : Fragment() {
 
         hasSubjectChanges = false
         hideSubjectChangeWarning()
-        Toast.makeText(requireContext(), "Stundenplan wurde zurückgesetzt", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.grades_subject_reset_complete), Toast.LENGTH_SHORT).show()
     }
 
     private fun clearAllGradeData() {

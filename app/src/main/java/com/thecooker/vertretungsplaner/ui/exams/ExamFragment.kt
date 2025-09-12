@@ -136,74 +136,75 @@ class ExamFragment : Fragment() {
                 daysUntil <= 1 -> android.R.color.holo_red_light
                 daysUntil <= 3 -> android.R.color.holo_orange_light
                 daysUntil <= 7 -> R.color.light_yellow
+                daysUntil <= 14 -> R.color.light_green
                 else -> android.R.color.transparent
             }
         }
 
-        fun getDisplayDateString(): String {
+        fun getDisplayDateString(context: Context): String {
             val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-            val weekday = getGermanWeekday(date)
+            val weekday = getGermanWeekday(date, context)
             val dateStr = format.format(date)
 
             val daysUntil = getDaysUntilExam()
             val formattedDate = "$weekday. $dateStr"
 
             return when {
-                isOverdue() -> "$formattedDate (vergangen)"
-                daysUntil == 0L -> "$formattedDate (heute)"
-                daysUntil == 1L -> "$formattedDate (morgen)"
-                daysUntil <= 7 -> "$formattedDate (in $daysUntil Tag${if (daysUntil > 1) "en" else ""})"
+                isOverdue() -> context.getString(R.string.exam_date_detail_overdue, formattedDate)
+                daysUntil == 0L -> context.getString(R.string.exam_date_detail_today, formattedDate)
+                daysUntil == 1L -> context.getString(R.string.exam_date_detail_tomorrow, formattedDate)
+                daysUntil <= 7 -> context.getString(R.string.exam_date_detail_in_given_days, formattedDate, daysUntil, (if (daysUntil > 1) "en" else ""))
                 daysUntil <= 30 -> {
                     val weeks = daysUntil / 7
                     val remainingDays = daysUntil % 7
                     when {
-                        weeks == 1L && remainingDays == 0L -> "$formattedDate (in 1 Woche)"
-                        weeks == 1L -> "$formattedDate (in 1 Woche und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
-                        remainingDays == 0L -> "$formattedDate (in $weeks Wochen)"
-                        else -> "$formattedDate (in $weeks Wochen und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
+                        weeks == 1L && remainingDays == 0L -> context.getString(R.string.exam_date_detail_one_week, formattedDate)
+                        weeks == 1L -> context.getString(R.string.exam_date_detail_one_week_plus_days, formattedDate, remainingDays, (if (remainingDays > 1) "en" else ""))
+                        remainingDays == 0L -> context.getString(R.string.exam_date_detail_weeks, formattedDate, weeks)
+                        else -> context.getString(R.string.exam_date_detail_weeks_plus_days, formattedDate, weeks, remainingDays, (if (remainingDays > 1) "en" else ""))
                     }
                 }
                 daysUntil <= 365 -> {
                     val months = daysUntil / 30
                     val remainingDays = daysUntil % 30
                     when {
-                        months == 1L && remainingDays <= 5 -> "$formattedDate (in 1 Monat)"
-                        months == 1L -> "$formattedDate (in 1 Monat und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
-                        remainingDays <= 5 -> "$formattedDate (in $months Monaten)"
-                        else -> "$formattedDate (in $months Monaten und $remainingDays Tag${if (remainingDays > 1) "en" else ""})"
+                        months == 1L && remainingDays <= 5 -> context.getString(R.string.exam_date_detail_one_month, formattedDate)
+                        months == 1L -> context.getString(R.string.exam_date_detail_one_month_plus_days, formattedDate, remainingDays, (if (remainingDays > 1) "en" else ""))
+                        remainingDays <= 5 -> context.getString(R.string.exam_date_detail_months, formattedDate, months)
+                        else -> context.getString(R.string.exam_date_detail_months_plus_days, formattedDate, months, remainingDays, (if (remainingDays > 1) "en" else ""))
                     }
                 }
                 else -> {
                     val years = daysUntil / 365
                     val remainingDays = daysUntil % 365
                     when {
-                        years == 1L && remainingDays <= 10 -> "$formattedDate (in 1 Jahr)"
+                        years == 1L && remainingDays <= 10 -> context.getString(R.string.exam_date_detail_one_year, formattedDate)
                         years == 1L -> {
                             val months = remainingDays / 30
-                            if (months > 0) "$formattedDate (in 1 Jahr und $months Monat${if (months > 1) "en" else ""})"
-                            else "$formattedDate (in 1 Jahr)"
+                            if (months > 0) context.getString(R.string.exam_date_detail_one_year_plus_months, formattedDate, months, (if (months > 1) "en" else ""))
+                            else context.getString(R.string.exam_date_detail_one_year, formattedDate)
                         }
-                        remainingDays <= 10 -> "$formattedDate (in $years Jahren)"
+                        remainingDays <= 10 -> context.getString(R.string.exam_date_detail_years, formattedDate, years)
                         else -> {
                             val months = remainingDays / 30
-                            if (months > 0) "$formattedDate (in $years Jahren und $months Monat${if (months > 1) "en" else ""})"
-                            else "$formattedDate (in $years Jahren)"
+                            if (months > 0) context.getString(R.string.exam_date_detail_years_plus_months, formattedDate, years, months, (if (months > 1) "en" else ""))
+                            else context.getString(R.string.exam_date_detail_years, formattedDate, years)
                         }
                     }
                 }
             }
         }
 
-        private fun getGermanWeekday(date: Date): String {
+        private fun getGermanWeekday(date: Date, context: Context): String {
             val calendar = Calendar.getInstance().apply { time = date }
             return when (calendar.get(Calendar.DAY_OF_WEEK)) {
-                Calendar.MONDAY -> "Mo"
-                Calendar.TUESDAY -> "Di"
-                Calendar.WEDNESDAY -> "Mi"
-                Calendar.THURSDAY -> "Do"
-                Calendar.FRIDAY -> "Fr"
-                Calendar.SATURDAY -> "Sa"
-                Calendar.SUNDAY -> "So"
+                Calendar.MONDAY -> context.getString(R.string.monday_short)
+                Calendar.TUESDAY -> context.getString(R.string.tuesday_short)
+                Calendar.WEDNESDAY -> context.getString(R.string.wednesday_short)
+                Calendar.THURSDAY -> context.getString(R.string.thursday_short)
+                Calendar.FRIDAY -> context.getString(R.string.friday_short)
+                Calendar.SATURDAY -> context.getString(R.string.saturday_short)
+                Calendar.SUNDAY -> context.getString(R.string.sunday_short)
                 else -> ""
             }
         }
@@ -293,7 +294,7 @@ class ExamFragment : Fragment() {
 
         val loadingText = loadingView.findViewById<TextView>(android.R.id.text1)
         loadingText.apply {
-            text = "Klausuren werden geladen..."
+            text = getString(R.string.exam_loading)
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
@@ -390,13 +391,13 @@ class ExamFragment : Fragment() {
 
     private fun showMenuPopup() {
         val popup = PopupMenu(requireContext(), btnMenu)
-        popup.menu.add(0, 1, 0, "Klausurplan scannen").apply {
+        popup.menu.add(0, 1, 0, getString(R.string.exam_scan_schedule)).apply {
             setIcon(R.drawable.ic_scan_file)
         }
-        popup.menu.add(0, 2, 0, "Exportieren").apply {
+        popup.menu.add(0, 2, 0, getString(R.string.exam_export)).apply {
             setIcon(R.drawable.ic_export)
         }
-        popup.menu.add(0, 3, 0, "Importieren").apply {
+        popup.menu.add(0, 3, 0, getString(R.string.exam_import)).apply {
             setIcon(R.drawable.ic_import)
         }
 
@@ -436,9 +437,9 @@ class ExamFragment : Fragment() {
 
         if (!hasScannedDocument) {
             AlertDialog.Builder(requireContext())
-                .setTitle("Stundenplan erforderlich")
-                .setMessage("Um einen Klausurplan importieren zu können, musst du deinen Stundenplan scannen.")
-                .setPositiveButton("OK", null)
+                .setTitle(getString(R.string.exam_timetable_required))
+                .setMessage(getString(R.string.exam_timetable_required_message))
+                .setPositiveButton(getString(R.string.exam_ok), null)
                 .show()
             return
         }
@@ -447,7 +448,7 @@ class ExamFragment : Fragment() {
             type = "application/pdf"
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        pdfPickerLauncher.launch(Intent.createChooser(intent, "Klausurplan PDF auswählen"))
+        pdfPickerLauncher.launch(Intent.createChooser(intent, getString(R.string.exam_select_pdf)))
     }
 
     private fun processPdfExamSchedule(uri: Uri) {
@@ -463,7 +464,7 @@ class ExamFragment : Fragment() {
             }
         } catch (e: Exception) {
             L.e(TAG, "Error processing PDF", e)
-            Toast.makeText(requireContext(), "Fehler beim Verarbeiten der PDF", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.exam_pdf_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -489,9 +490,9 @@ class ExamFragment : Fragment() {
 
     private fun parseExamSchedule(pdfText: String) {
         try {
-            val userClass = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt")
-            if (userClass == "Nicht ausgewählt") {
-                Toast.makeText(requireContext(), "Wähle zuerst deine Klasse in den Einstellungen aus", Toast.LENGTH_LONG).show()
+            val userClass = sharedPreferences.getString("selected_klasse", getString(R.string.set_act_not_selected)) // be cautious
+            if (userClass == getString(R.string.set_act_not_selected)) {
+                Toast.makeText(requireContext(), getString(R.string.exam_select_class), Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -507,7 +508,7 @@ class ExamFragment : Fragment() {
             val userPage = findUserClassPage(pdfText, classPrefix)
             if (userPage == null) {
                 L.e(TAG, "User class page not found for $classPrefix")
-                Toast.makeText(requireContext(), "Deine Klasse wurde im Klausurplan nicht gefunden", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), getString(R.string.exam_class_not_found), Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -518,7 +519,7 @@ class ExamFragment : Fragment() {
 
             val scheduleInfo = extractScheduleInfo(preprocessedPage, classPrefix)
             if (!allowOldSchedules && !scheduleInfo.isValid) {
-                Toast.makeText(requireContext(), "Dieser Klausurplan ist nicht mehr gültig", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), getString(R.string.exam_schedule_invalid), Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -527,7 +528,7 @@ class ExamFragment : Fragment() {
             val newExams = parseExamsFromSchedule(preprocessedPage)
 
             if (newExams.isEmpty()) {
-                Toast.makeText(requireContext(), "Keine Klausuren für deine Fächer gefunden", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.exam_no_exams_found), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -541,11 +542,11 @@ class ExamFragment : Fragment() {
 
             saveScheduleInfo(scheduleInfo)
 
-            Toast.makeText(requireContext(), "${newExams.size} Klausuren importiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.exam_import_success, newExams.size), Toast.LENGTH_SHORT).show()
 
         } catch (e: Exception) {
             L.e(TAG, "Error parsing exam schedule", e)
-            Toast.makeText(requireContext(), "Fehler beim Verarbeiten des Klausurplans", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.exam_processing_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -554,7 +555,7 @@ class ExamFragment : Fragment() {
         var pageStart: Int
         var pageEnd = -1
 
-        val userClass = sharedPreferences.getString("selected_klasse", "Nicht ausgewählt") ?: "Nicht ausgewählt"
+        val userClass = sharedPreferences.getString("selected_klasse", getString(R.string.set_act_not_selected)) ?: getString(R.string.set_act_not_selected)
         L.d(TAG, "Looking for user class: $userClass")
         L.d(TAG, "Class prefix: $classPrefix")
 
@@ -622,10 +623,10 @@ class ExamFragment : Fragment() {
     }
 
     private fun isMonthsLine(line: String): Boolean {
-        val monthNames = listOf("Januar", "Februar", "März", "April", "Mai", "Juni",
+        val germanMonthNames = listOf("Januar", "Februar", "März", "April", "Mai", "Juni",
             "Juli", "August", "September", "Oktober", "November", "Dezember")
 
-        val monthCount = monthNames.count { month -> line.contains(month) }
+        val monthCount = germanMonthNames.count { month -> line.contains(month) }
         val hasYear = line.contains(Regex("20\\d{2}"))
 
         return monthCount >= 3 && hasYear
@@ -1127,7 +1128,7 @@ class ExamFragment : Fragment() {
 
         // if current line ends with hyphen probably split word
         if (currentTrimmed.endsWith("-")) {
-            return ""  // No separator, just join directly
+            return "" // No separator, just join directly
         }
 
         // if next line starts with lowercase letter probably continuation
@@ -1348,7 +1349,7 @@ class ExamFragment : Fragment() {
         return matchingExams
     }
 
-    private fun findSpecialDays(content: String): Boolean {
+    private fun findSpecialDays(content: String): Boolean { // special days keywords
         val knownSpecialDays = listOf(
             "feier", "ferien", "bildung", "woche", "tag",
             "mainstudy", "abi", "prüfung", "std",
@@ -1728,7 +1729,7 @@ class ExamFragment : Fragment() {
         try {
             exportLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(requireContext(), "Fehler beim Öffnen des Datei-Dialogs", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_error_while_opening_file_dialog), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1737,10 +1738,10 @@ class ExamFragment : Fragment() {
             requireContext().contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(content.toByteArray())
             }
-            Toast.makeText(requireContext(), "Export erfolgreich gespeichert", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.slide_export_saved), Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             L.e(TAG, "Error saving to file", e)
-            Toast.makeText(requireContext(), "Fehler beim Speichern der Datei", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.grades_export_error), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1748,13 +1749,13 @@ class ExamFragment : Fragment() {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Klausuren Export", content)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(requireContext(), "Export in Zwischenablage kopiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.exam_export_copied), Toast.LENGTH_SHORT).show()
     }
 
     private fun showImportOptions() {
         val options = listOf(
-            Pair("Aus Datei importieren", R.drawable.ic_import_file),
-            Pair("Aus Zwischenablage einfügen", R.drawable.ic_import_clipboard)
+            Pair(getString(R.string.set_act_import_file), R.drawable.ic_import_file),
+            Pair(getString(R.string.set_act_backup_import_clipboard), R.drawable.ic_import_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -1773,14 +1774,14 @@ class ExamFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Klausuren importieren")
+            .setTitle(getString(R.string.exam_import_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> importFromFilePicker()
                     1 -> importFromClipboard()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -1800,7 +1801,7 @@ class ExamFragment : Fragment() {
             val content = clip.getItemAt(0).text.toString()
             importExamData(content)
         } else {
-            Toast.makeText(requireContext(), "Zwischenablage ist leer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.set_act_import_clipboard_empty), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1813,18 +1814,18 @@ class ExamFragment : Fragment() {
             updateExamCount()
 
             val importedCount = examList.size
-            Toast.makeText(requireContext(), "$importedCount Klausuren importiert (alle vorherigen ersetzt)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.exam_import_count, importedCount), Toast.LENGTH_SHORT).show()
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)
 
             val errorMessage = when {
                 e.message?.contains("Ungültiges Datenformat") == true ->
-                    "Ungültiges Datenformat. Bitte überprüfe deine Eingabe."
+                    getString(R.string.exam_import_invalid_format)
                 e.message?.contains("Importfehler") == true ->
                     e.message!!.removePrefix("Importfehler: ")
                 else ->
-                    "Fehler beim Importieren der Daten: ${e.message}"
+                    getString(R.string.exam_import_error, e.message)
             }
 
             Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
@@ -1863,7 +1864,7 @@ class ExamFragment : Fragment() {
                                 else resources.getColor(android.R.color.holo_red_light)
                             )
                         } else {
-                            textGradeDisplay.text = "Ungültig"
+                            textGradeDisplay.text = getString(R.string.exam_invalid)
                             textGradeDisplay.setBackgroundColor(resources.getColor(android.R.color.holo_red_light))
                         }
                     } catch (_: NumberFormatException) {
@@ -1962,9 +1963,9 @@ class ExamFragment : Fragment() {
         updateMarkSectionVisibility()
 
         val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(if (editExam != null) "Klausur bearbeiten" else "Klausur hinzufügen")
+            .setTitle(if (editExam != null) getString(R.string.exam_edit) else getString(R.string.exam_add))
             .setView(dialogView)
-            .setPositiveButton(if (editExam != null) "Speichern" else "Hinzufügen") { _, _ ->
+            .setPositiveButton(if (editExam != null) getString(R.string.exam_save) else getString(R.string.slide_add)) { _, _ ->
                 val subject = if (hasScannedDocument) {
                     spinnerSubject.selectedItem?.toString() ?: ""
                 } else {
@@ -1991,10 +1992,10 @@ class ExamFragment : Fragment() {
                         addExam(subject, selectedDate, note, null)
                     }
                 } else {
-                    Toast.makeText(requireContext(), "Gebe dein Fach ein", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.exam_enter_subject), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .create()
 
         dialog.show()
@@ -2059,7 +2060,7 @@ class ExamFragment : Fragment() {
         filterExams(searchBar.text.toString())
         updateExamCount()
 
-        Toast.makeText(requireContext(), "Klausur hinzugefügt", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.exam_added), Toast.LENGTH_SHORT).show()
     }
 
     private fun updateExam(exam: ExamEntry, subject: String, date: Date, note: String, mark: Int? = null) {
@@ -2078,14 +2079,14 @@ class ExamFragment : Fragment() {
 
         filterExams(searchBar.text.toString())
 
-        Toast.makeText(requireContext(), "Klausur aktualisiert", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.exam_updated), Toast.LENGTH_SHORT).show()
     }
 
     private fun deleteExam(exam: ExamEntry) {
         AlertDialog.Builder(requireContext())
-            .setTitle("Klausur löschen")
-            .setMessage("Möchten du diese Klausur wirklich löschen?")
-            .setPositiveButton("Ja, löschen") { _, _ ->
+            .setTitle(getString(R.string.exam_delete))
+            .setMessage(getString(R.string.exam_delete_confirm))
+            .setPositiveButton(getString(R.string.exam_yes_delete)) { _, _ ->
                 examList.remove(exam)
                 sortExams()
                 saveExams()
@@ -2094,9 +2095,9 @@ class ExamFragment : Fragment() {
 
                 filterExams(searchBar.text.toString())
                 updateExamCount()
-                Toast.makeText(requireContext(), "Klausur gelöscht", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.exam_deleted), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2233,7 +2234,7 @@ class ExamFragment : Fragment() {
     private fun updateExamCount() {
         val upcomingCount = examList.count { !it.isCompleted }
         val totalCount = examList.size
-        "$upcomingCount / $totalCount Klausuren".also { tvExamCount.text = it }
+        tvExamCount.text = getString(R.string.exam_count, upcomingCount, totalCount)
     }
 
     private fun updateDateButton(button: Button, date: Date) {
@@ -2245,8 +2246,8 @@ class ExamFragment : Fragment() {
         val content = exportExamData()
 
         val options = listOf(
-            Pair("Als Datei speichern", R.drawable.ic_export_file),
-            Pair("In Zwischenablage kopieren", R.drawable.ic_export_clipboard)
+            Pair(getString(R.string.set_act_export_file), R.drawable.ic_export_file),
+            Pair(getString(R.string.set_act_backup_copy_clipboard), R.drawable.ic_export_clipboard)
         )
 
         val adapter = object : ArrayAdapter<Pair<String, Int>>(
@@ -2265,14 +2266,14 @@ class ExamFragment : Fragment() {
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Klausuren exportieren")
+            .setTitle(getString(R.string.exam_export_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> saveExportToFile(content)
                     1 -> copyToClipboard(content)
                 }
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2280,7 +2281,7 @@ class ExamFragment : Fragment() {
         return backupManager.exportExamData()
     }
 
-    private fun getGermanWeekday(date: Date): String {
+    private fun getGermanWeekday(date: Date): String { // be cautious here
         val calendar = Calendar.getInstance().apply { time = date }
         return when (calendar.get(Calendar.DAY_OF_WEEK)) {
             Calendar.MONDAY -> "Mo"
@@ -2333,12 +2334,12 @@ class ExamFragment : Fragment() {
 
     private fun getWeekdayName(dayIndex: Int): String {
         return when (dayIndex) {
-            0 -> "Montag"
-            1 -> "Dienstag"
-            2 -> "Mittwoch"
-            3 -> "Donnerstag"
-            4 -> "Freitag"
-            else -> "Unbekannt"
+            0 -> getString(R.string.monday)
+            1 -> getString(R.string.tuesday)
+            2 -> getString(R.string.wednesday)
+            3 -> getString(R.string.thursday)
+            4 -> getString(R.string.friday)
+            else -> getString(R.string.unknown)
         }
     }
 
@@ -2399,7 +2400,7 @@ class ExamFragment : Fragment() {
         val textMark = dialogView.findViewById<TextView>(R.id.textDetailMark)
 
         textSubject.text = exam.subject
-        textDate.text = exam.getDisplayDateString()
+        textDate.text = exam.getDisplayDateString(requireContext())
 
         val detailedDateInfo = buildDetailedDateInfo(exam)
         textDetailedDate.text = detailedDateInfo
@@ -2408,25 +2409,25 @@ class ExamFragment : Fragment() {
             textNotes.text = exam.note
             textNotes.visibility = View.VISIBLE
         } else {
-            textNotes.text = "Keine Notizen"
+            textNotes.text = getString(R.string.exam_details_no_notes)
             textNotes.visibility = View.VISIBLE
         }
 
         if (exam.mark != null) {
             val grade = exam.getGradeFromMark()
-            "Note: ${exam.mark} Punkte ($grade)".also { textMark.text = it }
+            textMark.text = getString(R.string.exam_details_grade, exam.mark, grade)
             textMark.visibility = View.VISIBLE
         } else {
             textMark.visibility = View.GONE
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Klausur Details")
+            .setTitle(getString(R.string.exam_details_title))
             .setView(dialogView)
-            .setNeutralButton("Bearbeiten") { _, _ ->
+            .setNeutralButton(getString(R.string.exam_details_edit)) { _, _ ->
                 showAddExamDialog(exam)
             }
-            .setPositiveButton("Schließen", null)
+            .setPositiveButton(getString(R.string.exam_details_close), null)
             .show()
     }
 
@@ -2438,11 +2439,11 @@ class ExamFragment : Fragment() {
 
         val daysUntil = exam.getDaysUntilExam()
         val statusText = when {
-            exam.isOverdue() -> "Diese Klausur ist bereits vergangen"
-            daysUntil == 0L -> "Diese Klausur ist heute!"
-            daysUntil == 1L -> "Diese Klausur ist morgen"
-            daysUntil <= 7 -> "Noch $daysUntil Tag${if (daysUntil > 1) "e" else ""} bis zur Klausur"
-            else -> "Noch $daysUntil Tage bis zur Klausur"
+            exam.isOverdue() -> getString(R.string.exam_date_past)
+            daysUntil == 0L -> getString(R.string.exam_date_today)
+            daysUntil == 1L -> getString(R.string.exam_date_tomorrow)
+            daysUntil <= 7 -> getString(R.string.exam_days_remaining, daysUntil, (if (daysUntil > 1) "e" else ""))
+            else -> getString(R.string.exam_days_remaining, daysUntil, ("e"))
         }
 
         return "$formattedDate\n$statusText"

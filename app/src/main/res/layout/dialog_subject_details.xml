@@ -13,7 +13,7 @@
             android:id="@+id/tvSubjectName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Mathematik"
+            android:text="@string/dia_sub_det_subject_name"
             android:textSize="18sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp" />
@@ -22,7 +22,7 @@
             android:id="@+id/tvTeacher"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Lehrer: SMITH"
+            android:text="@string/dia_sub_det_teacher_label"
             android:textSize="14sp"
             android:layout_marginBottom="16dp" />
 
@@ -39,7 +39,7 @@
                 android:id="@+id/tvOralGrade"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Mündlich: 2.0"
+                android:text="@string/dia_sub_det_oral_grade"
                 android:textSize="14sp"
                 android:layout_marginBottom="4dp" />
 
@@ -47,7 +47,7 @@
                 android:id="@+id/tvWrittenAverage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Schriftlich: 2.1"
+                android:text="@string/dia_sub_det_written_average"
                 android:textSize="14sp"
                 android:layout_marginBottom="4dp" />
 
@@ -55,7 +55,7 @@
                 android:id="@+id/tvRatio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Verhältnis: 50% : 50%"
+                android:text="@string/dia_sub_det_ratio"
                 android:textSize="14sp"
                 android:layout_marginBottom="8dp" />
 
@@ -63,7 +63,7 @@
                 android:id="@+id/tvFinalGrade"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Endnote: 2.0"
+                android:text="@string/dia_sub_det_final_grade"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black" />
@@ -74,7 +74,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Klausurnoten:"
+            android:text="@string/dia_sub_det_exam_grades_label"
             android:textSize="16sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp" />

@@ -10,6 +10,7 @@ import com.google.gson.reflect.TypeToken
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
 import java.text.DecimalFormat
 import androidx.core.content.edit
+import com.thecooker.vertretungsplaner.R
 
 class BackupManager(private val context: Context) {
 
@@ -147,7 +148,7 @@ class BackupManager(private val context: Context) {
                     val sectionContent = parsedSections[section.name]
                     if (sectionContent == null) {
                         section.status = SectionStatus.EMPTY
-                        section.errorMessage = "Keine Daten in der Sicherung gefunden"
+                        section.errorMessage = context.getString(R.string.backup_no_data_in_backup_found)
                         notifySectionCompleted(section)
                         return@forEach
                     }
