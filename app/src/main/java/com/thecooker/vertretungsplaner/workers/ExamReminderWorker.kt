@@ -143,7 +143,7 @@ class ExamReminderWorker(
             val timeText = when (daysUntil) {
                 0L -> context.getString(R.string.exam_rem_today)
                 1L -> context.getString(R.string.exam_rem_tomorrow)
-                else -> context.getString(R.string.exam_rem_days, daysUntil, (if (daysUntil > 1) "en" else ""))
+                else -> context.resources.getQuantityString(R.plurals.exam_rem_days, daysUntil.toInt(), daysUntil.toInt())
             }
             "${exam.subject}: $timeText"
         } else {

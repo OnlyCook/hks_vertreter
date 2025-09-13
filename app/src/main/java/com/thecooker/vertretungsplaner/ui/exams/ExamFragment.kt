@@ -37,6 +37,7 @@ import com.thecooker.vertretungsplaner.data.CalendarDataManager
 import com.thecooker.vertretungsplaner.data.ExamManager
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import androidx.core.content.edit
+import com.thecooker.vertretungsplaner.utils.ExamShareHelper
 
 class ExamFragment : Fragment() {
 
@@ -61,6 +62,8 @@ class ExamFragment : Fragment() {
     private val allowOldSchedules = false // set to true for testing only
 
     private lateinit var backupManager: BackupManager
+
+    private lateinit var examShareHelper: ExamShareHelper
 
     data class ExamEntry(
         val id: String = UUID.randomUUID().toString(),
@@ -141,27 +144,87 @@ class ExamFragment : Fragment() {
             }
         }
 
-        fun getDisplayDateString(context: Context): String {
-            val format = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-            val weekday = getGermanWeekday(date, context)
-            val dateStr = format.format(date)
+        fun getDetailedDateString(): String {
+            val weekdayFormat = SimpleDateFormat("E", Locale.getDefault())
+            val dayFormat = SimpleDateFormat("d", Locale.getDefault())
+            val monthFormat = SimpleDateFormat("MMMM", Locale.getDefault())
+            val yearFormat = SimpleDateFormat("yyyy", Locale.getDefault())
 
+            val weekdayStr = weekdayFormat.format(date)
+            val dayStr = dayFormat.format(date)
+            val monthStr = monthFormat.format(date)
+            val yearStr = yearFormat.format(date)
+
+            val dayWithOrdinal = if (Locale.getDefault().language == "en") {
+                dayStr + getOrdinalSuffix(dayStr.toInt())
+            } else {
+                "$dayStr."
+            }
+
+            return "$weekdayStr $dayWithOrdinal $monthStr $yearStr"
+        }
+
+        private fun getOrdinalSuffix(day: Int): String {
+            return when {
+                day in 11..13 -> "th" // edge case ah
+                day % 10 == 1 -> "st"
+                day % 10 == 2 -> "nd"
+                day % 10 == 3 -> "rd"
+                else -> "th"
+            }
+        }
+
+        fun getDisplayDateString(context: Context): String {
             val daysUntil = getDaysUntilExam()
-            val formattedDate = "$weekday. $dateStr"
+            val weekdayFormat = SimpleDateFormat("E", Locale.getDefault())
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+
+            val weekdayStr = weekdayFormat.format(date)
+            val dateStr = dateFormat.format(date)
+            val formattedDate = "$weekdayStr $dateStr"
 
             return when {
                 isOverdue() -> context.getString(R.string.exam_date_detail_overdue, formattedDate)
                 daysUntil == 0L -> context.getString(R.string.exam_date_detail_today, formattedDate)
                 daysUntil == 1L -> context.getString(R.string.exam_date_detail_tomorrow, formattedDate)
-                daysUntil <= 7 -> context.getString(R.string.exam_date_detail_in_given_days, formattedDate, daysUntil, (if (daysUntil > 1) "en" else ""))
+                daysUntil <= 7 -> {
+                    context.resources.getQuantityString(
+                        R.plurals.exam_date_detail_in_given_days,
+                        daysUntil.toInt(),
+                        formattedDate,
+                        daysUntil.toInt()
+                    )
+                }
                 daysUntil <= 30 -> {
                     val weeks = daysUntil / 7
                     val remainingDays = daysUntil % 7
                     when {
                         weeks == 1L && remainingDays == 0L -> context.getString(R.string.exam_date_detail_one_week, formattedDate)
-                        weeks == 1L -> context.getString(R.string.exam_date_detail_one_week_plus_days, formattedDate, remainingDays, (if (remainingDays > 1) "en" else ""))
-                        remainingDays == 0L -> context.getString(R.string.exam_date_detail_weeks, formattedDate, weeks)
-                        else -> context.getString(R.string.exam_date_detail_weeks_plus_days, formattedDate, weeks, remainingDays, (if (remainingDays > 1) "en" else ""))
+                        weeks == 1L -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_one_week_plus_days,
+                                remainingDays.toInt(),
+                                formattedDate,
+                                remainingDays.toInt()
+                            )
+                        }
+                        remainingDays == 0L -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_weeks,
+                                weeks.toInt(),
+                                formattedDate,
+                                weeks.toInt()
+                            )
+                        }
+                        else -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_weeks_plus_days,
+                                remainingDays.toInt(),
+                                formattedDate,
+                                weeks.toInt(),
+                                remainingDays.toInt()
+                            )
+                        }
                     }
                 }
                 daysUntil <= 365 -> {
@@ -169,9 +232,31 @@ class ExamFragment : Fragment() {
                     val remainingDays = daysUntil % 30
                     when {
                         months == 1L && remainingDays <= 5 -> context.getString(R.string.exam_date_detail_one_month, formattedDate)
-                        months == 1L -> context.getString(R.string.exam_date_detail_one_month_plus_days, formattedDate, remainingDays, (if (remainingDays > 1) "en" else ""))
-                        remainingDays <= 5 -> context.getString(R.string.exam_date_detail_months, formattedDate, months)
-                        else -> context.getString(R.string.exam_date_detail_months_plus_days, formattedDate, months, remainingDays, (if (remainingDays > 1) "en" else ""))
+                        months == 1L -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_one_month_plus_days,
+                                remainingDays.toInt(),
+                                formattedDate,
+                                remainingDays.toInt()
+                            )
+                        }
+                        remainingDays <= 5 -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_months,
+                                months.toInt(),
+                                formattedDate,
+                                months.toInt()
+                            )
+                        }
+                        else -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_months_plus_days,
+                                remainingDays.toInt(),
+                                formattedDate,
+                                months.toInt(),
+                                remainingDays.toInt()
+                            )
+                        }
                     }
                 }
                 else -> {
@@ -181,31 +266,46 @@ class ExamFragment : Fragment() {
                         years == 1L && remainingDays <= 10 -> context.getString(R.string.exam_date_detail_one_year, formattedDate)
                         years == 1L -> {
                             val months = remainingDays / 30
-                            if (months > 0) context.getString(R.string.exam_date_detail_one_year_plus_months, formattedDate, months, (if (months > 1) "en" else ""))
-                            else context.getString(R.string.exam_date_detail_one_year, formattedDate)
+                            if (months > 0) {
+                                context.resources.getQuantityString(
+                                    R.plurals.exam_date_detail_one_year_plus_months,
+                                    months.toInt(),
+                                    formattedDate,
+                                    months.toInt()
+                                )
+                            } else {
+                                context.getString(R.string.exam_date_detail_one_year, formattedDate)
+                            }
                         }
-                        remainingDays <= 10 -> context.getString(R.string.exam_date_detail_years, formattedDate, years)
+                        remainingDays <= 10 -> {
+                            context.resources.getQuantityString(
+                                R.plurals.exam_date_detail_years,
+                                years.toInt(),
+                                formattedDate,
+                                years.toInt()
+                            )
+                        }
                         else -> {
                             val months = remainingDays / 30
-                            if (months > 0) context.getString(R.string.exam_date_detail_years_plus_months, formattedDate, years, months, (if (months > 1) "en" else ""))
-                            else context.getString(R.string.exam_date_detail_years, formattedDate, years)
+                            if (months > 0) {
+                                context.resources.getQuantityString(
+                                    R.plurals.exam_date_detail_years_plus_months,
+                                    months.toInt(),
+                                    formattedDate,
+                                    years.toInt(),
+                                    months.toInt()
+                                )
+                            } else {
+                                context.resources.getQuantityString(
+                                    R.plurals.exam_date_detail_years,
+                                    years.toInt(),
+                                    formattedDate,
+                                    years.toInt()
+                                )
+                            }
                         }
                     }
                 }
-            }
-        }
-
-        private fun getGermanWeekday(date: Date, context: Context): String {
-            val calendar = Calendar.getInstance().apply { time = date }
-            return when (calendar.get(Calendar.DAY_OF_WEEK)) {
-                Calendar.MONDAY -> context.getString(R.string.monday_short)
-                Calendar.TUESDAY -> context.getString(R.string.tuesday_short)
-                Calendar.WEDNESDAY -> context.getString(R.string.wednesday_short)
-                Calendar.THURSDAY -> context.getString(R.string.thursday_short)
-                Calendar.FRIDAY -> context.getString(R.string.friday_short)
-                Calendar.SATURDAY -> context.getString(R.string.saturday_short)
-                Calendar.SUNDAY -> context.getString(R.string.sunday_short)
-                else -> ""
             }
         }
 
@@ -267,6 +367,7 @@ class ExamFragment : Fragment() {
 
         sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
         backupManager = BackupManager(requireContext())
+        examShareHelper = ExamShareHelper(requireContext())
 
         initializeViews(view)
         setupFilePickerLaunchers()
@@ -279,6 +380,7 @@ class ExamFragment : Fragment() {
             setupRecyclerView()
             loadExams()
             setupListeners()
+            handleSharedExam()
             updateExamCount()
 
             isLoading = false
@@ -2398,9 +2500,19 @@ class ExamFragment : Fragment() {
         val textDetailedDate = dialogView.findViewById<TextView>(R.id.textDetailedDate)
         val textNotes = dialogView.findViewById<TextView>(R.id.textDetailNotes)
         val textMark = dialogView.findViewById<TextView>(R.id.textDetailMark)
+        val btnShare = dialogView.findViewById<ImageButton>(R.id.btnShareExam)
+        val btnCopy = dialogView.findViewById<ImageButton>(R.id.btnCopyExamToClipboard)
+
+        btnShare.setOnClickListener {
+            shareExam(exam)
+        }
+
+        btnCopy.setOnClickListener {
+            copyExamNotesToClipboard(exam)
+        }
 
         textSubject.text = exam.subject
-        textDate.text = exam.getDisplayDateString(requireContext())
+        textDate.text = exam.getDetailedDateString()
 
         val detailedDateInfo = buildDetailedDateInfo(exam)
         textDetailedDate.text = detailedDateInfo
@@ -2432,20 +2544,177 @@ class ExamFragment : Fragment() {
     }
 
     private fun buildDetailedDateInfo(exam: ExamEntry): String {
-        val format = SimpleDateFormat("EEEE, dd. MMMM yyyy", Locale.GERMANY)
-        val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
-        val formattedDate = format.format(exam.date)
-        timeFormat.format(exam.date)
-
         val daysUntil = exam.getDaysUntilExam()
+
         val statusText = when {
             exam.isOverdue() -> getString(R.string.exam_date_past)
             daysUntil == 0L -> getString(R.string.exam_date_today)
             daysUntil == 1L -> getString(R.string.exam_date_tomorrow)
-            daysUntil <= 7 -> getString(R.string.exam_days_remaining, daysUntil, (if (daysUntil > 1) "e" else ""))
-            else -> getString(R.string.exam_days_remaining, daysUntil, ("e"))
+            daysUntil <= 7 -> {
+                resources.getQuantityString(R.plurals.exam_days_remaining, daysUntil.toInt(), daysUntil.toInt())
+            }
+            daysUntil <= 30 -> {
+                val weeks = daysUntil / 7
+                val remainingDays = daysUntil % 7
+                val baseText = when {
+                    weeks == 1L && remainingDays == 0L -> getString(R.string.exam_one_week_remaining)
+                    weeks == 1L -> resources.getQuantityString(R.plurals.exam_one_week_plus_days_remaining, remainingDays.toInt(), remainingDays.toInt())
+                    remainingDays == 0L -> resources.getQuantityString(R.plurals.exam_weeks_remaining, weeks.toInt(), weeks.toInt())
+                    else -> resources.getQuantityString(R.plurals.exam_weeks_plus_days_remaining, remainingDays.toInt(), weeks.toInt(), remainingDays.toInt())
+                }
+                "$baseText ${getString(R.string.exam_in_total_days, daysUntil.toInt())}"
+            }
+            daysUntil <= 365 -> {
+                val months = daysUntil / 30
+                val remainingDays = daysUntil % 30
+                val baseText = when {
+                    months == 1L && remainingDays <= 5 -> getString(R.string.exam_one_month_remaining)
+                    months == 1L -> resources.getQuantityString(R.plurals.exam_one_month_plus_days_remaining, remainingDays.toInt(), remainingDays.toInt())
+                    remainingDays <= 5 -> resources.getQuantityString(R.plurals.exam_months_remaining, months.toInt(), months.toInt())
+                    else -> resources.getQuantityString(R.plurals.exam_months_plus_days_remaining, remainingDays.toInt(), months.toInt(), remainingDays.toInt())
+                }
+                "$baseText ${getString(R.string.exam_in_total_days, daysUntil.toInt())}"
+            }
+            else -> {
+                val years = daysUntil / 365
+                val remainingDays = daysUntil % 365
+                val baseText = when {
+                    years == 1L && remainingDays <= 10 -> getString(R.string.exam_one_year_remaining)
+                    years == 1L -> {
+                        val months = remainingDays / 30
+                        if (months > 0) {
+                            resources.getQuantityString(R.plurals.exam_one_year_plus_months_remaining, months.toInt(), months.toInt())
+                        } else {
+                            getString(R.string.exam_one_year_remaining)
+                        }
+                    }
+                    remainingDays <= 10 -> resources.getQuantityString(R.plurals.exam_years_remaining, years.toInt(), years.toInt())
+                    else -> {
+                        val months = remainingDays / 30
+                        if (months > 0) {
+                            resources.getQuantityString(R.plurals.exam_years_plus_months_remaining, months.toInt(), years.toInt(), months.toInt())
+                        } else {
+                            resources.getQuantityString(R.plurals.exam_years_remaining, years.toInt(), years.toInt())
+                        }
+                    }
+                }
+                "$baseText ${getString(R.string.exam_in_total_days, daysUntil.toInt())}"
+            }
+        }
+        return statusText
+    }
+
+    private fun handleSharedExam() {
+        arguments?.getString("shared_exam_uri")?.let { uriString ->
+            try {
+                val uri = Uri.parse(uriString)
+                val sharedExam = examShareHelper.parseSharedExam(uri)
+
+                if (sharedExam != null) {
+                    val examEntry = examShareHelper.convertToExamEntry(sharedExam)
+                    if (examEntry != null) {
+                        showSharedExamDialog(examEntry, sharedExam.sharedBy)
+                    } else {
+                        Toast.makeText(requireContext(), getString(R.string.share_exam_invalid), Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.share_exam_parse_error), Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                L.e(TAG, "Error handling shared exam", e)
+                Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+            }
+
+            // Clear the argument to prevent reprocessing
+            arguments?.remove("shared_exam_uri")
+        }
+    }
+
+    private fun showSharedExamDialog(sharedExam: ExamEntry, sharedBy: String?) {
+        val hasCompletedSetup = sharedPreferences.getBoolean("setup_completed", false)
+        val selectedKlasse = sharedPreferences.getString("selected_klasse", "")
+        val selectedBildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
+
+        if (!hasCompletedSetup || selectedKlasse.isNullOrEmpty() || selectedBildungsgang.isNullOrEmpty()) {
+            Toast.makeText(requireContext(), getString(R.string.share_setup_required), Toast.LENGTH_LONG).show()
+            return
         }
 
-        return "$formattedDate\n$statusText"
+        val existingExam = examList.find {
+            it.subject == sharedExam.subject &&
+                    isSameDay(it.date, sharedExam.date)
+        }
+
+        val message = if (existingExam != null) {
+            if (sharedBy != null) {
+                getString(R.string.share_exam_overwrite_with_sender, sharedExam.subject, sharedBy)
+            } else {
+                getString(R.string.share_exam_overwrite, sharedExam.subject)
+            }
+        } else {
+            if (sharedBy != null) {
+                getString(R.string.share_exam_add_with_sender, sharedExam.subject, sharedBy)
+            } else {
+                getString(R.string.share_exam_add, sharedExam.subject)
+            }
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.share_exam_received_title))
+            .setMessage(message)
+            .setPositiveButton(if (existingExam != null) getString(R.string.share_overwrite) else getString(R.string.share_add)) { _, _ ->
+                if (existingExam != null) {
+                    existingExam.note = sharedExam.note
+                    sortExams()
+                    saveExams()
+                    filterExams(searchBar.text.toString())
+                    Toast.makeText(requireContext(), getString(R.string.share_exam_updated), Toast.LENGTH_SHORT).show()
+                } else {
+                    addExam(sharedExam.subject, sharedExam.date, sharedExam.note, sharedExam.mark)
+                    Toast.makeText(requireContext(), getString(R.string.share_exam_added), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun isSameDay(date1: Date, date2: Date): Boolean {
+        val cal1 = Calendar.getInstance().apply { time = date1 }
+        val cal2 = Calendar.getInstance().apply { time = date2 }
+
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+                cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+    }
+
+    private fun shareExam(exam: ExamEntry) {
+        val hasCompletedSetup = sharedPreferences.getBoolean("setup_completed", false)
+        val selectedKlasse = sharedPreferences.getString("selected_klasse", "")
+        val selectedBildungsgang = sharedPreferences.getString("selected_bildungsgang", "")
+
+        if (!hasCompletedSetup || selectedKlasse.isNullOrEmpty() || selectedBildungsgang.isNullOrEmpty()) {
+            Toast.makeText(requireContext(), getString(R.string.share_setup_required), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val sharedBy = "$selectedKlasse ($selectedBildungsgang)"
+        val shareIntent = examShareHelper.shareExam(exam, sharedBy)
+
+        if (shareIntent != null) {
+            try {
+                startActivity(shareIntent)
+            } catch (e: Exception) {
+                L.e(TAG, "Error sharing exam", e)
+                Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.share_exam_error), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun copyExamNotesToClipboard(exam: ExamEntry) {
+        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Exam Notes", exam.note)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(requireContext(), getString(R.string.exam_notes_copied), Toast.LENGTH_SHORT).show()
     }
 }

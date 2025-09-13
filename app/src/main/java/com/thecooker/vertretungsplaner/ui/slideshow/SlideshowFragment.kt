@@ -34,6 +34,7 @@ import com.thecooker.vertretungsplaner.utils.BackupManager
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.core.content.edit
+import com.thecooker.vertretungsplaner.utils.HomeworkShareHelper
 import kotlin.reflect.KProperty
 
 class SlideshowFragment : Fragment() {
@@ -133,12 +134,15 @@ class SlideshowFragment : Fragment() {
                 daysDiff == -1L -> context.getString(R.string.slide_due_yesterday)
                 daysDiff > 1 -> {
                     val weeks = daysDiff / 7
-                    if (weeks > 0) context.getString(R.string.slide_due_in_weeks, weeks, (if (weeks > 1) "n" else ""))
-                    else context.getString(R.string.slide_due_in_days, daysDiff, ("en"))
+                    if (weeks > 0) {
+                        context.resources.getQuantityString(R.plurals.slide_due_in_weeks, weeks.toInt(), weeks.toInt())
+                    } else {
+                        context.resources.getQuantityString(R.plurals.slide_due_in_days, daysDiff.toInt(), daysDiff.toInt())
+                    }
                 }
                 else -> {
-                    val daysPast = -daysDiff
-                    context.getString(R.string.slide_due_days_ago, daysPast, (if (daysPast > 1) "en" else ""))
+                    val daysPast = (-daysDiff).toInt()
+                    context.resources.getQuantityString(R.plurals.slide_due_days_ago, daysPast, daysPast)
                 }
             }
 
@@ -156,11 +160,11 @@ class SlideshowFragment : Fragment() {
             var result = context.getString(R.string.slide_due_date_format, dateFormat.format(dueDate))
 
             if (dueTime != null) {
-                result += context.getString(R.string.slide_due_date_time, timeFormat.format(dueTime!!))
+                result += " ${context.getString(R.string.slide_due_date_time, timeFormat.format(dueTime!!))}"
             }
 
             if (lessonNumber != null) {
-                result += context.getString(R.string.slide_due_date_lesson, lessonNumber)
+                result += " ${context.getString(R.string.slide_due_date_lesson, lessonNumber)}"
             }
 
             return result
@@ -931,54 +935,71 @@ class SlideshowFragment : Fragment() {
         val textSubject = dialogView.findViewById<TextView>(R.id.textSubject)
         val textDueDate = dialogView.findViewById<TextView>(R.id.textDueDate)
         val layoutContent = dialogView.findViewById<LinearLayout>(R.id.layoutContent)
+        val btnShareHomework = dialogView.findViewById<ImageButton>(R.id.btnShareHomework)
+        val btnCopyToClipboard = dialogView.findViewById<ImageButton>(R.id.btnCopyToClipboard)
 
         textSubject.text = homework.subject
-        textDueDate.text = homework.getDetailedDueDateString(requireContext())
+        textDueDate.text = getDetailedDueDateStringWithWeekday(homework)
 
-        if (homework.checklistItems.isNotEmpty()) {
-            for (item in homework.checklistItems) {
-                val checkBox = CheckBox(requireContext())
-                checkBox.text = item.text
-                checkBox.isChecked = item.isCompleted
-                checkBox.setOnCheckedChangeListener { _, isChecked ->
-                    item.isCompleted = isChecked
-                    val wasAutoCompleted = homework.updateChecklistCompletion()
-                    if (wasAutoCompleted) {
-                        val position = homeworkList.indexOf(homework)
-                        if (position != -1) {
-                            adapter.notifyItemChanged(position)
+        layoutContent.removeAllViews()
+
+        if (homework.checklistItems.isEmpty() && !homework.hasTextContent) {
+            val noNotesView = TextView(requireContext())
+            noNotesView.text = getString(R.string.dia_ho_de_no_notes)
+            noNotesView.setTextColor(resources.getColor(android.R.color.darker_gray))
+            noNotesView.setPadding(16, 16, 16, 16)
+            layoutContent.addView(noNotesView)
+        } else {
+            if (homework.checklistItems.isNotEmpty()) {
+                for (item in homework.checklistItems) {
+                    val checkBox = CheckBox(requireContext())
+                    checkBox.text = item.text
+                    checkBox.isChecked = item.isCompleted
+                    checkBox.setOnCheckedChangeListener { _, isChecked ->
+                        item.isCompleted = isChecked
+                        val wasAutoCompleted = homework.updateChecklistCompletion()
+                        if (wasAutoCompleted) {
+                            val position = homeworkList.indexOf(homework)
+                            if (position != -1) {
+                                adapter.notifyItemChanged(position)
+                            }
                         }
+                        saveHomework()
                     }
-                    saveHomework()
+                    layoutContent.addView(checkBox)
                 }
-                layoutContent.addView(checkBox)
+            }
+
+            if (homework.hasTextContent) {
+                if (homework.checklistItems.isNotEmpty()) {
+                    val spacer = View(requireContext())
+                    spacer.layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        16
+                    )
+                    layoutContent.addView(spacer)
+                }
+
+                val textContent = homework.content.split("\n")
+                    .filter { line -> !line.trim().startsWith("-") }
+                    .joinToString("\n")
+                    .trim()
+
+                if (textContent.isNotEmpty()) {
+                    val textView = TextView(requireContext())
+                    textView.text = textContent
+                    textView.setPadding(16, 16, 16, 16)
+                    layoutContent.addView(textView)
+                }
             }
         }
 
-        if (homework.hasTextContent) {
-            if (homework.checklistItems.isNotEmpty()) {
-                val separator = View(requireContext())
-                separator.layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    2
-                )
-                separator.setBackgroundColor(resources.getColor(android.R.color.darker_gray))
-                val params = separator.layoutParams as LinearLayout.LayoutParams
-                params.setMargins(0, 16, 0, 16)
-                layoutContent.addView(separator)
-            }
+        btnShareHomework.setOnClickListener {
+            shareHomework(homework)
+        }
 
-            val textContent = homework.content.split("\n")
-                .filter { line -> !line.trim().startsWith("-") }
-                .joinToString("\n")
-                .trim()
-
-            if (textContent.isNotEmpty()) {
-                val textView = TextView(requireContext())
-                textView.text = textContent
-                textView.setPadding(16, 16, 16, 16)
-                layoutContent.addView(textView)
-            }
+        btnCopyToClipboard.setOnClickListener {
+            copyHomeworkToClipboard(homework)
         }
 
         AlertDialog.Builder(requireContext())
@@ -986,6 +1007,35 @@ class SlideshowFragment : Fragment() {
             .setView(dialogView)
             .setPositiveButton(getString(R.string.slide_close), null)
             .show()
+    }
+
+    private fun getDetailedDueDateStringWithWeekday(homework: HomeworkEntry): String {
+        val calendar = Calendar.getInstance().apply { time = homework.dueDate }
+        val dayOfWeek = when (calendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> getString(R.string.monday_short)
+            Calendar.TUESDAY -> getString(R.string.tuesday_short)
+            Calendar.WEDNESDAY -> getString(R.string.wednesday_short)
+            Calendar.THURSDAY -> getString(R.string.thursday_short)
+            Calendar.FRIDAY -> getString(R.string.friday_short)
+            Calendar.SATURDAY -> getString(R.string.saturday_short)
+            Calendar.SUNDAY -> getString(R.string.sunday_short)
+            else -> ""
+        }
+
+        val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
+
+        var result = getString(R.string.slide_due_date_format_weekday, dayOfWeek, dateFormat.format(homework.dueDate))
+
+        if (homework.dueTime != null) {
+            result += " ${getString(R.string.slide_due_date_time, timeFormat.format(homework.dueTime!!))}"
+        }
+
+        if (homework.lessonNumber != null) {
+            result += " ${getString(R.string.slide_due_date_lesson, homework.lessonNumber)}"
+        }
+
+        return result
     }
 
     private fun sortHomework() {
@@ -1084,7 +1134,7 @@ class SlideshowFragment : Fragment() {
     private fun updateHomeworkCount() {
         val uncompletedCount = homeworkList.count { !it.isCompleted }
         val totalCount = homeworkList.size
-        getString(R.string.slide_homework_count, uncompletedCount, totalCount)
+        tvHomeworkCount.text = getString(R.string.slide_homework_count, uncompletedCount, totalCount)
     }
 
     private fun cleanupCompletedAndOverdueHomework() {
@@ -1496,5 +1546,117 @@ class SlideshowFragment : Fragment() {
             L.e(TAG, "Error checking school status", e)
             true
         }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        arguments?.getString("shared_homework_uri")?.let { uriString ->
+            handleSharedHomework(Uri.parse(uriString))
+            arguments?.remove("shared_homework_uri")
+        }
+    }
+
+    private fun handleSharedHomework(uri: Uri) {
+        try {
+            val shareHelper = HomeworkShareHelper(requireContext())
+            val sharedHomework = shareHelper.parseSharedHomework(uri)
+
+            if (sharedHomework != null && sharedHomework.type == "homework") {
+                val homeworkEntry = shareHelper.convertToHomeworkEntry(sharedHomework)
+
+                if (homeworkEntry != null) {
+                    showSharedHomeworkDialog(homeworkEntry, sharedHomework.sharedBy)
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.share_parse_error), Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.share_invalid_file), Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            L.e(TAG, "Error handling shared homework", e)
+            Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showSharedHomeworkDialog(sharedHomework: HomeworkEntry, sharedBy: String?) {
+        val existingHomework = findExistingHomework(sharedHomework)
+
+        val message = if (existingHomework != null) {
+            if (sharedBy != null) {
+                getString(R.string.share_overwrite_message_with_sender, sharedHomework.subject, sharedBy)
+            } else {
+                getString(R.string.share_overwrite_message, sharedHomework.subject)
+            }
+        } else {
+            if (sharedBy != null) {
+                getString(R.string.share_add_message_with_sender, sharedHomework.subject, sharedBy)
+            } else {
+                getString(R.string.share_add_message, sharedHomework.subject)
+            }
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.share_dialog_title))
+            .setMessage(message)
+            .setPositiveButton(if (existingHomework != null) getString(R.string.share_overwrite) else getString(R.string.share_add)) { _, _ ->
+                if (existingHomework != null) {
+                    existingHomework.content = sharedHomework.content
+                    existingHomework.checklistItems = sharedHomework.checklistItems
+                    existingHomework.hasTextContent = sharedHomework.hasTextContent
+                } else {
+                    homeworkList.add(sharedHomework)
+                }
+
+                sortHomework()
+                saveHomework()
+                updateHomeworkCount()
+
+                Toast.makeText(requireContext(),
+                    if (existingHomework != null) getString(R.string.share_homework_updated)
+                    else getString(R.string.slide_homework_added),
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun findExistingHomework(sharedHomework: HomeworkEntry): HomeworkEntry? {
+        return homeworkList.find { existing ->
+            existing.subject == sharedHomework.subject &&
+                    existing.dueDate.time == sharedHomework.dueDate.time &&
+                    existing.lessonNumber == sharedHomework.lessonNumber
+        }
+    }
+
+    private fun shareHomework(homework: HomeworkEntry) {
+        val shareHelper = HomeworkShareHelper(requireContext())
+        val userName = sharedPreferences.getString("user_name", null)
+
+        val shareIntent = shareHelper.shareHomework(homework, userName)
+        if (shareIntent != null) {
+            try {
+                startActivity(shareIntent)
+            } catch (e: Exception) {
+                L.e(TAG, "Error starting share activity", e)
+                Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.share_create_error), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun copyHomeworkToClipboard(homework: HomeworkEntry) {
+        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+        val contentText = if (homework.checklistItems.isNotEmpty() || homework.hasTextContent) {
+            homework.content
+        } else {
+            getString(R.string.dia_ho_de_no_notes)
+        }
+
+        val clip = ClipData.newPlainText("Hausaufgaben Notizen", contentText)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(requireContext(), getString(R.string.dia_ho_de_copied), Toast.LENGTH_SHORT).show()
     }
 }

@@ -42,10 +42,15 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import android.os.Handler
 import android.os.Looper
+import android.widget.EditText
 import com.thecooker.vertretungsplaner.utils.BackupProgressDialog
 import com.thecooker.vertretungsplaner.utils.DialogDismissCallback
 import com.thecooker.vertretungsplaner.utils.SectionSelectionCallback
 import com.thecooker.vertretungsplaner.utils.SectionSelectionDialog
+import android.text.TextWatcher
+import android.text.Editable
+import android.widget.ScrollView
+import androidx.core.graphics.toColorInt
 
 class SettingsActivity : BaseActivity() {
 
@@ -63,6 +68,18 @@ class SettingsActivity : BaseActivity() {
     private var extractedTeachers = mutableListOf<String>()
     private var extractedRooms = mutableListOf<String>()
     private val knownSubjectRooms = mutableMapOf<Pair<String, String>, String>()
+
+    // search
+    data class SearchableView(
+        val view: View,
+        val text: String,
+        val priority: Int = 1 // 1 = normal text, 2 = header/title, 3 = section header
+    )
+    private lateinit var searchBarSettings: EditText
+    private lateinit var settingsContainer: LinearLayout
+    private var allSearchableViews = mutableListOf<SearchableView>()
+    private var originalBackgroundColors = mutableMapOf<View, Int>()
+    private var noResultsTextView: TextView? = null
 
     companion object {
         private const val PDF_PICKER_REQUEST_CODE = 100
@@ -134,6 +151,7 @@ class SettingsActivity : BaseActivity() {
         isInitializing = true
 
         initializeViews()
+        initializeSearchViews()
         initializeHomeworkReminderViews()
         initializeExamReminderViews()
         setupToolbar()
@@ -163,6 +181,145 @@ class SettingsActivity : BaseActivity() {
         setupLanguageSettings()
 
         isInitializing = false
+    }
+
+    private fun initializeSearchViews() {
+        searchBarSettings = findViewById(R.id.searchBarSettings)
+        settingsContainer = findViewById(R.id.settingsContainer)
+        noResultsTextView = findViewById(R.id.tvNoSearchResults)
+
+        setupSearchFunctionality()
+    }
+
+    private fun setupSearchFunctionality() {
+        settingsContainer.post {
+            buildSearchableViewsList()
+        }
+
+        searchBarSettings.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val query = s?.toString()?.trim() ?: ""
+                performSearch(query)
+
+                if (query.isNotEmpty()) {
+                    val matches = findMatches(query)
+                    if (matches.isNotEmpty()) {
+                        currentMatches = matches
+                        currentMatchIndex = 0
+                        scrollToMatch(currentMatchIndex)
+                    }
+                }
+            }
+        })
+
+        searchBarSettings.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                val query = searchBarSettings.text.toString().trim()
+                if (query.isNotEmpty() && currentMatches.isNotEmpty()) {
+                    currentMatchIndex = (currentMatchIndex + 1) % currentMatches.size
+                    scrollToMatch(currentMatchIndex)
+                }
+                searchBarSettings.clearFocus()
+                searchBarSettings.requestFocus()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun scrollToMatch(matchIndex: Int) {
+        if (currentMatches.isEmpty() || matchIndex >= currentMatches.size) return
+
+        val targetView = currentMatches[matchIndex].first.view
+        val scrollView = findViewById<ScrollView>(R.id.scrollViewSettings)
+
+        val location = IntArray(2)
+        targetView.getLocationInWindow(location)
+        val scrollViewLocation = IntArray(2)
+        scrollView.getLocationInWindow(scrollViewLocation)
+
+        val relativeY = location[1] - scrollViewLocation[1]
+        val scrollY = scrollView.scrollY + relativeY - (scrollView.height / 2)
+
+        scrollView.smoothScrollTo(0, maxOf(0, scrollY))
+
+        targetView.animate()
+            .scaleX(1.05f)
+            .scaleY(1.05f)
+            .setDuration(200)
+            .withEndAction {
+                targetView.animate()
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .setDuration(200)
+                    .start()
+            }
+            .start()
+    }
+
+    private fun buildSearchableViewsList() {
+        allSearchableViews.clear()
+        originalBackgroundColors.clear()
+
+        searchInViewGroup(settingsContainer, allSearchableViews)
+
+        L.d(TAG, "Built searchable views list with ${allSearchableViews.size} items")
+    }
+
+    private fun searchInViewGroup(viewGroup: ViewGroup, searchableViews: MutableList<SearchableView>) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+
+            when (child) {
+                is TextView -> {
+                    val text = child.text?.toString()?.trim()
+                    if (!text.isNullOrEmpty() && !isHintText(child)) {
+                        val priority = when {
+                            child.textSize >= 18f -> 3 // section headers
+                            child.textSize >= 16f -> 2 // subsection headers
+                            else -> 1 // normal text
+                        }
+                        searchableViews.add(SearchableView(child, text, priority))
+
+                        try {
+                            val background = child.background
+                            if (background is android.graphics.drawable.ColorDrawable) {
+                                originalBackgroundColors[child] = background.color
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                is Spinner -> {
+                    try {
+                        val selectedItem = child.selectedItem?.toString()?.trim()
+                        if (!selectedItem.isNullOrEmpty()) {
+                            searchableViews.add(SearchableView(child, selectedItem, 1))
+                            storeOriginalBackground(child)
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                is ViewGroup -> {
+                    searchInViewGroup(child, searchableViews)
+                }
+            }
+        }
+    }
+
+    private fun isHintText(textView: TextView): Boolean {
+        val text = textView.text?.toString() ?: ""
+
+        val hintTexts = listOf(
+            getString(R.string.act_set_change_hint),
+            getString(R.string.act_set_filter_available_hint),
+            getString(R.string.act_set_filter_position_hint)
+        )
+
+        return hintTexts.any { it.equals(text, ignoreCase = true) }
     }
 
     private fun setupBackPressedCallback() {
@@ -424,7 +581,7 @@ class SettingsActivity : BaseActivity() {
         editor.putString("all_extracted_rooms", extractedRooms.joinToString(","))
 
         val klasse = sharedPreferences.getString("selected_klasse", "")
-        editor.putString("scanned_document_info", "${getString(R.string.set_act_class)}: $klasse")
+        editor.putString("scanned_document_info", klasse)
 
         val success = editor.commit() // commit instead apply (i died here)
         L.d(TAG, "SharedPreferences save success: $success")
@@ -481,11 +638,16 @@ class SettingsActivity : BaseActivity() {
                 val subjectCount = if (!alternativeRooms.isNullOrBlank()) JSONObject(
                     alternativeRooms
                 ).length() else 0
-                getString(R.string.set_act_selected_subjects_format, selectedSubjects.size, subjectCount)
+                if (subjectCount == 0) {
+                    getString(R.string.set_act_selected_subjects_format, selectedSubjects.size)
+                }
+                else {
+                    getString(R.string.set_act_selected_subjects_format_with_alt, selectedSubjects.size, subjectCount)
+                }
             } else {
                 getString(R.string.set_act_no_subjects_selected)
             }
-            val fullText = getString(R.string.set_act_scanned_document_format, documentInfo, subjectInfo)
+            val fullText = getString(R.string.set_act_scanned_document_format, "${getString(R.string.set_act_this_class)} $documentInfo", subjectInfo)
             tvScannedDocument.text = fullText
             tvScannedDocument.visibility = TextView.VISIBLE
         } else {
@@ -1621,10 +1783,7 @@ class SettingsActivity : BaseActivity() {
             putString("all_extracted_subjects", importResult.subjects.joinToString(","))
             putString("all_extracted_teachers", importResult.teachers.joinToString(","))
             putString("all_extracted_rooms", importResult.rooms.joinToString(","))
-            putString(
-                "scanned_document_info",
-                getString(R.string.set_act_document_info_format, importResult.schuljahr, importResult.klasse)
-            )
+            putString("scanned_document_info", getString(R.string.set_act_document_info_format, importResult.schuljahr, importResult.klasse))
             putString("alternative_rooms", importResult.alternativeRooms)
         }
 
@@ -2831,7 +2990,7 @@ class SettingsActivity : BaseActivity() {
         }
 
         btnSelectLanguage.setOnClickListener {
-            showLanguageSelectionDialog(btnSelectLanguage, tvCurrentLanguage)
+            showLanguageSelectionDialog(btnSelectLanguage)
         }
     }
 
@@ -2858,7 +3017,7 @@ class SettingsActivity : BaseActivity() {
         tvCurrentLanguage.text = displayText
     }
 
-    private fun showLanguageSelectionDialog(btnSelectLanguage: Button, tvCurrentLanguage: TextView) {
+    private fun showLanguageSelectionDialog(btnSelectLanguage: Button) {
         val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
 
         val languages = arrayOf("de", "en")
@@ -2895,6 +3054,165 @@ class SettingsActivity : BaseActivity() {
             .setNegativeButton(getString(R.string.restart_later), null)
             .show()
     }
+
+    private fun storeOriginalBackground(view: View) {
+        try {
+            val background = view.background
+            if (background is android.graphics.drawable.ColorDrawable) {
+                originalBackgroundColors[view] = background.color
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun performSearch(query: String) {
+        if (query.isEmpty()) {
+            clearHighlights()
+            hideNoResultsMessage()
+            currentMatches = emptyList()
+            currentMatchIndex = 0
+            return
+        }
+
+        val matches = findMatches(query)
+        highlightMatches(matches, query)
+
+        currentMatches = matches
+        currentMatchIndex = 0
+
+        L.d(TAG, "Search for '$query' found ${matches.size} matches")
+    }
+
+    private fun findMatches(query: String): List<Pair<SearchableView, Int>> {
+        val queryWords = query.lowercase().split("\\s+".toRegex()).filter { it.isNotEmpty() }
+        val matches = mutableListOf<Pair<SearchableView, Int>>()
+
+        for (searchableView in allSearchableViews) {
+            val text = searchableView.text.lowercase()
+            var score = 0
+
+            if (text.contains(query.lowercase())) {
+                score += 100 * searchableView.priority
+            }
+
+            for (word in queryWords) {
+                if (text.contains(word)) {
+                    score += 10 * searchableView.priority
+                }
+            }
+
+            for (word in queryWords) {
+                if (isCloseMatch(text, word)) {
+                    score += 5 * searchableView.priority
+                }
+            }
+
+            if (score > 0) {
+                matches.add(Pair(searchableView, score))
+            }
+        }
+
+        return matches.sortedWith { a, b ->
+            when {
+                a.second != b.second -> b.second.compareTo(a.second)
+                a.first.priority != b.first.priority -> b.first.priority.compareTo(a.first.priority)
+                else -> 0
+            }
+        }
+    }
+
+    private fun isCloseMatch(text: String, word: String): Boolean {
+        if (word.length < 3) return false
+
+        val textWords = text.split("\\s+".toRegex())
+        for (textWord in textWords) {
+            if (textWord.length == word.length) {
+                var differences = 0
+                for (i in word.indices) {
+                    if (i < textWord.length && textWord[i] != word[i]) {
+                        differences++
+                        if (differences > 1) break
+                    }
+                }
+                if (differences <= 1) return true
+            }
+        }
+        return false
+    }
+
+    private fun highlightMatches(matches: List<Pair<SearchableView, Int>>, query: String) {
+        clearHighlights()
+
+        if (matches.isEmpty()) {
+            showNoResultsMessage()
+            return
+        } else {
+            hideNoResultsMessage()
+        }
+
+        val highlightColor = "#FFFF8C".toColorInt()
+
+        for ((searchableView, _) in matches) {
+            val view = searchableView.view
+
+            when (view) {
+                is TextView -> {
+                    highlightTextInTextView(view, query, highlightColor)
+                }
+            }
+        }
+    }
+
+    private fun highlightTextInTextView(textView: TextView, query: String, highlightColor: Int) {
+        val text = textView.text.toString()
+        val spannableText = android.text.SpannableStringBuilder(text)
+        val queryLower = query.lowercase()
+        val textLower = text.lowercase()
+
+        var startIndex = 0
+        while (true) {
+            val index = textLower.indexOf(queryLower, startIndex)
+            if (index == -1) break
+
+            val endIndex = index + query.length
+            val highlightSpan = android.text.style.BackgroundColorSpan(highlightColor)
+            spannableText.setSpan(highlightSpan, index, endIndex, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+            startIndex = endIndex
+        }
+
+        textView.text = spannableText
+    }
+
+    private fun clearHighlights() {
+        hideNoResultsMessage()
+
+        for (searchableView in allSearchableViews) {
+            val view = searchableView.view
+
+            when (view) {
+                is TextView -> {
+                    view.text = searchableView.text
+                }
+            }
+        }
+
+        currentMatches = emptyList()
+        currentMatchIndex = 0
+    }
+
+    private fun showNoResultsMessage() {
+        val noResultsContainer = findViewById<LinearLayout>(R.id.noResultsContainer)
+        noResultsContainer?.visibility = View.VISIBLE
+    }
+
+    private fun hideNoResultsMessage() {
+        val noResultsContainer = findViewById<LinearLayout>(R.id.noResultsContainer)
+        noResultsContainer?.visibility = View.GONE
+    }
+
+    private var currentMatchIndex = 0
+    private var currentMatches = listOf<Pair<SearchableView, Int>>()
 
     data class ValidationResult(
         val isValid: Boolean,

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="colorblind_modes">
+        <item>Normal</item>
+        <item>Protanopia (Red-Green)</item>
+        <item>Deuteranopia (Red-Green)</item>
+        <item>Tritanopia (Blue-Yellow)</item>
+    </string-array>
+</resources>

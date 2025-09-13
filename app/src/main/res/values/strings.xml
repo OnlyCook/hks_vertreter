@@ -181,6 +181,8 @@
     <string name="act_set_liability_details">Der Entwickler übernimmt keine Haftung für die Richtigkeit der angezeigten Informationen. Die App dient nur zur Information. Verbindliche Auskünfte erhältst du direkt von der Schule.</string>
     <string name="act_set_app_version">App-Version</string>
     <string name="act_set_loading">Lädt...</string>
+    <string name="settings_search_hint">Einstellungen durchsuchen...</string>
+    <string name="settings_no_results">Keine passenden Einstellungen gefunden</string>
 
     <!-- ACTIVITY_SETUP.XML -->
     <string name="act_set_school_name">Heinrich-Kleyer-Schule</string>
@@ -434,6 +436,7 @@
     <string name="set_act_not_selected">Nicht ausgewählt</string>
     <string name="set_act_educational_program">Bildungsgang</string>
     <string name="set_act_class">Klasse</string>
+    <string name="set_act_this_class">Klasse:</string>
     <string name="set_act_timetable_successfully_saved">Stundenplan erfolgreich gespeichert</string>
     <string name="set_act_subjects_selected">Fächer ausgewählt</string>
     <string name="set_act_selected_subjects">Ausgewählte Fächer</string>
@@ -547,7 +550,8 @@
     <string name="set_act_error_trying_to_open_edit">Fehler beim Öffnen der Bearbeitung: %s</string>
     <string name="set_act_current_selection_format">"Bildungsgang: %s\nKlasse: %s</string>
     <string name="set_act_timetable_save_success_format">Stundenplan erfolgreich gespeichert\n%d Fächer ausgewählt</string>
-    <string name="set_act_selected_subjects_format">\nAusgewählte Fächer: %d (%d mit alt. Räumen)</string>
+    <string name="set_act_selected_subjects_format_with_alt">\nAusgewählte Fächer: %d (%d mit alt. Räumen)</string>
+    <string name="set_act_selected_subjects_format">\nAusgewählte Fächer: %d</string>
     <string name="set_act_scanned_document_format">Gescanntes Dokument:\n%s%s</string>
     <string name="set_act_schoolyear_not_found">Schuljahr nicht gefunden</string>
     <string name="set_act_class_not_found_format">%s nicht in PDF gefunden</string>
@@ -639,12 +643,21 @@
     <string name="slide_due_today">heute fällig</string>
     <string name="slide_due_tomorrow">morgen fällig</string>
     <string name="slide_due_yesterday">gestern fällig</string>
-    <string name="slide_due_in_weeks">fällig in %d Woche%s</string>
-    <string name="slide_due_in_days">fällig in %d Tag%s</string>
-    <string name="slide_due_days_ago">vor %d Tag%s fällig</string>
+    <plurals name="slide_due_in_weeks">
+        <item quantity="one">fällig in %d Woche</item>
+        <item quantity="other">fällig in %d Wochen</item>
+    </plurals>
+    <plurals name="slide_due_in_days">
+        <item quantity="one">fällig in %d Tag</item>
+        <item quantity="other">fällig in %d Tagen</item>
+    </plurals>
+    <plurals name="slide_due_days_ago">
+        <item quantity="one">vor %d Tag</item>
+        <item quantity="other">vor %d Tagen</item>
+    </plurals>
     <string name="slide_due_lesson">%s (%d. Stunde)</string>
     <string name="slide_due_date_format">Fällig am: %s</string>
-    <string name="slide_due_date_time"> um %s</string>
+    <string name="slide_due_date_time">um %s</string>
     <string name="slide_due_date_time_prefix">%s um %s</string>
     <string name="slide_due_date_lesson"> (%d. Stunde)</string>
     <string name="slide_due_date_lesson_prefix">%s (%d. Stunde)</string>
@@ -722,6 +735,18 @@
     <string name="home_network_error">Netzwerkfehler: %s</string>
     <string name="home_no_internet">Keine Internetverbindung.\nBitte überprüfe deine Verbindung und versuche es erneut.</string>
     <string name="home_is_cancelled">Entfällt</string>
+    <string name="home_is_substituted">Wird vertreten</string>
+    <string name="home_is_supervised">Wird betreut</string>
+    <string name="home_room_changed">Findet in Raum %s statt</string>
+    <string name="home_room_changed_simple">Raum geändert</string>
+    <string name="home_fragment_load_error">Fehler beim Laden der Daten</string>
+    <string name="home_fragment_init_error">Fragment konnte nicht geladen werden</string>
+    <string name="home_loading_minimal">Laden…</string>
+    <string name="home_retry_button">Erneut versuchen</string>
+    <string name="home_restart_dialog_title">Fehler</string>
+    <string name="home_restart_dialog_message">Die Seite konnte nicht geladen werden. Bitte starten Sie die App neu.</string>
+    <string name="home_restart_button">App neustarten</string>
+    <string name="home_cancel_button">Abbrechen</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.</string>
@@ -876,28 +901,100 @@
     <string name="exam_details_close">Schließen</string>
     <string name="exam_date_today">Diese Klausur ist heute!</string>
     <string name="exam_date_tomorrow">Diese Klausur ist morgen</string>
-    <string name="exam_date_days">Noch %d Tag%s bis zur Klausur</string>
     <string name="exam_date_past">Diese Klausur ist bereits vergangen</string>
     <string name="exam_count">%d / %d Klausuren</string>
     <string name="exam_date_detail_overdue">%s (vergangen)</string>
     <string name="exam_date_detail_today">%s (heute)</string>
     <string name="exam_date_detail_tomorrow">%s (morgen)</string>
-    <string name="exam_date_detail_in_given_days">%s (in %d Tag%s)</string>
+    <plurals name="exam_date_detail_in_given_days">
+        <item quantity="one">%s (in %d Tag)</item>
+        <item quantity="other">%s (in %d Tagen)</item>
+    </plurals>
     <string name="exam_date_detail_one_week">%s (in 1 Woche)</string>
-    <string name="exam_date_detail_one_week_plus_days">%s (in 1 Woche und %d Tag%s)</string>
-    <string name="exam_date_detail_weeks">%s (in %d Wochen)</string>
-    <string name="exam_date_detail_weeks_plus_days">%s (in %d Wochen und %d Tag%s)</string>
+    <plurals name="exam_date_detail_one_week_plus_days">
+        <item quantity="one">%s (in 1 Woche und %d Tag)</item>
+        <item quantity="other">%s (in 1 Woche und %d Tagen)</item>
+    </plurals>
+    <plurals name="exam_date_detail_weeks">
+        <item quantity="one">%s (in %d Woche)</item>
+        <item quantity="other">%s (in %d Wochen)</item>
+    </plurals>
+    <plurals name="exam_date_detail_weeks_plus_days">
+        <item quantity="one">%s (in %d Wochen und %d Tag)</item>
+        <item quantity="other">%s (in %d Wochen und %d Tagen)</item>
+    </plurals>
     <string name="exam_date_detail_one_month">%s (in 1 Monat)</string>
-    <string name="exam_date_detail_one_month_plus_days">%s (in 1 Monat und %d Tag%s)</string>
-    <string name="exam_date_detail_months">%s (in %d Monaten)</string>
-    <string name="exam_date_detail_months_plus_days">%s (in %d Monaten und %d Tag%s)</string>
+    <plurals name="exam_date_detail_one_month_plus_days">
+        <item quantity="one">%s (in 1 Monat und %d Tag)</item>
+        <item quantity="other">%s (in 1 Monat und %d Tagen)</item>
+    </plurals>
+    <plurals name="exam_date_detail_months">
+        <item quantity="one">%s (in %d Monat)</item>
+        <item quantity="other">%s (in %d Monaten)</item>
+    </plurals>
+    <plurals name="exam_date_detail_months_plus_days">
+        <item quantity="one">%s (in %d Monaten und %d Tag)</item>
+        <item quantity="other">%s (in %d Monaten und %d Tagen)</item>
+    </plurals>
     <string name="exam_date_detail_one_year">%s (in 1 Jahr)</string>
-    <string name="exam_date_detail_one_year_plus_months">%s (in 1 Jahr und %d Monat%s)</string>
-    <string name="exam_date_detail_years">%s (in %d Jahren)</string>
-    <string name="exam_date_detail_years_plus_months">%s (in %d Jahren und %d Monat%s)</string>
+    <plurals name="exam_date_detail_one_year_plus_months">
+        <item quantity="one">%s (in 1 Jahr und %d Monat)</item>
+        <item quantity="other">%s (in 1 Jahr und %d Monaten)</item>
+    </plurals>
+    <plurals name="exam_date_detail_years">
+        <item quantity="one">%s (in %d Jahr)</item>
+        <item quantity="other">%s (in %d Jahren)</item>
+    </plurals>
+    <plurals name="exam_date_detail_years_plus_months">
+        <item quantity="one">%s (in %d Jahren und %d Monat)</item>
+        <item quantity="other">%s (in %d Jahren und %d Monaten)</item>
+    </plurals>
     <string name="exam_ok">OK</string>
     <string name="exam_invalid">Ungültig</string>
-    <string name="exam_days_remaining">Noch %d Tag%s bis zur Klausur</string>
+    <plurals name="exam_days_remaining">
+        <item quantity="one">Noch %d Tag bis zur Klausur</item>
+        <item quantity="other">Noch %d Tage bis zur Klausur</item>
+    </plurals>
+    <string name="exam_in_total_days">(insgesamt %d Tage)</string>
+    <string name="exam_one_week_remaining">Noch 1 Woche bis zur Klausur</string>
+    <plurals name="exam_one_week_plus_days_remaining">
+        <item quantity="one">Noch 1 Woche und %d Tag bis zur Klausur</item>
+        <item quantity="other">Noch 1 Woche und %d Tage bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_weeks_remaining">
+        <item quantity="one">Noch %d Woche bis zur Klausur</item>
+        <item quantity="other">Noch %d Wochen bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_weeks_plus_days_remaining">
+        <item quantity="one">Noch %d Wochen und %d Tag bis zur Klausur</item>
+        <item quantity="other">Noch %d Wochen und %d Tage bis zur Klausur</item>
+    </plurals>
+    <string name="exam_one_month_remaining">Noch 1 Monat bis zur Klausur</string>
+    <plurals name="exam_one_month_plus_days_remaining">
+        <item quantity="one">Noch 1 Monat und %d Tag bis zur Klausur</item>
+        <item quantity="other">Noch 1 Monat und %d Tage bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_months_remaining">
+        <item quantity="one">Noch %d Monat bis zur Klausur</item>
+        <item quantity="other">Noch %d Monate bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_months_plus_days_remaining">
+        <item quantity="one">Noch %d Monate und %d Tag bis zur Klausur</item>
+        <item quantity="other">Noch %d Monate und %d Tage bis zur Klausur</item>
+    </plurals>
+    <string name="exam_one_year_remaining">Noch 1 Jahr bis zur Klausur</string>
+    <plurals name="exam_one_year_plus_months_remaining">
+        <item quantity="one">Noch 1 Jahr und %d Monat bis zur Klausur</item>
+        <item quantity="other">Noch 1 Jahr und %d Monate bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_years_remaining">
+        <item quantity="one">Noch %d Jahr bis zur Klausur</item>
+        <item quantity="other">Noch %d Jahre bis zur Klausur</item>
+    </plurals>
+    <plurals name="exam_years_plus_months_remaining">
+        <item quantity="one">Noch %d Jahre und %d Monat bis zur Klausur</item>
+        <item quantity="other">Noch %d Jahre und %d Monate bis zur Klausur</item>
+    </plurals>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen...</string>
@@ -1055,6 +1152,8 @@
     <string name="gall_previous_week">Vorheriger Woche</string>
     <string name="gall_next_day">Nächster Tag</string>
     <string name="gall_next_week">Nächste Woche</string>
+    <string name="gall_one_day_statistics">1 Tag</string>
+    <string name="gall_days_statistics">%d Tage</string>
 
     <!-- AUTOUPDATEWORKER.KT -->
     <string name="auto_update_notification_channel">Automatische Updates</string>
@@ -1096,8 +1195,63 @@
     <string name="exam_rem_multiple_title">%d Klausuren stehen bevor</string>
     <string name="exam_rem_today">heute</string>
     <string name="exam_rem_tomorrow">morgen</string>
-    <string name="exam_rem_days">in %d Tag%s</string>
+    <plurals name="exam_rem_days">
+        <item quantity="one">in %d Tag</item>
+        <item quantity="other">in %d Tagen</item>
+    </plurals>
     <string name="exam_rem_single_content">%s: %s</string>
     <string name="exam_rem_multiple_content">%s und %d weitere</string>
+
+    <!-- HOMEWORK -->
+    <string name="dia_ho_de_notes">Notizen:</string>
+    <string name="dia_ho_de_no_notes">Keine Notizen</string>
+    <string name="dia_ho_de_share">Hausaufgabe teilen</string>
+    <string name="dia_ho_de_copy">In Zwischenablage kopieren</string>
+    <string name="dia_ho_de_copied">Notizen in Zwischenablage kopiert</string>
+
+    <string name="share_setup_required">Bitte schließe erst die Einrichtung ab, bevor du Hausaufgaben teilen kannst.</string>
+    <string name="share_error_generic">Fehler beim Verarbeiten der geteilten Hausaufgabe.</string>
+    <string name="share_parse_error">Fehler beim Lesen der geteilten Hausaufgabe.</string>
+    <string name="share_invalid_file">Ungültige Hausaufgaben-Datei.</string>
+    <string name="share_create_error">Fehler beim Erstellen der Freigabe.</string>
+
+    <string name="share_dialog_title">Geteilte Hausaufgabe</string>
+    <string name="share_add_message">Möchtest du diese Hausaufgabe hinzufügen?\n\nFach: %1$s</string>
+    <string name="share_add_message_with_sender">%2$s hat dir eine Hausaufgabe geteilt. Möchtest du sie hinzufügen?\n\nFach: %1$s</string>
+    <string name="share_overwrite_message">Eine Hausaufgabe für dieses Fach und Datum existiert bereits. Möchtest du die Notizen überschreiben?\n\nFach: %1$s</string>
+    <string name="share_overwrite_message_with_sender">%2$s hat dir eine Hausaufgabe geteilt. Eine Hausaufgabe für dieses Fach und Datum existiert bereits. Möchtest du die Notizen überschreiben?\n\nFach: %1$s</string>
+    <string name="share_homework_updated">Hausaufgabe aktualisiert</string>
+
+    <string name="slide_due_date_format_weekday">Fällig am: %1$s %2$s</string>
+
+    <!-- HOMEWORKSHAREHELPER.KT -->
+    <string name="share_filename_prefix">hks</string>
+    <string name="share_subject_text">Hausaufgabe: %1$s</string>
+    <string name="share_message_text">Ich teile eine Hausaufgabe mit dir: %1$s</string>
+    <string name="share_chooser_title">Hausaufgabe teilen</string>
+    <string name="share_filename_homework">hausaufgabe</string>
+
+    <!-- EXAMSHAREHELPER.KT -->
+    <string name="share_exam_subject_text">Klausur: %1$s</string>
+    <string name="share_exam_message_text">Ich teile eine Klausur für %1$s mit dir.</string>
+    <string name="share_exam_chooser_title">Klausur teilen</string>
+    <string name="share_exam_received_title">Geteilte Klausur erhalten</string>
+    <string name="share_exam_add">Klausur "%1$s" hinzufügen?</string>
+    <string name="share_exam_add_with_sender">Klausur "%1$s" von %2$s hinzufügen?</string>
+    <string name="share_exam_overwrite">Klausur "%1$s" mit neuen Notizen aktualisieren?</string>
+    <string name="share_exam_overwrite_with_sender">Klausur "%1$s" mit Notizen von %2$s aktualisieren?</string>
+    <string name="share_exam_added">Klausur erfolgreich hinzugefügt</string>
+    <string name="share_exam_updated">Klausur-Notizen aktualisiert</string>
+    <string name="share_exam_invalid">Ungültige Klausur-Datei</string>
+    <string name="share_exam_parse_error">Fehler beim Lesen der Klausur-Datei</string>
+    <string name="share_exam_error">Fehler beim Erstellen der Klausur-Freigabe</string>
+    <string name="exam_notes_copied">Notizen in Zwischenablage kopiert</string>
+    <string name="share_filename_exam">klausur</string>
+
+    <string name="share_overwrite">Überschreiben</string>
+    <string name="share_add">Hinzufügen</string>
+
+    <string name="dia_ex_det_share">Klausur teilen</string>
+    <string name="dia_ex_det_copy">Notizen kopieren</string>
 
 </resources>

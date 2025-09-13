@@ -28,17 +28,48 @@
             android:textColor="@android:color/holo_red_dark"
             android:layout_marginBottom="16dp" />
 
-        <View
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@android:color/darker_gray"
-            android:layout_marginBottom="16dp" />
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/dia_ho_de_notes"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/btnShareHomework"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_share"
+                android:contentDescription="@string/dia_ho_de_share" />
+
+            <ImageButton
+                android:id="@+id/btnCopyToClipboard"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_import_clipboard"
+                android:contentDescription="@string/dia_ho_de_copy" />
+
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/layoutContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:background="#F5F5F5"
+            android:padding="12dp"
+            android:minHeight="100dp" />
 
     </LinearLayout>
 

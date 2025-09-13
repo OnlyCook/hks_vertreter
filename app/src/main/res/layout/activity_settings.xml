@@ -15,12 +15,67 @@
         android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
         android:elevation="4dp" />
 
+    <!-- search bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@android:color/background_light">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp">
+
+            <EditText
+                android:id="@+id/searchBarSettings"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/settings_search_hint"
+                android:inputType="text"
+                android:padding="12dp"
+                android:paddingStart="20dp"
+                android:background="@drawable/subtle_search_background"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="8dp"
+                android:textSize="16sp"
+                android:textColorHint="#757575"
+                android:maxLines="1"
+                android:imeOptions="actionSearch" />
+        </LinearLayout>
+
+        <!-- no matches -->
+        <LinearLayout
+            android:id="@+id/noResultsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/tvNoSearchResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_no_results"
+                android:textAlignment="center"
+                android:textColor="@android:color/darker_gray"
+                android:textSize="14sp"
+                android:padding="8dp" />
+        </LinearLayout>
+    </LinearLayout>
+
     <ScrollView
+        android:id="@+id/scrollViewSettings"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true">
 
         <LinearLayout
+            android:id="@+id/settingsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -277,7 +332,7 @@
                             android:id="@+id/btnExportTimetable"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Stundenplan exportieren"
+                            android:text="@string/act_set_export_timetable"
                             android:textColor="@android:color/black"
                             android:background="?android:attr/selectableItemBackground"
                             android:layout_marginBottom="4dp"

@@ -2,6 +2,7 @@ package com.thecooker.vertretungsplaner.ui.home
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -56,6 +57,9 @@ class HomeFragment : Fragment() {
 
     private var scope: CoroutineScope? = null
     private var isInitialized = false
+    private var initializationAttempts = 0
+    private val maxInitializationAttempts = 3
+    private var isInSharedContentMode = false
 
     // filter variable
     private var filterOnlyMySubjects = false
@@ -81,128 +85,397 @@ class HomeFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        ViewModelProvider(this)[HomeViewModel::class.java]
+        try {
+            ViewModelProvider(this)[HomeViewModel::class.java]
+            _binding = FragmentHomeBinding.inflate(inflater, container, false)
+            val root: View = binding.root
 
-        _binding = FragmentHomeBinding.inflate(inflater, container, false)
-        val root: View = binding.root
+            if (isAdded && context != null) {
+                sharedPreferences = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-        sharedPreferences = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
-        scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
-        setupUI()
-        loadStudentSubjects()
-        loadFilterSetting()
-        updateTemporaryFilterButtonVisibility()
-        loadCooldownSetting()
-
-        val startupPageIndex = sharedPreferences.getInt("startup_page_index", 0)
-        if (startupPageIndex == 1) {
-            scope?.launch {
-                delay(50) // delay to correctly load the page
-                if (isAdded && _binding != null) {
-                    loadSubstitutePlanWithCooldown()
-                    isInitialized = true
+                if (isInSharedContentMode) {
+                    L.d("HomeFragment", "In shared content mode - creating minimal UI")
+                    setupMinimalUI()
+                } else {
+                    setupUI()
+                    loadStudentSubjects()
+                    loadFilterSetting()
+                    updateTemporaryFilterButtonVisibility()
+                    loadCooldownSetting()
                 }
             }
-        }
 
-        L.d("HomeFragment", "onCreateView completed")
-        return root
+            L.d("HomeFragment", "onCreateView completed")
+            return root
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in onCreateView", e)
+            return createErrorView(inflater, container)
+        }
     }
 
-    private fun loadStudentSubjects() {
-        studentSubjects.clear()
-        val savedSubjects = sharedPreferences.getString("student_subjects", "")
-        if (!savedSubjects.isNullOrEmpty()) {
-            studentSubjects.addAll(savedSubjects.split(",").filter { it.isNotBlank() })
+    private fun createErrorView(inflater: LayoutInflater, container: ViewGroup?): View {
+        return try {
+            _binding = FragmentHomeBinding.inflate(inflater, container, false)
+            val root: View = binding.root
+
+            val constraintLayout = root as androidx.constraintlayout.widget.ConstraintLayout
+            constraintLayout.removeAllViews()
+
+            val errorLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(24, 24, 24, 24)
+                layoutParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            val errorText = TextView(requireContext()).apply {
+                text = getString(R.string.home_fragment_init_error)
+                textSize = 18f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+            }
+
+            val retryButton = Button(requireContext()).apply {
+                text = getString(R.string.home_retry_button)
+                setOnClickListener {
+                    retryInitialization()
+                }
+            }
+
+            errorLayout.addView(errorText)
+            errorLayout.addView(retryButton)
+            constraintLayout.addView(errorLayout)
+
+            root
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Critical error creating error view", e)
+            inflater.inflate(android.R.layout.simple_list_item_1, container, false)
         }
-        L.d("HomeFragment", "Loaded ${studentSubjects.size} student subjects")
+    }
+
+    private fun setupMinimalUI() {
+        try {
+            val constraintLayout = binding.root
+            constraintLayout.removeAllViews()
+
+            headerLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 24, 24, 24)
+                setBackgroundColor(resources.getColor(android.R.color.holo_blue_dark, null))
+                elevation = 8f
+            }
+
+            classText = TextView(requireContext()).apply {
+                text = "Vertretungsplan"
+                textSize = 20f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                gravity = android.view.Gravity.CENTER
+                setTextColor(resources.getColor(android.R.color.white, null))
+            }
+
+            headerLayout.addView(classText)
+
+            contentScrollView = ScrollView(requireContext()).apply {
+                isFillViewport = true
+            }
+            contentLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 16, 24, 24)
+            }
+            contentScrollView.addView(contentLayout)
+
+            headerLayout.id = View.generateViewId()
+            contentScrollView.id = View.generateViewId()
+
+            val headerParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+                androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+                androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            }
+
+            val scrollParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+                androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+                0
+            ).apply {
+                topToBottom = headerLayout!!.id
+                bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            }
+
+            constraintLayout.addView(headerLayout, headerParams)
+            constraintLayout.addView(contentScrollView, scrollParams)
+
+            showMinimalMessage()
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in setupMinimalUI", e)
+        }
+    }
+
+    private fun showMinimalMessage() {
+        contentLayout.let { layout ->
+            layout.removeAllViews()
+            val messageText = TextView(requireContext()).apply {
+                text = getString(R.string.home_loading_minimal)
+                gravity = android.view.Gravity.CENTER
+                textSize = 16f
+                setTextColor(resources.getColor(android.R.color.darker_gray, null))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                ).apply {
+                    gravity = android.view.Gravity.CENTER
+                }
+            }
+            layout.addView(messageText)
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        L.d("HomeFragment", "onViewCreated called")
+        L.d("HomeFragment", "onViewCreated called, shared mode: $isInSharedContentMode")
 
-        val startupPageIndex = sharedPreferences.getInt("startup_page_index", 0)
-        if (startupPageIndex == 1) {
-            if (isAdded && _binding != null && isResumed) {
-                L.d("HomeFragment", "loading substitute plan immediately (startup page)")
-                loadSubstitutePlanWithCooldown()
-                isInitialized = true
-            }
-        } else {
-            view.postDelayed({
-                if (isAdded && _binding != null && isResumed) {
-                    L.d("HomeFragment", "loading substitute plan after delay")
-                    loadSubstitutePlanWithCooldown()
-                    isInitialized = true
+        if (!isInSharedContentMode) {
+            view.post {
+                if (isAdded && _binding != null) {
+                    L.d("HomeFragment", "Initializing substitute plan loading")
+                    safeLoadSubstitutePlan()
                 }
-            }, 200)
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        L.d("HomeFragment", "onResume called, isInitialized: $isInitialized")
+        L.d("HomeFragment", "onResume called")
 
-        loadStudentSubjects()
-        loadFilterSetting()
-        loadCooldownSetting()
-        loadColorBlindSettings()
-        updateTemporaryFilterButtonVisibility()
+        try {
+            if (!isAdded || _binding == null) {
+                L.w("HomeFragment", "Fragment not properly attached")
+                return
+            }
 
-        if (::temporaryFilterButton.isInitialized) {
-            reorganizeHeaderLayout()
-        }
+            val wasInSharedMode = isInSharedContentMode
+            isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
-        if (isInitialized && _binding != null) {
-            val startupPageIndex = sharedPreferences.getInt("startup_page_index", 0)
-            if (startupPageIndex == 1) {
-                if (isAdded && _binding != null && isResumed) {
-                    L.d("HomeFragment", "Checking if substitute plan needs reload on resume (startup page)")
-                    loadSubstitutePlanWithCooldown()
+            if (wasInSharedMode && !isInSharedContentMode) {
+                L.d("HomeFragment", "Exiting shared content mode - reinitializing")
+                initializationAttempts = 0
+                isInitialized = false
+
+                binding.root.post {
+                    if (isAdded && _binding != null) {
+                        try {
+                            setupUI()
+                            loadStudentSubjects()
+                            loadFilterSetting()
+                            loadCooldownSetting()
+                            loadColorBlindSettings()
+                            updateTemporaryFilterButtonVisibility()
+                            safeLoadSubstitutePlan()
+                        } catch (e: Exception) {
+                            L.e("HomeFragment", "Error during forced reinitialization", e)
+                            showSafeErrorState()
+                        }
+                    }
                 }
-            } else {
+                return
+            }
+
+            if (!isInSharedContentMode) {
+                loadStudentSubjects()
+                loadFilterSetting()
+                loadCooldownSetting()
+                loadColorBlindSettings()
+                updateTemporaryFilterButtonVisibility()
+
+                if (temporaryFilterButton != null) {
+                    reorganizeHeaderLayout()
+                }
+
                 binding.root.postDelayed({
                     if (isAdded && _binding != null && isResumed) {
-                        L.d("HomeFragment", "Checking if substitute plan needs reload on resume")
-                        loadSubstitutePlanWithCooldown()
+                        safeLoadSubstitutePlan()
                     }
                 }, 100)
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in onResume", e)
+            showSafeErrorState()
+        }
+    }
+
+    private fun loadStudentSubjects() {
+        try {
+            studentSubjects.clear()
+            val savedSubjects = sharedPreferences.getString("student_subjects", "")
+            if (!savedSubjects.isNullOrEmpty()) {
+                studentSubjects.addAll(savedSubjects.split(",").filter { it.isNotBlank() })
+            }
+            L.d("HomeFragment", "Loaded ${studentSubjects.size} student subjects")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error loading student subjects", e)
+        }
+    }
+
+    private fun safeLoadSubstitutePlan() {
+        try {
+            if (!isAdded || _binding == null) {
+                L.w("HomeFragment", "Cannot load - fragment not ready")
+                showSafeErrorState()
+                return
+            }
+
+            if (isInSharedContentMode) {
+                L.d("HomeFragment", "Skipping substitute plan loading - in shared content mode")
+                return
+            }
+
+            if (initializationAttempts >= maxInitializationAttempts) {
+                L.e("HomeFragment", "Max initialization attempts reached")
+                showRestartDialog()
+                return
+            }
+
+            initializationAttempts++
+            loadSubstitutePlanWithCooldown()
+            isInitialized = true
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in safeLoadSubstitutePlan", e)
+            if (initializationAttempts < maxInitializationAttempts) {
+                binding.root.postDelayed({
+                    if (isAdded && _binding != null) {
+                        safeLoadSubstitutePlan()
+                    }
+                }, 1000)
+            } else {
+                showRestartDialog()
             }
         }
     }
 
+    private fun retryInitialization() {
+        try {
+            initializationAttempts = 0
+            isInitialized = false
+            isInSharedContentMode = false
+
+            if (isAdded && _binding != null) {
+                setupUI()
+                loadStudentSubjects()
+                loadFilterSetting()
+                updateTemporaryFilterButtonVisibility()
+                loadCooldownSetting()
+                safeLoadSubstitutePlan()
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in retryInitialization", e)
+            showRestartDialog()
+        }
+    }
+
+    private fun showSafeErrorState() {
+        try {
+            contentLayout.let { layout ->
+                layout.removeAllViews()
+                val errorText = TextView(requireContext()).apply {
+                    text = getString(R.string.home_fragment_load_error)
+                    gravity = android.view.Gravity.CENTER
+                    textSize = 16f
+                    setTextColor(resources.getColor(android.R.color.holo_orange_dark, null))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT
+                    ).apply {
+                        gravity = android.view.Gravity.CENTER
+                    }
+                }
+
+                val retryButton = Button(requireContext()).apply {
+                    text = getString(R.string.home_retry_button)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = android.view.Gravity.CENTER
+                        topMargin = 32
+                    }
+                    setOnClickListener {
+                        retryInitialization()
+                    }
+                }
+
+                layout.addView(errorText)
+                layout.addView(retryButton)
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error showing safe error state", e)
+        }
+    }
+
+    private fun showRestartDialog() {
+        try {
+            if (!isAdded || context == null) return
+
+            if (isInSharedContentMode || sharedPreferences.getBoolean("skip_home_loading", false)) {
+                L.d("HomeFragment", "Skipping restart dialog - in shared content mode")
+                return
+            }
+
+            android.app.AlertDialog.Builder(requireContext())
+                .setTitle(getString(R.string.home_restart_dialog_title))
+                .setMessage(getString(R.string.home_restart_dialog_message))
+                .setPositiveButton(getString(R.string.home_restart_button)) { _, _ ->
+                    requireActivity().finishAffinity()
+                    val packageManager = requireActivity().packageManager
+                    val intent = packageManager.getLaunchIntentForPackage(requireActivity().packageName)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        startActivity(intent)
+                    }
+                }
+                .setNegativeButton(getString(R.string.home_cancel_button), null)
+                .setCancelable(false)
+                .show()
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error showing restart dialog", e)
+        }
+    }
 
     private fun updateTemporaryFilterButtonVisibility() {
-        if (::temporaryFilterButton.isInitialized) {
-            val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
-            val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
-            val shouldShowButton = hasScannedDocument && filterEnabled
+        try {
+            temporaryFilterButton.let { button ->
+                val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+                val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+                val shouldShowButton = hasScannedDocument && filterEnabled
 
-            temporaryFilterButton.visibility = if (shouldShowButton) {
-                View.VISIBLE
-            } else {
-                View.GONE
+                button.visibility = if (shouldShowButton) View.VISIBLE else View.GONE
+                invisibleLeftButton.visibility = if (shouldShowButton) View.INVISIBLE else View.GONE
             }
-
-            if (::invisibleLeftButton.isInitialized) {
-                invisibleLeftButton.visibility = if (shouldShowButton) {
-                    View.INVISIBLE
-                } else {
-                    View.GONE
-                }
-            }
-
-            L.d("HomeFragment", "Button visibility: hasScanned=$hasScannedDocument, filterEnabled=$filterEnabled, visible=$shouldShowButton")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error updating button visibility", e)
         }
     }
 
     private fun loadCooldownSetting() {
-        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
-        cooldownEnabled = !removeCooldown
-        L.d("HomeFragment", "Cooldown setting loaded: $cooldownEnabled (remove_update_cooldown: $removeCooldown)")
+        try {
+            val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
+            cooldownEnabled = !removeCooldown
+            L.d("HomeFragment", "Cooldown setting loaded: $cooldownEnabled")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error loading cooldown setting", e)
+        }
     }
 
     private fun getColorBlindFriendlyColor(originalColor: String): Int {
@@ -235,28 +508,37 @@ class HomeFragment : Fragment() {
     }
 
     private fun loadSubstitutePlanWithCooldown() {
-        val currentTime = System.currentTimeMillis()
-        val timeSinceLastLoad = currentTime - lastLoadTime
+        try {
+            if (!isAdded || _binding == null) {
+                L.w("HomeFragment", "Fragment not ready for loading substitute plan")
+                return
+            }
 
-        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+            val currentTime = System.currentTimeMillis()
+            val timeSinceLastLoad = currentTime - lastLoadTime
 
-        if (klasse == getString(R.string.home_not_selected)) { // be cautious about this
-            showError(getString(R.string.home_no_class_selected))
-            return
-        }
+            val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
 
-        "Klasse: $klasse".also { classText.text = it }
+            if (klasse == getString(R.string.home_not_selected)) {
+                showError(getString(R.string.home_no_class_selected))
+                return
+            }
 
-        if (isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs) {
-            L.d("HomeFragment", "loading substitute plan; first load: $isFirstLoad, cooldown enabled: $cooldownEnabled, time since last: ${timeSinceLastLoad}ms")
-            loadSubstitutePlan()
-            lastLoadTime = currentTime
-            isFirstLoad = false
-        } else {
-            val remainingCooldown = loadCooldownMs - timeSinceLastLoad
-            L.d("HomeFragment", "Substitute plan loading skipped; cooldown remaining:${remainingCooldown}ms")
+            classText.text = getString(R.string.home_class_prefix, klasse)
 
-            loadCachedSubstitutePlan(klasse!!)
+            if (isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs) {
+                L.d("HomeFragment", "Loading substitute plan")
+                loadSubstitutePlan()
+                lastLoadTime = currentTime
+                isFirstLoad = false
+            } else {
+                val remainingCooldown = loadCooldownMs - timeSinceLastLoad
+                L.d("HomeFragment", "Substitute plan loading skipped; cooldown remaining: ${remainingCooldown}ms")
+                loadCachedSubstitutePlan(klasse!!)
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in loadSubstitutePlanWithCooldown", e)
+            showSafeErrorState()
         }
     }
 
@@ -268,25 +550,40 @@ class HomeFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
-        L.d("HomeFragment", "onStart called")
+        L.d("HomeFragment", "onStart called, isInitialized: $isInitialized")
 
-        if (!isInitialized) {
-            loadStudentSubjects()
-            loadFilterSetting()
+        loadStudentSubjects()
+        loadFilterSetting()
+        loadCooldownSetting()
+
+        if (!isInitialized && _binding != null) {
+            binding.root.postDelayed({
+                if (isAdded && _binding != null && !isInitialized) {
+                    L.d("HomeFragment", "Late initialization in onStart")
+                    loadSubstitutePlanWithCooldown()
+                    isInitialized = true
+                }
+            }, 200)
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        L.d("HomeFragment", "onDestroyView called - cancelling scope")
+        L.d("HomeFragment", "onDestroyView called")
 
-        cleanupRefreshIndicator()
-
-        scope?.cancel()
-        scope = null
-        isInitialized = false
-        isTemporaryFilterDisabled = false
-        _binding = null
+        try {
+            cleanupRefreshIndicator()
+            scope?.cancel()
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in onDestroyView", e)
+        } finally {
+            scope = null
+            isInitialized = false
+            initializationAttempts = 0
+            isTemporaryFilterDisabled = false
+            isInSharedContentMode = false
+            _binding = null
+        }
     }
 
     override fun onDetach() {
@@ -477,8 +774,12 @@ class HomeFragment : Fragment() {
     }
 
     private fun loadColorBlindSettings() {
-        colorBlindMode = sharedPreferences.getString("colorblind_mode", "none") ?: "none"
-        L.d("HomeFragment", "Colorblind mode loaded: $colorBlindMode")
+        try {
+            colorBlindMode = sharedPreferences.getString("colorblind_mode", "none") ?: "none"
+            L.d("HomeFragment", "Colorblind mode loaded: $colorBlindMode")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error loading colorblind settings", e)
+        }
     }
 
     private fun isNetworkAvailable(): Boolean {
@@ -647,10 +948,31 @@ class HomeFragment : Fragment() {
             // Extract the "Stand" information
             val regex = """<div class="vpstand">Stand: ([^<]+)</div>""".toRegex()
             val matchResult = regex.find(html)
-            matchResult?.groups?.get(1)?.value ?: "Unbekannt" // be cautious about this
+            val originalText = matchResult?.groups?.get(1)?.value ?: "Unbekannt"
+
+            translateWeekdayInText(originalText) // translate weekday abbreviations
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun translateWeekdayInText(text: String): String {
+        val weekdayMap = mapOf(
+            "Mo." to getString(R.string.monday_short),
+            "Di." to getString(R.string.tuesday_short),
+            "Mi." to getString(R.string.wednesday_short),
+            "Do." to getString(R.string.thursday_short),
+            "Fr." to getString(R.string.friday_short),
+            "Sa." to getString(R.string.saturday_short),
+            "So." to getString(R.string.sunday_short)
+        )
+
+        var translatedText = text
+        weekdayMap.forEach { (german, localized) ->
+            translatedText = translatedText.replace(german, localized)
+        }
+
+        return translatedText
     }
 
     private fun fetchSubstitutePlan(klasse: String): JSONObject {
@@ -839,7 +1161,7 @@ class HomeFragment : Fragment() {
 
     private fun formatDate(dateString: String): Pair<String, Boolean> {
         val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val outputFormat = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMAN)
+        val germanOutputFormat = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMAN)
 
         return try {
             val date = inputFormat.parse(dateString) ?: return Pair(dateString, false)
@@ -862,19 +1184,38 @@ class HomeFragment : Fragment() {
             val daysDifference =
                 ((targetDate.timeInMillis - today.timeInMillis) / (1000 * 60 * 60 * 24)).toInt()
 
-            val formattedDate = outputFormat.format(date)
-            daysDifference == 0
+            val germanFormattedDate = germanOutputFormat.format(date)
+            val localizedDate = translateWeekdayInDate(germanFormattedDate)
 
             when {
-                daysDifference == 0 -> Pair("$formattedDate ${getString(R.string.home_today_suffix)}", true)
-                daysDifference == 1 -> Pair("$formattedDate ${getString(R.string.home_tomorrow_suffix)}", false)
-                daysDifference == 2 -> Pair("$formattedDate ${getString(R.string.home_day_after_tomorrow_suffix)}", false)
-                daysDifference >= 7 -> Pair("$formattedDate ${getString(R.string.home_next_week_suffix)}", false)
-                else -> Pair(formattedDate, false)
+                daysDifference == 0 -> Pair("$localizedDate ${getString(R.string.home_today_suffix)}", true)
+                daysDifference == 1 -> Pair("$localizedDate ${getString(R.string.home_tomorrow_suffix)}", false)
+                daysDifference == 2 -> Pair("$localizedDate ${getString(R.string.home_day_after_tomorrow_suffix)}", false)
+                daysDifference >= 7 -> Pair("$localizedDate ${getString(R.string.home_next_week_suffix)}", false)
+                else -> Pair(localizedDate, false)
             }
         } catch (_: Exception) {
             Pair(dateString, false)
         }
+    }
+
+    private fun translateWeekdayInDate(germanDate: String): String {
+        val weekdayMap = mapOf(
+            "Montag" to getString(R.string.monday),
+            "Dienstag" to getString(R.string.tuesday),
+            "Mittwoch" to getString(R.string.wednesday),
+            "Donnerstag" to getString(R.string.thursday),
+            "Freitag" to getString(R.string.friday),
+            "Samstag" to getString(R.string.saturday), // safety
+            "Sonntag" to getString(R.string.sunday)
+        )
+
+        var translatedDate = germanDate
+        weekdayMap.forEach { (german, localized) ->
+            translatedDate = translatedDate.replace(german, localized)
+        }
+
+        return translatedDate
     }
 
     private fun createReducedHeightBackground(color: Int): android.graphics.drawable.LayerDrawable {
@@ -959,10 +1300,11 @@ class HomeFragment : Fragment() {
 
             // fach column
             val fachText = entry.optString("fach", "")
+            val artTextSubject = entry.optString("text", "")
+            val isCancelled = artTextSubject.contains("Entfällt") || artTextSubject == "Auf einen anderen Termin verlegt"
+
             val fachCell = TextView(requireContext()).apply {
-                text = fachText
                 textSize = 14f
-                setTextColor(resources.getColor(android.R.color.black, null))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[1])
 
@@ -971,20 +1313,81 @@ class HomeFragment : Fragment() {
                     setTextColor(resources.getColor(android.R.color.white, null))
                     background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
                     setPadding(12, 12, 12, 12)
+
+                    if (isCancelled) {
+                        val spannableString = android.text.SpannableString(fachText)
+                        spannableString.setSpan(
+                            android.text.style.StrikethroughSpan(),
+                            0,
+                            fachText.length,
+                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        text = spannableString
+                    } else {
+                        text = fachText
+                    }
                 } else {
-                    setPadding(8, 12, 8, 12)
+                    setPadding(8, 12, 12, 12)
+                    setTextColor(resources.getColor(android.R.color.black, null))
+
+                    if (isCancelled) {
+                        val spannableString = android.text.SpannableString(fachText)
+                        spannableString.setSpan(
+                            android.text.style.StrikethroughSpan(),
+                            0,
+                            fachText.length,
+                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        text = spannableString
+                    } else {
+                        text = fachText
+                    }
                 }
             }
             row.addView(fachCell)
 
             // raum column
+            val originalRoom = entry.optString("raum", "")
+            val artTextRoom = entry.optString("text", "")
+            var displayRoom = originalRoom
+
+            // if room changed update display (strikethough)
+            val isRoomChanged = artTextRoom.matches(Regex("Findet in Raum .* statt"))
+            if (isRoomChanged) {
+                val regex = Regex("Findet in Raum (.*) statt")
+                val matchResult = regex.find(artTextRoom)
+                if (matchResult != null) {
+                    val newRoom = matchResult.groups[1]?.value ?: ""
+                    displayRoom = newRoom
+                }
+            }
+
             val raumCell = TextView(requireContext()).apply {
-                text = entry.optString("raum", "")
                 setPadding(8, 12, 8, 12)
                 textSize = 13f
-                setTextColor(resources.getColor(android.R.color.black, null))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[2])
+
+                if (isRoomChanged) {
+                    val spannableString = android.text.SpannableString("$originalRoom\n$displayRoom")
+                    spannableString.setSpan(
+                        android.text.style.StrikethroughSpan(),
+                        0,
+                        originalRoom.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    spannableString.setSpan(
+                        android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                        originalRoom.length + 1,
+                        spannableString.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    text = spannableString
+                    setTextColor(resources.getColor(android.R.color.black, null))
+                } else {
+                    text = displayRoom
+                    setTextColor(resources.getColor(android.R.color.black, null))
+                }
             }
             row.addView(raumCell)
 
@@ -1065,10 +1468,24 @@ class HomeFragment : Fragment() {
                 }
             }
 
-            // hard coded cases
+            // "Findet in Raum A408 statt" - room change case
+            originalText.matches(Regex("Findet in Raum .* statt")) -> {
+                val regex = Regex("Findet in Raum (.*) statt")
+                val matchResult = regex.find(originalText)
+                if (matchResult != null) {
+                    val newRoom = matchResult.groups[1]?.value ?: ""
+                    getString(R.string.home_room_changed, newRoom)
+                } else {
+                    originalText
+                }
+            }
+
+            // Hard coded cases
             originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.home_substitution_canceled_event)
             originalText == "Entfällt" -> getString(R.string.home_is_cancelled)
-            // translate more cases
+            originalText == "Wird vertreten" -> getString(R.string.home_is_substituted)
+            originalText == "Wird betreut" -> getString(R.string.home_is_supervised)
+            originalText == "Raum geändert" -> getString(R.string.home_room_changed_simple)
 
             else -> originalText
         }
@@ -1081,25 +1498,26 @@ class HomeFragment : Fragment() {
     }
 
     private fun showError(message: String) {
-        if (!::contentLayout.isInitialized || !isAdded) {
-            L.w("HomeFragment", "Cannot show error - fragment not properly initialized")
-            return
-        }
-
-        contentLayout.removeAllViews()
-        val errorText = TextView(requireContext()).apply {
-            text = message
-            gravity = android.view.Gravity.CENTER
-            textSize = 16f
-            setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            ).apply {
-                gravity = android.view.Gravity.CENTER
+        try {
+            contentLayout.let { layout ->
+                layout.removeAllViews()
+                val errorText = TextView(requireContext()).apply {
+                    text = message
+                    gravity = android.view.Gravity.CENTER
+                    textSize = 16f
+                    setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT
+                    ).apply {
+                        gravity = android.view.Gravity.CENTER
+                    }
+                }
+                layout.addView(errorText)
             }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error showing error message", e)
         }
-        contentLayout.addView(errorText)
     }
 
     private fun showNoInternetMessage() {
@@ -1125,8 +1543,12 @@ class HomeFragment : Fragment() {
     }
 
     private fun loadFilterSetting() {
-        filterOnlyMySubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
-        L.d("HomeFragment", "Filter setting loaded: $filterOnlyMySubjects")
+        try {
+            filterOnlyMySubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+            L.d("HomeFragment", "Filter setting loaded: $filterOnlyMySubjects")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error loading filter setting", e)
+        }
     }
 
     private fun shouldShowEntry(entry: JSONObject): Boolean {
@@ -1144,38 +1566,42 @@ class HomeFragment : Fragment() {
     }
 
     private fun reorganizeHeaderLayout() {
-        if (!::temporaryFilterButton.isInitialized || !::invisibleLeftButton.isInitialized || !::classText.isInitialized) {
-            return
+        try {
+            if (temporaryFilterButton == null || invisibleLeftButton == null || classText == null || headerLayout == null) {
+                return
+            }
+
+            val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+            val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+            val shouldShowButtons = hasScannedDocument && filterEnabled
+            val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
+
+            val topRowLayout = headerLayout.getChildAt(0) as LinearLayout
+
+            topRowLayout.removeAllViews()
+
+            if (shouldShowButtons) {
+                temporaryFilterButton.visibility = View.VISIBLE
+                invisibleLeftButton.visibility = View.INVISIBLE
+            } else {
+                temporaryFilterButton.visibility = View.GONE
+                invisibleLeftButton.visibility = View.GONE
+            }
+
+            if (!leftFilterLift) {
+                topRowLayout.addView(temporaryFilterButton)
+                topRowLayout.addView(classText)
+                topRowLayout.addView(invisibleLeftButton)
+            } else {
+                topRowLayout.addView(invisibleLeftButton)
+                topRowLayout.addView(classText)
+                topRowLayout.addView(temporaryFilterButton)
+            }
+
+            L.d("HomeFragment", "Header layout reorganized - leftFilterLift: $leftFilterLift")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error reorganizing header layout", e)
         }
-
-        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
-        val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
-        val shouldShowButtons = hasScannedDocument && filterEnabled
-        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
-
-        val topRowLayout = headerLayout.getChildAt(0) as LinearLayout
-
-        topRowLayout.removeAllViews()
-
-        if (shouldShowButtons) {
-            temporaryFilterButton.visibility = View.VISIBLE
-            invisibleLeftButton.visibility = View.INVISIBLE
-        } else {
-            temporaryFilterButton.visibility = View.GONE
-            invisibleLeftButton.visibility = View.GONE
-        }
-
-        if (!leftFilterLift) {
-            topRowLayout.addView(temporaryFilterButton)
-            topRowLayout.addView(classText)
-            topRowLayout.addView(invisibleLeftButton)
-        } else {
-            topRowLayout.addView(invisibleLeftButton)
-            topRowLayout.addView(classText)
-            topRowLayout.addView(temporaryFilterButton)
-        }
-
-        L.d("HomeFragment", "Header layout reorganized - leftFilterLift: $leftFilterLift")
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1380,23 +1806,27 @@ class HomeFragment : Fragment() {
     }
 
     private fun cleanupRefreshIndicator() {
-        refreshIcon?.let { icon ->
-            icon.clearAnimation()
-            icon.clearColorFilter()
-        }
-
-        refreshContainer?.let { container ->
-            try {
-                if (container.parent == contentLayout) {
-                    contentLayout.removeView(container)
-                }
-            } catch (e: Exception) {
-                L.w("HomeFragment", "Error removing refresh container: ${e.message}")
+        try {
+            refreshIcon?.let { icon ->
+                icon.clearAnimation()
+                icon.clearColorFilter()
             }
-        }
 
-        refreshContainer = null
-        refreshIcon = null
+            refreshContainer?.let { container ->
+                try {
+                    if (container.parent == contentLayout) {
+                        contentLayout.removeView(container)
+                    }
+                } catch (e: Exception) {
+                    L.w("HomeFragment", "Error removing refresh container: ${e.message}")
+                }
+            }
+
+            refreshContainer = null
+            refreshIcon = null
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in cleanupRefreshIndicator", e)
+        }
     }
 
     override fun onPause() {

@@ -615,10 +615,10 @@ class GalleryFragment : Fragment() {
         val stats = calculateStatistics()
         val message = buildString {
             appendLine(getString(R.string.gall_next_events))
-            appendLine(getString(R.string.gall_next_exam, (if (stats.daysUntilNextExam == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextExam} Tage")))
-            appendLine(getString(R.string.gall_next_homework, (if (stats.daysUntilNextHomework == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextHomework} Tage")))
-            appendLine(getString(R.string.gall_next_vacation, (if (stats.daysUntilNextVacation == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextVacation} Tage")))
-            appendLine(getString(R.string.gall_next_holiday, (if (stats.daysUntilNextHoliday == -1) getString(R.string.gall_none_planned) else "${stats.daysUntilNextHoliday} Tage")))
+            appendLine(getString(R.string.gall_next_exam, getDaysString(stats.daysUntilNextExam)))
+            appendLine(getString(R.string.gall_next_homework, getDaysString(stats.daysUntilNextHomework)))
+            appendLine(getString(R.string.gall_next_vacation, getDaysString(stats.daysUntilNextVacation)))
+            appendLine(getString(R.string.gall_next_holiday, getDaysString(stats.daysUntilNextHoliday)))
             appendLine()
 
             appendLine(getString(R.string.gall_next_30_days)) // this month
@@ -639,6 +639,20 @@ class GalleryFragment : Fragment() {
             .setMessage(message)
             .setPositiveButton(getString(R.string.gall_close), null)
             .show()
+    }
+
+    fun getDaysString(days: Int): String { // helper function
+        return when (days) {
+            -1 -> {
+                getString(R.string.gall_none_planned)
+            }
+            1 -> {
+                getString(R.string.gall_one_day_statistics)
+            }
+            else -> {
+                getString(R.string.gall_days_statistics, days)
+            }
+        }
     }
 
     private fun calculateStatistics(): Statistics {
@@ -1211,10 +1225,13 @@ class GalleryFragment : Fragment() {
             setPadding(32, 32, 32, 32)
         }
 
+        val currentYear = currentWeekStart.get(Calendar.YEAR)
+        val years = (currentYear - 1..currentYear + 1).toList()
+
         val yearSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(
                 requireContext(), android.R.layout.simple_spinner_item,
-                (2024..2026).toList()
+                years
             ).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
@@ -1228,10 +1245,9 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        val currentYear = currentWeekStart.get(Calendar.YEAR)
         val currentWeek = currentWeekStart.get(Calendar.WEEK_OF_YEAR)
 
-        yearSpinner.setSelection((2024..2026).indexOf(currentYear))
+        yearSpinner.setSelection(years.indexOf(currentYear))
         weekSpinner.setSelection(currentWeek - 1)
 
         container.addView(TextView(requireContext()).apply {
@@ -1251,7 +1267,7 @@ class GalleryFragment : Fragment() {
             .setTitle(getString(R.string.gall_select_calendar_week))
             .setView(container)
             .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
-                val selectedYear = 2024 + yearSpinner.selectedItemPosition
+                val selectedYear = years[yearSpinner.selectedItemPosition]
                 val selectedWeek = weekSpinner.selectedItemPosition + 1
 
                 currentWeekStart.set(Calendar.YEAR, selectedYear)
@@ -1269,10 +1285,18 @@ class GalleryFragment : Fragment() {
             setPadding(32, 32, 32, 32)
         }
 
+        val currentDay = Calendar.getInstance().apply {
+            time = currentWeekStart.time
+            add(Calendar.DAY_OF_WEEK, currentDayOffset)
+        }
+
+        val currentYear = currentDay.get(Calendar.YEAR)
+        val years = (currentYear - 1..currentYear + 1).toList()
+
         val yearSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(
                 requireContext(), android.R.layout.simple_spinner_item,
-                (2024..2026).toList()
+                years
             ).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
@@ -1294,12 +1318,7 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        val currentDay = Calendar.getInstance().apply {
-            time = currentWeekStart.time
-            add(Calendar.DAY_OF_WEEK, currentDayOffset)
-        }
-
-        yearSpinner.setSelection((2024..2026).indexOf(currentDay.get(Calendar.YEAR)))
+        yearSpinner.setSelection(years.indexOf(currentYear))
         monthSpinner.setSelection(currentDay.get(Calendar.MONTH))
         daySpinner.setSelection(currentDay.get(Calendar.DAY_OF_MONTH) - 1)
 
@@ -1326,7 +1345,7 @@ class GalleryFragment : Fragment() {
             .setTitle(getString(R.string.gall_select_day))
             .setView(container)
             .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
-                val selectedYear = 2024 + yearSpinner.selectedItemPosition
+                val selectedYear = years[yearSpinner.selectedItemPosition]
                 val selectedMonth = monthSpinner.selectedItemPosition
                 val selectedDay = daySpinner.selectedItemPosition + 1
 
@@ -1844,7 +1863,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_lesson_times))
             .setMessage(message)
-            .setPositiveButton(getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.gall_close), null)
             .show()
     }
 
@@ -3313,7 +3332,7 @@ class GalleryFragment : Fragment() {
                     }
 
                     val homeworkItem = TextView(requireContext()).apply {
-                        "➞ ${homework.subject}$lessonText".also { text = it }
+                        "➞ ${homework.subject} $lessonText".also { text = it }
                         textSize = 14f
                         setTextColor(Color.BLACK)
                         setPadding(16, 4, 0, 4)
@@ -3463,7 +3482,7 @@ class GalleryFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_day_details))
             .setView(scrollView)
-            .setPositiveButton(getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.gall_close), null)
             .setNeutralButton(getString(R.string.gall_edit)) { _, _ ->
                 showEditDayDialog(date)
             }
