@@ -35,6 +35,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.utils.HomeworkShareHelper
+import androidx.core.net.toUri
+import android.provider.Settings
+import android.graphics.drawable.ColorDrawable
+import android.graphics.Color
 
 class SlideshowFragment : Fragment() {
 
@@ -1536,9 +1540,32 @@ class SlideshowFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        L.d("SlideshowFragment", "onViewCreated called")
+        L.d("SlideshowFragment", "Arguments: ${arguments}")
+
         arguments?.getString("shared_homework_uri")?.let { uriString ->
-            handleSharedHomework(Uri.parse(uriString))
+            handleSharedHomework(uriString.toUri())
             arguments?.remove("shared_homework_uri")
+        }
+
+        // handle homework highlighting from navigation bundle
+        arguments?.getString("highlight_homework_id")?.let { homeworkId ->
+            L.d("SlideshowFragment", "Processing highlight_homework_id: $homeworkId")
+
+            if (isLoading) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    highlightAndShowHomework(homeworkId)
+                }, 500)
+            } else {
+                highlightAndShowHomework(homeworkId)
+            }
+        }
+
+        // clear args INSTANTLY after processing them
+        Handler(Looper.getMainLooper()).post {
+            L.d("SlideshowFragment", "Clearing arguments to prevent reuse")
+            arguments?.clear()
+            arguments = Bundle() // also clear bundle
         }
     }
 
@@ -1640,8 +1667,155 @@ class SlideshowFragment : Fragment() {
             getString(R.string.dia_ho_de_no_notes)
         }
 
-        val clip = ClipData.newPlainText("Hausaufgaben Notizen", contentText)
+        val clip = ClipData.newPlainText(getString(R.string.slide_homework_notes), contentText)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(requireContext(), getString(R.string.dia_ho_de_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    fun highlightAndShowHomework(homeworkId: String) {
+        val homework = homeworkList.find { it.id == homeworkId }
+        if (homework == null) {
+            Toast.makeText(requireContext(), getString(R.string.slide_homework_not_found), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val position = adapter.getFilteredList().indexOf(homework)
+        if (position == -1) {
+            searchBarHomework.setText("")
+            adapter.filter("")
+            val newPosition = adapter.getFilteredList().indexOf(homework)
+            if (newPosition != -1) {
+                highlightAndScrollToPosition(newPosition, homework)
+            }
+        } else {
+            highlightAndScrollToPosition(position, homework)
+        }
+    }
+
+    private fun highlightAndScrollToPosition(position: Int, homework: HomeworkEntry) {
+        recyclerView.scrollToPosition(position)
+
+        recyclerView.post {
+            val viewHolder = recyclerView.findViewHolderForAdapterPosition(position)
+            if (viewHolder != null) {
+                highlightViewHolder(viewHolder, homework)
+            } else {
+                recyclerView.postDelayed({
+                    val vh = recyclerView.findViewHolderForAdapterPosition(position)
+                    if (vh != null) {
+                        highlightViewHolder(vh, homework)
+                    }
+                }, 50)
+            }
+        }
+    }
+
+    private fun highlightViewHolder(viewHolder: RecyclerView.ViewHolder, homework: HomeworkEntry) {
+        val itemView = viewHolder.itemView
+
+        val animationsDisabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+        ) == 0f
+
+        if (animationsDisabled) {
+            highlightWithoutAnimation(itemView)
+        } else {
+            highlightWithAnimation(itemView)
+        }
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isAdded && !isDetached && !isRemoving && activity != null && !requireActivity().isFinishing) {
+                try {
+                    showHomeworkDetailDialog(homework)
+                } catch (e: Exception) {
+                    L.e("SlideshowFragment", "Error showing homework details dialog", e)
+                }
+            } else {
+                L.d("SlideshowFragment", "Fragment not in valid state to show dialog - skipping")
+            }
+        }, 500)
+    }
+
+    private fun highlightWithAnimation(itemView: View) {
+        val originalBackground = itemView.background
+        val originalBackgroundColor = if (itemView.backgroundTintList != null) {
+            itemView.backgroundTintList?.defaultColor
+        } else if (itemView.background is ColorDrawable) {
+            (itemView.background as ColorDrawable).color
+        } else null
+
+        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
+        animator.duration = 2000
+
+        animator.addUpdateListener { animation ->
+            val animatedValue = animation.animatedValue as Float
+
+            if (originalBackgroundColor != null) {
+                val blendedColor = blendColors(originalBackgroundColor, highlightColor, animatedValue)
+                itemView.setBackgroundColor(blendedColor)
+            } else {
+                val alpha = (animatedValue * 100).toInt()
+                val color = Color.argb(
+                    alpha,
+                    Color.red(highlightColor),
+                    Color.green(highlightColor),
+                    Color.blue(highlightColor)
+                )
+                itemView.setBackgroundColor(color)
+            }
+        }
+
+        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                itemView.background = originalBackground
+            }
+        })
+
+        animator.start()
+    }
+
+    private fun highlightWithoutAnimation(itemView: View) {
+        val originalBackground = itemView.background
+        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+
+        val flashDuration = 300L
+        var flashCount = 0
+
+        fun flashNext() {
+            if (flashCount < 6) { // 3 flashes
+                if (flashCount % 2 == 0) {
+                    itemView.setBackgroundColor(highlightColor)
+                } else {
+                    itemView.background = originalBackground
+                }
+                flashCount++
+                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
+            } else {
+                itemView.background = originalBackground
+            }
+        }
+
+        flashNext()
+    }
+
+    private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
+        val inverseRatio = 1f - ratio
+        val r = (Color.red(color1) * inverseRatio + Color.red(color2) * ratio).toInt()
+        val g = (Color.green(color1) * inverseRatio + Color.green(color2) * ratio).toInt()
+        val b = (Color.blue(color1) * inverseRatio + Color.blue(color2) * ratio).toInt()
+        val a = (Color.alpha(color1) * inverseRatio + Color.alpha(color2) * ratio).toInt()
+        return Color.argb(a, r, g, b)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        L.d("SlideshowFragment", "onResume called")
+        L.d("SlideshowFragment", "Arguments in onResume: $arguments")
+
+        if (arguments?.containsKey("highlight_homework_id") == true) {
+            arguments = Bundle()
+        }
     }
 }

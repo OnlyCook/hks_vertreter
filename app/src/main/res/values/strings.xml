@@ -708,6 +708,8 @@
     <string name="slide_friday">Freitag</string>
     <string name="slide_unknown">Unbekannt</string>
     <string name="slide_free_lesson">Freistunde</string>
+    <string name="slide_homework_not_found">Hausaufgabe nicht gefunden</string>
+    <string name="slide_homework_notes">"Hausaufgaben Notizen"</string>
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Nicht ausgewählt</string>
@@ -752,6 +754,8 @@
     <string name="home_cancel_button">Abbrechen</string>
     <string name="home_network_error_using_cache">Keine Internetverbindung, Cache wird geladen</string>
     <string name="home_offline_mode">Offline-Modus</string>
+    <string name="home_substitute_not_found">Vertretungsplan-Eintrag nicht gefunden</string>
+    <string name="home_substitute_highlight_error">Fehler beim Hervorheben des Vertretunsplan-Eintrags</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.</string>
@@ -1000,6 +1004,7 @@
         <item quantity="one">Noch %d Jahre und %d Monat bis zur Klausur</item>
         <item quantity="other">Noch %d Jahre und %d Monate bis zur Klausur</item>
     </plurals>
+    <string name="exam_exam_not_found">Klausur nicht gefunden</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen...</string>

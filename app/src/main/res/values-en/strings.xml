@@ -708,6 +708,8 @@
     <string name="slide_friday">Friday</string>
     <string name="slide_unknown">Unknown</string>
     <string name="slide_free_lesson">Free period</string>
+    <string name="slide_homework_not_found">Couldn\'t find homework</string>
+    <string name="slide_homework_notes">"Homework notes"</string>
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Not selected</string>
@@ -752,6 +754,8 @@
     <string name="home_cancel_button">Cancel</string>
     <string name="home_network_error_using_cache">No internet connection, loading cached data</string>
     <string name="home_offline_mode">Offline mode</string>
+    <string name="home_substitute_not_found">Substitute entry not found</string>
+    <string name="home_substitute_highlight_error">Error highlighting substitute entry</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">You must first scan your timetable to see your grades.</string>
@@ -1000,6 +1004,7 @@
         <item quantity="one">%d years and %d month until exam</item>
         <item quantity="other">%d years and %d months until exam</item>
     </plurals>
+    <string name="exam_exam_not_found">Couldn\'t find exam</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Loading calendar...</string>

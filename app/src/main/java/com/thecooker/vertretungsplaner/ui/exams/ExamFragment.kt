@@ -9,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import com.thecooker.vertretungsplaner.L
@@ -38,6 +41,8 @@ import com.thecooker.vertretungsplaner.data.ExamManager
 import com.thecooker.vertretungsplaner.utils.BackupManager
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.utils.ExamShareHelper
+import android.provider.Settings
+import android.graphics.Color
 
 class ExamFragment : Fragment() {
 
@@ -2716,5 +2721,181 @@ class ExamFragment : Fragment() {
         val clip = ClipData.newPlainText("Exam Notes", exam.note)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(requireContext(), getString(R.string.exam_notes_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    fun highlightAndShowExam(examId: String) {
+        val exam = examList.find { it.id == examId }
+        if (exam == null) {
+            Toast.makeText(requireContext(), getString(R.string.exam_exam_not_found), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val position = filteredExamList.indexOf(exam)
+        if (position == -1) {
+            searchBar.setText("")
+            filterExams("")
+            val newPosition = filteredExamList.indexOf(exam)
+            if (newPosition != -1) {
+                highlightAndScrollToPosition(newPosition, exam)
+            }
+        } else {
+            highlightAndScrollToPosition(position, exam)
+        }
+    }
+
+    private fun highlightAndScrollToPosition(position: Int, exam: ExamEntry) {
+        recyclerView.scrollToPosition(position)
+
+        recyclerView.post {
+            val viewHolder = recyclerView.findViewHolderForAdapterPosition(position)
+            if (viewHolder != null) {
+                highlightViewHolder(viewHolder, exam)
+            } else {
+                recyclerView.postDelayed({
+                    val vh = recyclerView.findViewHolderForAdapterPosition(position)
+                    if (vh != null) {
+                        highlightViewHolder(vh, exam)
+                    }
+                }, 50)
+            }
+        }
+    }
+
+    private fun highlightViewHolder(viewHolder: RecyclerView.ViewHolder, exam: ExamEntry) {
+        val itemView = viewHolder.itemView
+
+        val animationsDisabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+        ) == 0f
+
+        if (animationsDisabled) {
+            highlightWithoutAnimation(itemView)
+        } else {
+            highlightWithAnimation(itemView)
+        }
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isAdded && !isDetached && !isRemoving && activity != null && !requireActivity().isFinishing) {
+                try {
+                    showExamDetailsDialog(exam)
+                } catch (e: Exception) {
+                    L.e("ExamFragment", "Error showing exam details dialog", e)
+                }
+            } else {
+                L.d("ExamFragment", "Fragment not in valid state to show dialog - skipping")
+            }
+        }, 500)
+    }
+
+    private fun highlightWithAnimation(itemView: View) {
+        val originalBackground = itemView.background
+        val originalBackgroundColor = if (itemView.backgroundTintList != null) {
+            itemView.backgroundTintList?.defaultColor
+        } else if (itemView.background is ColorDrawable) {
+            (itemView.background as ColorDrawable).color
+        } else null
+
+        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
+        animator.duration = 2000
+
+        animator.addUpdateListener { animation ->
+            val animatedValue = animation.animatedValue as Float
+
+            if (originalBackgroundColor != null) {
+                val blendedColor = blendColors(originalBackgroundColor, highlightColor, animatedValue)
+                itemView.setBackgroundColor(blendedColor)
+            } else {
+                val alpha = (animatedValue * 100).toInt()
+                val color = Color.argb(
+                    alpha,
+                    Color.red(highlightColor),
+                    Color.green(highlightColor),
+                    Color.blue(highlightColor)
+                )
+                itemView.setBackgroundColor(color)
+            }
+        }
+
+        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                itemView.background = originalBackground
+            }
+        })
+
+        animator.start()
+    }
+
+    private fun highlightWithoutAnimation(itemView: View) {
+        val originalBackground = itemView.background
+        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+
+        val flashDuration = 300L
+        var flashCount = 0
+
+        fun flashNext() {
+            if (flashCount < 6) { // 3 simple flashes
+                if (flashCount % 2 == 0) {
+                    itemView.setBackgroundColor(highlightColor)
+                } else {
+                    itemView.background = originalBackground
+                }
+                flashCount++
+                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
+            } else {
+                itemView.background = originalBackground
+            }
+        }
+
+        flashNext()
+    }
+
+    private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
+        val inverseRatio = 1f - ratio
+        val r = (Color.red(color1) * inverseRatio + Color.red(color2) * ratio).toInt()
+        val g = (Color.green(color1) * inverseRatio + Color.green(color2) * ratio).toInt()
+        val b = (Color.blue(color1) * inverseRatio + Color.blue(color2) * ratio).toInt()
+        val a = (Color.alpha(color1) * inverseRatio + Color.alpha(color2) * ratio).toInt()
+        return Color.argb(a, r, g, b)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        L.d("ExamFragment", "onViewCreated called")
+        L.d("ExamFragment", "Arguments: $arguments")
+
+        arguments?.getString("shared_exam_uri")?.let { uriString ->
+            arguments?.remove("shared_exam_uri")
+        }
+
+        arguments?.getString("highlight_exam_id")?.let { examId ->
+            L.d("ExamFragment", "Processing highlight_exam_id: $examId")
+
+            if (isLoading) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    highlightAndShowExam(examId)
+                }, 500)
+            } else {
+                highlightAndShowExam(examId)
+            }
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            L.d("ExamFragment", "Clearing arguments to prevent reuse")
+            arguments?.clear()
+            arguments = Bundle()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        L.d("ExamFragment", "onResume called")
+        L.d("ExamFragment", "Arguments in onResume: $arguments")
+
+        if (arguments?.containsKey("highlight_exam_id") == true) {
+            arguments = Bundle()
+        }
     }
 }

@@ -16,19 +16,22 @@ import androidx.appcompat.app.AppCompatDelegate
 import android.os.Build
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.core.content.edit
+import androidx.navigation.ui.NavigationUI
 
 class MainActivity : BaseActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
     private var isProcessingSharedContent = false
     private var hasProcessedSharedContent = false
+    private var homeworkArgumentsCleared = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // apply theme settings before setting content view
         val darkModeEnabled = sharedPreferences.getBoolean("dark_mode_enabled", false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             AppCompatDelegate.setDefaultNightMode(
@@ -55,8 +58,118 @@ class MainActivity : BaseActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
         navView.setupWithNavController(navController)
 
-        navController.addOnDestinationChangedListener { _, destination, _ ->
+        navView.setNavigationItemSelectedListener { menuItem ->
+            //val currentDest = navController.currentDestination
+            val args = navController.currentBackStackEntry?.arguments
+
+            // may need some adjustments
+            val needsCleanNavigation = args != null && (
+                    args.containsKey("highlight_homework_id") ||
+                            args.containsKey("highlight_exam_id") ||
+                            args.containsKey("highlight_home_item_id")
+                    )
+
+            if (needsCleanNavigation) {
+                L.d("MainActivity", "Detected persistent arguments - forcing clean navigation")
+                when (menuItem.itemId) {
+                    R.id.nav_gallery -> {
+                        forceCleanNavigation(R.id.nav_gallery)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                    R.id.nav_home -> {
+                        forceCleanNavigation(R.id.nav_home)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                    R.id.nav_slideshow -> {
+                        forceCleanNavigation(R.id.nav_slideshow)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                    R.id.nav_klausuren -> {
+                        forceCleanNavigation(R.id.nav_klausuren)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                    R.id.nav_noten -> {
+                        forceCleanNavigation(R.id.nav_noten)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                }
+            }
+
+            val result = NavigationUI.onNavDestinationSelected(menuItem, navController)
+            binding.drawerLayout.closeDrawers()
+            result
+        }
+
+        navController.addOnDestinationChangedListener { _, destination, arguments ->
             L.d("MainActivity", "Navigation changed to: ${destination.label}")
+            L.d("MainActivity", "Navigation arguments: $arguments")
+
+            // clear any highlight args when on wrong destination
+            if (arguments != null) {
+                val shouldClearArgs = when (destination.id) {
+                    R.id.nav_slideshow -> arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject")
+                    R.id.nav_klausuren -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject")
+                    R.id.nav_home -> arguments.containsKey("highlight_homework_id") || arguments.containsKey("highlight_exam_id")
+                    else -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject")
+                }
+
+                if (shouldClearArgs) {
+                    L.d("MainActivity", "Clearing mismatched arguments")
+                    arguments.clear()
+                }
+            }
+
+            // schedule cleanup for correctly placed arguments
+            if (arguments != null && !homeworkArgumentsCleared) {
+                val hasValidArgs = when (destination.id) {
+                    R.id.nav_slideshow -> arguments.containsKey("highlight_homework_id")
+                    R.id.nav_klausuren -> arguments.containsKey("highlight_exam_id")
+                    R.id.nav_home -> arguments.containsKey("highlight_home_item_id")
+                    else -> false
+                }
+
+                if (hasValidArgs) {
+                    L.d("MainActivity", "Scheduling argument cleanup for ${destination.label}")
+                    homeworkArgumentsCleared = true
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        try {
+                            arguments.remove("highlight_homework_id")
+                            arguments.remove("highlight_exam_id")
+                            arguments.remove("highlight_home_item_id")
+                            arguments.remove("highlight_homework_subject")
+                            arguments.remove("highlight_homework_date")
+                            arguments.remove("highlight_exam_subject")
+                            arguments.remove("highlight_exam_date")
+                            arguments.remove("highlight_substitute_subject")
+                            arguments.remove("highlight_substitute_lesson")
+                            arguments.remove("highlight_substitute_lesson_end")
+                            arguments.remove("highlight_substitute_date")
+                            arguments.remove("highlight_substitute_type")
+                            arguments.remove("highlight_substitute_room")
+                            L.d("MainActivity", "Arguments cleared successfully")
+                        } catch (e: Exception) {
+                            L.w("MainActivity", "Error clearing arguments", e)
+                        }
+                    }, 2000)
+                }
+            }
+
+            if (destination.id != R.id.nav_slideshow && destination.id != R.id.nav_klausuren && destination.id != R.id.nav_home) {
+                homeworkArgumentsCleared = false
+            }
         }
 
         if (!handleIncomingIntent(intent)) {
@@ -66,6 +179,33 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        L.d("MainActivity", "onResume called")
+        L.d("MainActivity", "Intent extras: ${intent.extras}")
+        L.d("MainActivity", "Intent data: ${intent.data}")
+
+        // clear extra intent
+        if (intent.hasExtra("highlight_homework_id")) {
+            L.d("MainActivity", "Clearing lingering homework intent data")
+            intent.removeExtra("highlight_homework_id")
+            intent.removeExtra("highlight_homework_subject")
+            intent.removeExtra("highlight_homework_date")
+        }
+        if (intent.hasExtra("highlight_exam_id")) {
+            L.d("MainActivity", "Clearing lingering exam intent data")
+            intent.removeExtra("highlight_exam_id")
+            intent.removeExtra("highlight_exam_subject")
+            intent.removeExtra("highlight_exam_date")
+        }
+        if (intent.hasExtra("highlight_substitute_subject")) {
+            L.d("MainActivity", "Clearing lingering substitute intent data")
+            intent.removeExtra("highlight_substitute_subject")
+            intent.removeExtra("highlight_substitute_lesson")
+            intent.removeExtra("highlight_substitute_lesson_end")
+            intent.removeExtra("highlight_substitute_date")
+            intent.removeExtra("highlight_substitute_type")
+            intent.removeExtra("highlight_substitute_room")
+        }
 
         val landscapeEnabled = sharedPreferences.getBoolean("landscape_mode_enabled", true)
         val currentOrientation = if (landscapeEnabled) {
@@ -79,7 +219,41 @@ class MainActivity : BaseActivity() {
         }
 
         val navController = findNavController(R.id.nav_host_fragment_content_main)
-        L.d("MainActivity", "Current destination: ${navController.currentDestination?.label}")
+        val currentDestination = navController.currentDestination
+
+        if (currentDestination?.id == R.id.nav_slideshow) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    navController.currentBackStackEntry?.arguments?.let { args ->
+                        if (args.containsKey("highlight_homework_id")) {
+                            args.remove("highlight_homework_id")
+                            args.remove("highlight_homework_subject")
+                            args.remove("highlight_homework_date")
+                            L.d("MainActivity", "Force cleared homework arguments in onResume")
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.w("MainActivity", "Error force clearing arguments in onResume", e)
+                }
+            }, 4000)
+        }
+
+        if (currentDestination?.id == R.id.nav_klausuren) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    navController.currentBackStackEntry?.arguments?.let { args ->
+                        if (args.containsKey("highlight_exam_id")) {
+                            args.remove("highlight_exam_id")
+                            args.remove("highlight_exam_subject")
+                            args.remove("highlight_exam_date")
+                            L.d("MainActivity", "Force cleared exam arguments in onResume")
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.w("MainActivity", "Error force clearing exam arguments in onResume", e)
+                }
+            }, 4000)
+        }
 
         val navView: NavigationView = binding.navView
         val checkedItem = navView.checkedItem
@@ -326,20 +500,35 @@ class MainActivity : BaseActivity() {
 
         if (sharedPreferences.getBoolean("home_fragment_needs_reset", false)) {
             sharedPreferences.edit { remove("home_fragment_needs_reset") }
+        }
+    }
 
+    private fun forceCleanNavigation(destinationId: Int) {
+        try {
             val navController = findNavController(R.id.nav_host_fragment_content_main)
-            navController.addOnDestinationChangedListener { _, destination, _ ->
-                if (destination.id == R.id.nav_home) {
-                    val homeFragment = supportFragmentManager.primaryNavigationFragment
-                        ?.childFragmentManager
-                        ?.fragments
-                        ?.find { it.javaClass.simpleName == "HomeFragment" }
 
-                    homeFragment?.arguments = (homeFragment.arguments ?: Bundle()).apply {
-                        putBoolean("from_shared_navigation", true)
-                    }
-                }
+            L.d("MainActivity", "Forcing clean navigation to destination: $destinationId")
+
+            // clear ALL arguments first
+            navController.currentBackStackEntry?.arguments?.clear()
+            navController.previousBackStackEntry?.arguments?.clear()
+
+            // navigate to home first to reset navigation state
+            navController.navigate(R.id.nav_home, null, androidx.navigation.NavOptions.Builder()
+                .setPopUpTo(R.id.nav_home, true)
+                .build())
+
+            // then and only then navigate to the intended destination (after slight delay)
+            if (destinationId != R.id.nav_home) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    navController.navigate(destinationId, null, androidx.navigation.NavOptions.Builder()
+                        .setPopUpTo(R.id.nav_home, false)
+                        .build())
+                }, 50)
             }
+
+        } catch (e: Exception) {
+            L.e("MainActivity", "Error in forceCleanNavigation", e)
         }
     }
 }

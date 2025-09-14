@@ -63,6 +63,8 @@ import androidx.core.content.edit
 import androidx.core.view.isVisible
 import android.widget.ImageButton
 import android.graphics.Typeface
+import androidx.navigation.fragment.findNavController
+import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 
 class SwipeInterceptorLayout @JvmOverloads constructor(
     context: Context,
@@ -229,6 +231,9 @@ class GalleryFragment : Fragment() {
     // swipe ux
     private var swipeIndicatorView: View? = null
     private var gestureDetector: GestureDetector? = null
+
+    // for day details dialog
+    private var currentDialog: AlertDialog? = null
 
     data class VacationWeek(
         val weekKey: String,
@@ -1898,11 +1903,10 @@ class GalleryFragment : Fragment() {
                     finalDisplayText += "<br><small>" + additionalInfo.joinToString(" | ") + "</small>"
                 }
 
-                if (isCancelled) {
-                    finalDisplayText = "<s><b>$finalDisplayText</b></s>"
+                finalDisplayText = if (isCancelled) {
+                    "<s><b>$finalDisplayText</b></s>"
                 } else {
-                    // Make subject bold
-                    finalDisplayText = finalDisplayText.replace(displaySubject, "<b>$displaySubject</b>")
+                    finalDisplayText.replace(displaySubject, "<b>$displaySubject</b>")
                 }
 
                 cell.text = Html.fromHtml(finalDisplayText, Html.FROM_HTML_MODE_COMPACT)
@@ -3229,8 +3233,6 @@ class GalleryFragment : Fragment() {
             timetableData[dayKey] = mutableMapOf()
         }
 
-        val NO_SCHOOL_INTERNAL = "NO_SCHOOL"
-
         for (i in lesson until lesson + duration) {
             if (subject == getString(R.string.gall_no_school)) { // be cautious about this
                 timetableData[dayKey]?.remove(i)
@@ -3614,7 +3616,7 @@ class GalleryFragment : Fragment() {
                     }
 
                     val homeworkItem = TextView(requireContext()).apply {
-                        text = "➞ ${homework.subject} $lessonText"
+                        "➞ ${homework.subject} $lessonText".also { text = it }
                         textSize = 14f
                         setTextColor(Color.BLACK)
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -3626,7 +3628,8 @@ class GalleryFragment : Fragment() {
                         setPadding(8, 8, 8, 8)
                         contentDescription = getString(R.string.gall_open_homework_details)
                         setOnClickListener {
-                            //openHomeworkPage(homework)
+
+                            openHomeworkPage(homework)
                         }
                     }
 
@@ -3668,7 +3671,7 @@ class GalleryFragment : Fragment() {
                     }
 
                     val examItem = TextView(requireContext()).apply {
-                        text = "➞ ${exam.subject}"
+                        "➞ ${exam.subject}".also { text = it }
                         textSize = 14f
                         setTextColor(Color.BLACK)
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -3680,7 +3683,7 @@ class GalleryFragment : Fragment() {
                         setPadding(8, 8, 8, 8)
                         contentDescription = getString(R.string.gall_open_exam_details)
                         setOnClickListener {
-                            //openExamPage(exam, date)
+                            openExamPage(exam, date)
                         }
                     }
 
@@ -3720,7 +3723,7 @@ class GalleryFragment : Fragment() {
                 }
 
                 val examItem = TextView(requireContext()).apply {
-                    text = "➞ ${exam.subject}"
+                    "➞ ${exam.subject}".also { text = it }
                     textSize = 14f
                     setTextColor(Color.BLACK)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -3732,7 +3735,7 @@ class GalleryFragment : Fragment() {
                     setPadding(8, 8, 8, 8)
                     contentDescription = getString(R.string.gall_open_exam_details)
                     setOnClickListener {
-                        //openExamPageFromManager(exam, date)
+                        openExamPage(exam, date)
                     }
                 }
 
@@ -3779,7 +3782,7 @@ class GalleryFragment : Fragment() {
 
                 val formattedSubstitute = formatSubstituteText(substitute.art)
                 val substituteItem = TextView(requireContext()).apply {
-                    text = "➞ $lessonRange ${substitute.fach}: $formattedSubstitute"
+                    "➞ $lessonRange ${substitute.fach}: $formattedSubstitute".also { text = it }
                     textSize = 14f
                     setTextColor(Color.BLACK)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -3791,7 +3794,7 @@ class GalleryFragment : Fragment() {
                     setPadding(8, 8, 8, 8)
                     contentDescription = getString(R.string.gall_open_substitute_details)
                     setOnClickListener {
-                        //openSubstitutePage(substitute, date)
+                        openSubstitutePage(substitute, date)
                     }
                 }
 
@@ -3813,57 +3816,62 @@ class GalleryFragment : Fragment() {
 
         scrollView.addView(container)
 
-        AlertDialog.Builder(requireContext())
+        currentDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_day_details))
             .setView(scrollView)
-            .setPositiveButton(getString(R.string.gall_close), null)
+            .setPositiveButton(getString(R.string.gall_close)) { _, _ ->
+                currentDialog = null
+            }
             .setNeutralButton(getString(R.string.gall_edit)) { _, _ ->
+                currentDialog = null
                 showEditDayDialog(date)
             }
-            .show()
-    }
-    /*
-    private fun openHomeworkPage(homework: SlideshowFragment.HomeworkItem) {
-        try {
-            // Placeholder - replace with actual homework activity class
-            val intent = Intent(requireContext(), SlideshowFragment::class.java)
-            intent.putExtra("highlight_homework_id", homework.id ?: "")
-            intent.putExtra("highlight_homework_subject", homework.subject)
-            intent.putExtra("highlight_homework_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(homework.dueDate))
-            startActivity(intent)
+            .create()
 
-            // Call highlighting method - this would need to be implemented in HomeworkActivity
-            // The activity should check for these extras and call highlightHomeworkEntry()
+        currentDialog?.show()
+    }
+
+    private fun openHomeworkPage(homework: SlideshowFragment.HomeworkEntry) {
+        try {
+            L.d("GalleryFragment", "openHomeworkPage called for homework: ${homework.id}")
+
+            currentDialog?.dismiss()
+            currentDialog = null
+
+            val navController = findNavController()
+            L.d("GalleryFragment", "Current destination: ${navController.currentDestination?.label}")
+
+            // always create fresh bundle each time to avoid reuse
+            val bundle = Bundle().apply {
+                putString("highlight_homework_id", homework.id)
+                putString("highlight_homework_subject", homework.subject)
+                putString("highlight_homework_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(homework.dueDate))
+            }
+
+            L.d("GalleryFragment", "Navigating to slideshow with fresh bundle: $bundle")
+
+            // use popUpTo to ensure CLEAN navigation stack
+            val navOptions = androidx.navigation.NavOptions.Builder()
+                .setPopUpTo(R.id.nav_gallery, false)
+                .build()
+
+            navController.navigate(R.id.nav_slideshow, bundle, navOptions)
+
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error opening homework page", e)
             Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun openExamPage(exam: CalendarDataManager.ExamInfo, date: Date) {
+    private fun openExamPage(exam: ExamFragment.ExamEntry, date: Date) {
         try {
-            // Placeholder - replace with actual exam activity class
-            val intent = Intent(requireContext(), ExamActivity::class.java)
-            intent.putExtra("highlight_exam_subject", exam.subject)
-            intent.putExtra("highlight_exam_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
-            startActivity(intent)
-
-            // Call highlighting method - this would need to be implemented in ExamActivity
-            // The activity should check for these extras and call highlightExamEntry()
-        } catch (e: Exception) {
-            L.w("GalleryFragment", "Error opening exam page", e)
-            Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun openExamPageFromManager(exam: ExamManager.ExamEntry, date: Date) {
-        try {
-            // Placeholder - replace with actual exam activity class
-            val intent = Intent(requireContext(), ExamFragment::class.java)
-            intent.putExtra("highlight_exam_subject", exam.subject)
-            intent.putExtra("highlight_exam_date", SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date))
-            intent.putExtra("highlight_exam_id", exam.id ?: "")
-            startActivity(intent)
+            val navController = findNavController()
+            val bundle = Bundle().apply {
+                putString("highlight_exam_id", exam.id)
+                putString("highlight_exam_subject", exam.subject)
+                putString("highlight_exam_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
+            }
+            navController.navigate(R.id.nav_klausuren, bundle)
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error opening exam page", e)
             Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
@@ -3872,23 +3880,26 @@ class GalleryFragment : Fragment() {
 
     private fun openSubstitutePage(substitute: SubstituteRepository.SubstituteEntry, date: Date) {
         try {
-            // Placeholder - replace with actual substitute activity class
-            val intent = Intent(requireContext(), HomeFragment::class.java)
-            intent.putExtra("highlight_substitute_subject", substitute.fach)
-            intent.putExtra("highlight_substitute_lesson", substitute.stunde)
-            intent.putExtra("highlight_substitute_lesson_end", substitute.stundeBis ?: substitute.stunde)
-            intent.putExtra("highlight_substitute_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
-            intent.putExtra("highlight_substitute_type", substitute.art)
-            startActivity(intent)
+            val navController = findNavController()
 
-            // Call highlighting method - this would need to be implemented in SubstituteActivity
-            // The activity should check for these extras and call highlightSubstituteEntry()
+            val bundle = Bundle().apply {
+                putString("highlight_substitute_subject", substitute.fach)
+                putInt("highlight_substitute_lesson", substitute.stunde)
+                putInt("highlight_substitute_lesson_end", substitute.stundeBis ?: substitute.stunde)
+                putString("highlight_substitute_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
+                putString("highlight_substitute_type", substitute.art)
+                putString("highlight_substitute_room", substitute.raum)
+            }
+
+            navController.navigate(R.id.nav_home, bundle, androidx.navigation.NavOptions.Builder()
+                .setPopUpTo(R.id.nav_home, false)
+                .build())
+
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error opening substitute page", e)
             Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
         }
     }
-    */
 
     private fun getTranslatedDate(date: Date): String {
         val calendar = Calendar.getInstance().apply { time = date }
@@ -5901,5 +5912,7 @@ class GalleryFragment : Fragment() {
         hideSwipeIndicator()
         gestureDetector = null
         _binding = null
+        currentDialog?.dismiss()
+        currentDialog = null
     }
 }

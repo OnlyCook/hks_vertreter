@@ -7,6 +7,8 @@ import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import com.thecooker.vertretungsplaner.L
 import android.view.LayoutInflater
@@ -25,6 +27,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
+import android.provider.Settings
+import android.graphics.drawable.ColorDrawable
+import android.graphics.Color
 
 class TouchScrollView @JvmOverloads constructor(
     context: Context,
@@ -252,6 +257,31 @@ class HomeFragment : Fragment() {
                     safeLoadSubstitutePlan()
                 }
             }
+        }
+
+        arguments?.getString("highlight_substitute_subject")?.let { subject ->
+            val lesson = arguments?.getInt("highlight_substitute_lesson", -1) ?: -1
+            val lessonEnd = arguments?.getInt("highlight_substitute_lesson_end", lesson) ?: lesson
+            val dateString = arguments?.getString("highlight_substitute_date", "") ?: ""
+            val type = arguments?.getString("highlight_substitute_type", "") ?: ""
+            val room = arguments?.getString("highlight_substitute_room", "") ?: ""
+
+            L.d("HomeFragment", "Processing substitute highlight: $subject, lesson $lesson, date $dateString")
+
+            if (lesson != -1 && dateString.isNotEmpty()) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    highlightAndShowSubstitute(subject, lesson, lessonEnd, dateString, type, room)
+                }, 800)
+            }
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            arguments?.remove("highlight_substitute_subject")
+            arguments?.remove("highlight_substitute_lesson")
+            arguments?.remove("highlight_substitute_lesson_end")
+            arguments?.remove("highlight_substitute_date")
+            arguments?.remove("highlight_substitute_type")
+            arguments?.remove("highlight_substitute_room")
         }
     }
 
@@ -1934,6 +1964,255 @@ class HomeFragment : Fragment() {
         } catch (e: Exception) {
             L.e("HomeFragment", "Error in cleanupRefreshIndicator", e)
         }
+    }
+
+    private fun highlightAndShowSubstitute(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String) {
+        try {
+            L.d("HomeFragment", "Starting substitute highlight: subject=$subject, lesson=$lesson, date=$dateString")
+
+            if (currentJsonData == null) {
+                L.d("HomeFragment", "No JSON data yet, retrying in 500ms")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    highlightAndShowSubstitute(subject, lesson, lessonEnd, dateString, type, room)
+                }, 500)
+                return
+            }
+
+            L.d("HomeFragment", "JSON data available, searching for substitute entry")
+
+            val targetEntry = findSubstituteEntry(subject, lesson, lessonEnd, dateString, type, room)
+            if (targetEntry == null) {
+                L.w("HomeFragment", "Substitute entry not found")
+                Toast.makeText(requireContext(), getString(R.string.home_substitute_not_found), Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            L.d("HomeFragment", "Found substitute entry, proceeding to highlight")
+
+            scrollToAndHighlightSubstitute(targetEntry)
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error highlighting substitute", e)
+            Toast.makeText(requireContext(), getString(R.string.home_substitute_highlight_error), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun findSubstituteEntry(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String): Pair<View, JSONObject>? {
+        try {
+            val dates = currentJsonData?.optJSONArray("dates") ?: return null
+
+            for (i in 0 until dates.length()) {
+                val dateObj = dates.getJSONObject(i)
+                val entryDateString = dateObj.getString("date")
+
+                if (entryDateString == dateString) {
+                    val entries = dateObj.getJSONArray("entries")
+
+                    for (j in 0 until entries.length()) {
+                        val entry = entries.getJSONObject(j)
+
+                        if (matchesSubstituteEntry(entry, subject, lesson, lessonEnd, type, room)) {
+                            val tableView = findTableViewForEntry(i, j)
+                            if (tableView != null) {
+                                return Pair(tableView, entry)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error finding substitute entry", e)
+        }
+        return null
+    }
+
+    private fun matchesSubstituteEntry(entry: JSONObject, subject: String, lesson: Int, lessonEnd: Int, type: String, room: String): Boolean {
+        val entrySubject = entry.optString("fach", "")
+        val entryLesson = entry.getInt("stunde")
+        val entryLessonEnd = entry.optInt("stundebis", entryLesson)
+        val entryType = entry.optString("text", "")
+        val entryRoom = entry.optString("raum", "")
+
+        return entrySubject.equals(subject, ignoreCase = true) &&
+                entryLesson == lesson &&
+                entryLessonEnd == lessonEnd &&
+                entryType.equals(type, ignoreCase = true) &&
+                entryRoom.equals(room, ignoreCase = true)
+    }
+
+    private fun findTableViewForEntry(dateIndex: Int, entryIndex: Int): View? {
+        try {
+            val horizontallyCenteredWrapper = contentLayout.getChildAt(0) as? LinearLayout
+            val contentContainer = horizontallyCenteredWrapper?.getChildAt(0) as? LinearLayout ?: return null
+
+            var currentDateIndex = -1
+            var foundTable: TableLayout? = null
+
+            for (i in 0 until contentContainer.childCount) {
+                val child = contentContainer.getChildAt(i)
+
+                // look for date headers (bold textview)
+                if (child is TextView && child.typeface?.isBold == true) {
+                    currentDateIndex++
+                    L.d("HomeFragment", "Found date header at index $i, currentDateIndex = $currentDateIndex")
+
+                    if (currentDateIndex == dateIndex) {
+                        // Look for the table after this header
+                        for (j in i + 1 until contentContainer.childCount) {
+                            val nextChild = contentContainer.getChildAt(j)
+                            if (nextChild is TableLayout) {
+                                foundTable = nextChild
+                                L.d("HomeFragment", "Found table with ${foundTable.childCount} rows")
+                                break
+                            }
+                            // Stop if we hit another date header
+                            if (nextChild is TextView && nextChild.typeface?.isBold == true) {
+                                break
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+
+            if (foundTable != null) {
+                // +1 to skip header row -> ensure we dont go oob
+                val targetRowIndex = entryIndex + 1
+                if (targetRowIndex < foundTable.childCount) {
+                    val targetRow = foundTable.getChildAt(targetRowIndex)
+                    L.d("HomeFragment", "Found target row at index $targetRowIndex")
+                    return targetRow
+                } else {
+                    L.w("HomeFragment", "Target row index $targetRowIndex >= table child count ${foundTable.childCount}")
+                }
+            } else {
+                L.w("HomeFragment", "No table found for date index $dateIndex")
+            }
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error finding table view", e)
+        }
+        return null
+    }
+
+    private fun scrollToAndHighlightSubstitute(targetEntry: Pair<View, JSONObject>) {
+        val (targetView, entry) = targetEntry
+
+        try {
+            contentScrollView.post {
+                val location = IntArray(2)
+                targetView.getLocationInWindow(location)
+                val viewTop = location[1]
+
+                val scrollViewLocation = IntArray(2)
+                contentScrollView.getLocationInWindow(scrollViewLocation)
+                val scrollViewTop = scrollViewLocation[1]
+
+                val relativeTop = viewTop - scrollViewTop
+                val scrollViewHeight = contentScrollView.height
+
+                val targetScrollY = contentScrollView.scrollY + relativeTop - (scrollViewHeight / 2)
+
+                contentScrollView.smoothScrollTo(0, targetScrollY.coerceAtLeast(0))
+
+                contentScrollView.postDelayed({
+                    highlightSubstituteView(targetView)
+                }, 500)
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error scrolling to substitute", e)
+            highlightSubstituteView(targetView)
+        }
+    }
+
+    private fun highlightSubstituteView(targetView: View) {
+        try {
+            val animationsDisabled = Settings.Global.getFloat(
+                requireContext().contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1f
+            ) == 0f
+
+            if (animationsDisabled) {
+                highlightSubstituteWithoutAnimation(targetView)
+            } else {
+                highlightSubstituteWithAnimation(targetView)
+            }
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error highlighting substitute view", e)
+        }
+    }
+
+    private fun highlightSubstituteWithAnimation(targetView: View) {
+        val originalBackground = targetView.background
+        val originalBackgroundColor = if (targetView.backgroundTintList != null) {
+            targetView.backgroundTintList?.defaultColor
+        } else if (targetView.background is ColorDrawable) {
+            (targetView.background as ColorDrawable).color
+        } else null
+
+        val highlightColor = resources.getColor(android.R.color.holo_orange_light, null)
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
+        animator.duration = 2500
+
+        animator.addUpdateListener { animation ->
+            val animatedValue = animation.animatedValue as Float
+
+            if (originalBackgroundColor != null) {
+                val blendedColor = blendColors(originalBackgroundColor, highlightColor, animatedValue)
+                targetView.setBackgroundColor(blendedColor)
+            } else {
+                val alpha = (animatedValue * 120).toInt()
+                val color = Color.argb(
+                    alpha,
+                    Color.red(highlightColor),
+                    Color.green(highlightColor),
+                    Color.blue(highlightColor)
+                )
+                targetView.setBackgroundColor(color)
+            }
+        }
+
+        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                targetView.background = originalBackground
+            }
+        })
+
+        animator.start()
+    }
+
+    private fun highlightSubstituteWithoutAnimation(targetView: View) {
+        val originalBackground = targetView.background
+        val highlightColor = resources.getColor(android.R.color.holo_orange_light, null)
+
+        val flashDuration = 400L
+        var flashCount = 0
+
+        fun flashNext() {
+            if (flashCount < 8) { // 4 flashes
+                if (flashCount % 2 == 0) {
+                    targetView.setBackgroundColor(highlightColor)
+                } else {
+                    targetView.background = originalBackground
+                }
+                flashCount++
+                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
+            } else {
+                targetView.background = originalBackground
+            }
+        }
+
+        flashNext()
+    }
+
+    private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
+        val inverseRatio = 1f - ratio
+        val r = (Color.red(color1) * inverseRatio + Color.red(color2) * ratio).toInt()
+        val g = (Color.green(color1) * inverseRatio + Color.green(color2) * ratio).toInt()
+        val b = (Color.blue(color1) * inverseRatio + Color.blue(color2) * ratio).toInt()
+        val a = (Color.alpha(color1) * inverseRatio + Color.alpha(color2) * ratio).toInt()
+        return Color.argb(a, r, g, b)
     }
 
     override fun onPause() {

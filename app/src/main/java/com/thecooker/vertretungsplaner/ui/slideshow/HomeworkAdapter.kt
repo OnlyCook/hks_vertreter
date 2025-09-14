@@ -157,5 +157,9 @@ class HomeworkAdapter(
         notifyDataSetChanged()
     }
 
+    fun getFilteredList(): List<SlideshowFragment.HomeworkEntry> {
+        return filteredHomeworkList
+    }
+
     override fun getItemCount(): Int = filteredHomeworkList.size
 }
