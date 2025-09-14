@@ -172,7 +172,7 @@ class HomeFragment : Fragment() {
             }
 
             classText = TextView(requireContext()).apply {
-                text = "Vertretungsplan"
+                text = getString(R.string.act_set_substitution_plan)
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 gravity = android.view.Gravity.CENTER
@@ -206,7 +206,7 @@ class HomeFragment : Fragment() {
                 androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
                 0
             ).apply {
-                topToBottom = headerLayout!!.id
+                topToBottom = headerLayout.id
                 bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
                 startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
                 endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
@@ -265,6 +265,8 @@ class HomeFragment : Fragment() {
                 return
             }
 
+            initializationAttempts = 0
+
             val wasInSharedMode = isInSharedContentMode
             isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
@@ -299,9 +301,7 @@ class HomeFragment : Fragment() {
                 loadColorBlindSettings()
                 updateTemporaryFilterButtonVisibility()
 
-                if (temporaryFilterButton != null) {
-                    reorganizeHeaderLayout()
-                }
+                reorganizeHeaderLayout()
 
                 binding.root.postDelayed({
                     if (isAdded && _binding != null && isResumed) {
@@ -332,7 +332,6 @@ class HomeFragment : Fragment() {
         try {
             if (!isAdded || _binding == null) {
                 L.w("HomeFragment", "Cannot load - fragment not ready")
-                showSafeErrorState()
                 return
             }
 
@@ -353,13 +352,13 @@ class HomeFragment : Fragment() {
 
         } catch (e: Exception) {
             L.e("HomeFragment", "Error in safeLoadSubstitutePlan", e)
-            if (initializationAttempts < maxInitializationAttempts) {
+            if (isAdded && _binding != null && initializationAttempts < maxInitializationAttempts) {
                 binding.root.postDelayed({
                     if (isAdded && _binding != null) {
                         safeLoadSubstitutePlan()
                     }
                 }, 1000)
-            } else {
+            } else if (isAdded && _binding != null) {
                 showRestartDialog()
             }
         }
@@ -430,6 +429,11 @@ class HomeFragment : Fragment() {
 
             if (isInSharedContentMode || sharedPreferences.getBoolean("skip_home_loading", false)) {
                 L.d("HomeFragment", "Skipping restart dialog - in shared content mode")
+                return
+            }
+
+            if (initializationAttempts < maxInitializationAttempts) {
+                L.d("HomeFragment", "Not showing restart dialog - attempts: $initializationAttempts")
                 return
             }
 
@@ -817,8 +821,11 @@ class HomeFragment : Fragment() {
         classText.text = getString(R.string.home_class_prefix, klasse)
 
         if (!isNetworkAvailable()) {
-            L.d("HomeFragment", "No internet connection, trying to load cached data")
+            L.d("HomeFragment", "No internet connection, loading cached data")
             loadCachedSubstitutePlan(klasse!!)
+            view?.let {
+                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+            }
             return
         }
 
@@ -846,27 +853,21 @@ class HomeFragment : Fragment() {
                         }
                     }
                     contentLayout.addView(loadingText)
-                } else {
-                    L.w("HomeFragment", "contentLayout not initialized, skipping loading UI")
                 }
 
-                // fetch last update time
                 val lastUpdate = withContext(Dispatchers.IO) {
                     fetchLastUpdateTime()
                 }
 
-                // retry
                 if (!isAdded || _binding == null) {
                     L.w("HomeFragment", "Fragment detached during network call, aborting")
                     return@launch
                 }
 
-                // fetch substitute plan
                 val substitutePlan = withContext(Dispatchers.IO) {
                     fetchSubstitutePlan(klasse!!)
                 }
 
-                // retry
                 if (!isAdded || _binding == null) {
                     L.w("HomeFragment", "Fragment detached after network call, aborting UI update")
                     return@launch
@@ -875,7 +876,7 @@ class HomeFragment : Fragment() {
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
                 if (::lastUpdateText.isInitialized) {
-                lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                    lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
                 }
                 displaySubstitutePlan(substitutePlan)
 
@@ -885,15 +886,16 @@ class HomeFragment : Fragment() {
                 L.e("HomeFragment", "Error loading substitute plan", e)
 
                 if (!isAdded || _binding == null) {
-                    L.w("HomeFragment", "Fragment detached, skipping error display")
+                    L.w("HomeFragment", "Fragment detached, skipping error handling")
                     return@launch
                 }
 
-                view?.let {
-                    Snackbar.make(it, getString(R.string.home_network_error, e.message), Snackbar.LENGTH_LONG).show()
-                }
-
+                L.d("HomeFragment", "Network error, attempting to load cached data")
                 loadCachedSubstitutePlan(klasse!!)
+
+                view?.let {
+                    Snackbar.make(it, getString(R.string.home_network_error_using_cache), Snackbar.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -1303,44 +1305,87 @@ class HomeFragment : Fragment() {
             val artTextSubject = entry.optString("text", "")
             val isCancelled = artTextSubject.contains("Entfällt") || artTextSubject == "Auf einen anderen Termin verlegt"
 
+            val isSubjectReplaced = artTextSubject.matches(Regex(".*entfällt, stattdessen .*"))
+            val isSubjectReplacedWithRoom = artTextSubject.matches(Regex(".*entfällt, stattdessen .* in Raum .*"))
+
             val fachCell = TextView(requireContext()).apply {
                 textSize = 14f
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[1])
 
-                if (isStudentSubject(fachText)) {
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(resources.getColor(android.R.color.white, null))
-                    background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
-                    setPadding(12, 12, 12, 12)
+                when {
+                    isSubjectReplacedWithRoom -> {
+                        val regex = Regex("(.*)entfällt, stattdessen (.*) in Raum .*")
+                        val matchResult = regex.find(artTextSubject)
+                        if (matchResult != null) {
+                            val originalSubject = matchResult.groups[1]?.value?.trim() ?: fachText
+                            val newSubject = matchResult.groups[2]?.value?.trim() ?: ""
 
-                    if (isCancelled) {
-                        val spannableString = android.text.SpannableString(fachText)
-                        spannableString.setSpan(
-                            android.text.style.StrikethroughSpan(),
-                            0,
-                            fachText.length,
-                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        text = spannableString
-                    } else {
-                        text = fachText
+                            val spannableString = android.text.SpannableString("$originalSubject\n$newSubject")
+                            spannableString.setSpan(
+                                android.text.style.StrikethroughSpan(),
+                                0,
+                                originalSubject.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            spannableString.setSpan(
+                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                originalSubject.length + 1,
+                                spannableString.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            text = spannableString
+
+                            if (isStudentSubject(originalSubject) || isStudentSubject(newSubject)) {
+                                setTypeface(null, android.graphics.Typeface.BOLD)
+                                setTextColor(resources.getColor(android.R.color.white, null))
+                                background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+                                setPadding(12, 12, 12, 12)
+                            } else {
+                                setPadding(8, 12, 12, 12)
+                                setTextColor(resources.getColor(android.R.color.black, null))
+                            }
+                        } else {
+                            handleOriginalSubjectLogic(fachText, isCancelled) // fallback
+                        }
                     }
-                } else {
-                    setPadding(8, 12, 12, 12)
-                    setTextColor(resources.getColor(android.R.color.black, null))
+                    isSubjectReplaced -> {
+                        val regex = Regex("(.*) entfällt, stattdessen (.*)")
+                        val matchResult = regex.find(artTextSubject)
+                        if (matchResult != null) {
+                            val originalSubject = matchResult.groups[1]?.value?.trim() ?: fachText
+                            val newSubject = matchResult.groups[2]?.value?.trim() ?: ""
 
-                    if (isCancelled) {
-                        val spannableString = android.text.SpannableString(fachText)
-                        spannableString.setSpan(
-                            android.text.style.StrikethroughSpan(),
-                            0,
-                            fachText.length,
-                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                        text = spannableString
-                    } else {
-                        text = fachText
+                            val spannableString = android.text.SpannableString("$originalSubject\n$newSubject")
+                            spannableString.setSpan(
+                                android.text.style.StrikethroughSpan(),
+                                0,
+                                originalSubject.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            spannableString.setSpan(
+                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                originalSubject.length + 1,
+                                spannableString.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            text = spannableString
+
+                            if (isStudentSubject(originalSubject) || isStudentSubject(newSubject)) {
+                                setTypeface(null, android.graphics.Typeface.BOLD)
+                                setTextColor(resources.getColor(android.R.color.white, null))
+                                background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+                                setPadding(12, 12, 12, 12)
+                            } else {
+                                setPadding(8, 12, 12, 12)
+                                setTextColor(resources.getColor(android.R.color.black, null))
+                            }
+                        } else {
+                            handleOriginalSubjectLogic(fachText, isCancelled) // fallback
+                        }
+                    }
+                    else -> {
+                        handleOriginalSubjectLogic(fachText, isCancelled)
                     }
                 }
             }
@@ -1351,16 +1396,8 @@ class HomeFragment : Fragment() {
             val artTextRoom = entry.optString("text", "")
             var displayRoom = originalRoom
 
-            // if room changed update display (strikethough)
             val isRoomChanged = artTextRoom.matches(Regex("Findet in Raum .* statt"))
-            if (isRoomChanged) {
-                val regex = Regex("Findet in Raum (.*) statt")
-                val matchResult = regex.find(artTextRoom)
-                if (matchResult != null) {
-                    val newRoom = matchResult.groups[1]?.value ?: ""
-                    displayRoom = newRoom
-                }
-            }
+            val isSubjectReplacedWithRoomRaum = artTextRoom.matches(Regex(".*entfällt, stattdessen .* in Raum .*"))
 
             val raumCell = TextView(requireContext()).apply {
                 setPadding(8, 12, 8, 12)
@@ -1368,25 +1405,62 @@ class HomeFragment : Fragment() {
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[2])
 
-                if (isRoomChanged) {
-                    val spannableString = android.text.SpannableString("$originalRoom\n$displayRoom")
-                    spannableString.setSpan(
-                        android.text.style.StrikethroughSpan(),
-                        0,
-                        originalRoom.length,
-                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    spannableString.setSpan(
-                        android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
-                        originalRoom.length + 1,
-                        spannableString.length,
-                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    text = spannableString
-                    setTextColor(resources.getColor(android.R.color.black, null))
-                } else {
-                    text = displayRoom
-                    setTextColor(resources.getColor(android.R.color.black, null))
+                when {
+                    isSubjectReplacedWithRoomRaum -> {
+                        val regex = Regex(".*entfällt, stattdessen .* in Raum (.*)")
+                        val matchResult = regex.find(artTextRoom)
+                        if (matchResult != null) {
+                            val newRoom = matchResult.groups[1]?.value?.trim() ?: ""
+                            val spannableString = android.text.SpannableString("$originalRoom\n$newRoom")
+                            spannableString.setSpan(
+                                android.text.style.StrikethroughSpan(),
+                                0,
+                                originalRoom.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            spannableString.setSpan(
+                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                originalRoom.length + 1,
+                                spannableString.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            text = spannableString
+                            setTextColor(resources.getColor(android.R.color.black, null))
+                        } else {
+                            text = originalRoom
+                            setTextColor(resources.getColor(android.R.color.black, null))
+                        }
+                    }
+                    isRoomChanged -> {
+                        val regex = Regex("Findet in Raum (.*) statt")
+                        val matchResult = regex.find(artTextRoom)
+                        if (matchResult != null) {
+                            val newRoom = matchResult.groups[1]?.value ?: ""
+                            displayRoom = newRoom
+                            val spannableString = android.text.SpannableString("$originalRoom\n$displayRoom")
+                            spannableString.setSpan(
+                                android.text.style.StrikethroughSpan(),
+                                0,
+                                originalRoom.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            spannableString.setSpan(
+                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                originalRoom.length + 1,
+                                spannableString.length,
+                                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            text = spannableString
+                            setTextColor(resources.getColor(android.R.color.black, null))
+                        } else {
+                            text = displayRoom
+                            setTextColor(resources.getColor(android.R.color.black, null))
+                        }
+                    }
+                    else -> {
+                        text = displayRoom
+                        setTextColor(resources.getColor(android.R.color.black, null))
+                    }
                 }
             }
             row.addView(raumCell)
@@ -1415,6 +1489,44 @@ class HomeFragment : Fragment() {
         }
 
         return table
+    }
+
+    private fun TextView.handleOriginalSubjectLogic(fachText: String, isCancelled: Boolean) {
+        if (isStudentSubject(fachText)) {
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(resources.getColor(android.R.color.white, null))
+            background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+            setPadding(12, 12, 12, 12)
+
+            if (isCancelled) {
+                val spannableString = android.text.SpannableString(fachText)
+                spannableString.setSpan(
+                    android.text.style.StrikethroughSpan(),
+                    0,
+                    fachText.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = spannableString
+            } else {
+                text = fachText
+            }
+        } else {
+            setPadding(8, 12, 12, 12)
+            setTextColor(resources.getColor(android.R.color.black, null))
+
+            if (isCancelled) {
+                val spannableString = android.text.SpannableString(fachText)
+                spannableString.setSpan(
+                    android.text.style.StrikethroughSpan(),
+                    0,
+                    fachText.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = spannableString
+            } else {
+                text = fachText
+            }
+        }
     }
 
     private fun getArtBackgroundColorColorBlindFriendly(text: String): Int {
@@ -1468,7 +1580,7 @@ class HomeFragment : Fragment() {
                 }
             }
 
-            // "Findet in Raum A408 statt" - room change case
+            // "Findet in Raum A408 statt"
             originalText.matches(Regex("Findet in Raum .* statt")) -> {
                 val regex = Regex("Findet in Raum (.*) statt")
                 val matchResult = regex.find(originalText)
@@ -1480,12 +1592,11 @@ class HomeFragment : Fragment() {
                 }
             }
 
-            // Hard coded cases
+            // hard coded cases
             originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.home_substitution_canceled_event)
             originalText == "Entfällt" -> getString(R.string.home_is_cancelled)
             originalText == "Wird vertreten" -> getString(R.string.home_is_substituted)
             originalText == "Wird betreut" -> getString(R.string.home_is_supervised)
-            originalText == "Raum geändert" -> getString(R.string.home_room_changed_simple)
 
             else -> originalText
         }
@@ -1567,10 +1678,6 @@ class HomeFragment : Fragment() {
 
     private fun reorganizeHeaderLayout() {
         try {
-            if (temporaryFilterButton == null || invisibleLeftButton == null || classText == null || headerLayout == null) {
-                return
-            }
-
             val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
             val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
             val shouldShowButtons = hasScannedDocument && filterEnabled

@@ -64,7 +64,7 @@ class SectionSelectionDialog(
         saveButton = view.findViewById(R.id.saveButton)
         cancelButton = view.findViewById(R.id.cancelButton)
 
-        titleText.text = if (isExport) "Zu exportierende Bereiche auswählen" else "Zu importierende Bereiche auswählen"
+        titleText.text = if (isExport) context.getString(R.string.sec_sel_select_sections_to_export) else context.getString(R.string.sec_sel_select_sections_to_import)
 
         setupSectionCheckboxes()
         setupButtons()
@@ -99,8 +99,8 @@ class SectionSelectionDialog(
             if (!canBeToggled) {
                 statusText.visibility = View.VISIBLE
                 statusText.text = when (section.status) {
-                    BackupManager.SectionStatus.FAILED -> "Fehler - kann nicht importiert werden"
-                    BackupManager.SectionStatus.EMPTY -> "Keine Daten verfügbar"
+                    BackupManager.SectionStatus.FAILED -> context.getString(R.string.sec_sel_error_couldnt_import)
+                    BackupManager.SectionStatus.EMPTY -> context.getString(R.string.sec_sel_no_data_available)
                     else -> ""
                 }
                 checkBox.alpha = 0.5f
@@ -138,7 +138,7 @@ class SectionSelectionDialog(
                 .toSet()
 
             if (selectedSections.isEmpty()) {
-                Toast.makeText(context, "Bitte wählen Sie mindestens einen Bereich aus", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.sec_sel_please_select_at_least_one_section), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 

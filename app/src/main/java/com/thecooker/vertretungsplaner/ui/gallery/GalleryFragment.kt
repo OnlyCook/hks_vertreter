@@ -61,6 +61,8 @@ import androidx.core.view.isEmpty
 import androidx.core.graphics.toColorInt
 import androidx.core.content.edit
 import androidx.core.view.isVisible
+import android.widget.ImageButton
+import android.graphics.Typeface
 
 class SwipeInterceptorLayout @JvmOverloads constructor(
     context: Context,
@@ -194,6 +196,12 @@ class GalleryFragment : Fragment() {
 
     private var isLoading = true
 
+    private var currentLanguage = ""
+    private var lastHighlightedLessonNumber: Int = -1
+    private var lastHighlightedIsBreak: Boolean = false
+    private var lastHighlightedBreakAfterLesson: Int = -1
+    private var realTimeIndicatorHorizontalLine: View? = null
+
     private var currentWeekStart = Calendar.getInstance(Locale.GERMANY)
     private var isEditMode = false
     private var isDayView = false
@@ -210,6 +218,9 @@ class GalleryFragment : Fragment() {
     private var includeWeekendsInDayView = false
     private var currentHighlightedCell: TextView? = null
     private var highlightAnimator: ValueAnimator? = null
+    private lateinit var calendarContainer: FrameLayout
+    private var realTimeIndicatorView: View? = null
+    private var realTimeIndicatorText: TextView? = null
 
     private lateinit var backupManager: BackupManager
 
@@ -247,7 +258,7 @@ class GalleryFragment : Fragment() {
     }
 
     private val cellWidth = 150
-    private val cellHeight = 80
+    //private val cellHeight = 80
 
     private val lessonTimes = mapOf(
         1 to "07:30", 2 to "08:15", 3 to "09:30", 4 to "10:15", 5 to "11:15",
@@ -285,7 +296,7 @@ class GalleryFragment : Fragment() {
     )
 
     data class TimetableEntry(
-        val subject: String,
+        var subject: String,
         val duration: Int = 1,
         val isBreak: Boolean = false,
         val breakDuration: Int = 0,
@@ -324,6 +335,10 @@ class GalleryFragment : Fragment() {
         initializeCurrentWeek()
         setupUI()
         setupNavigationButtons()
+
+        if (detectLanguageChange()) {
+            refreshLanguageDependentContent()
+        }
 
         showLoadingState()
 
@@ -430,6 +445,25 @@ class GalleryFragment : Fragment() {
     }
 
     private fun setupUI() {
+        currentLanguage = resources.configuration.locales[0].language
+
+        calendarContainer = binding.root.findViewById(R.id.calendarContainer)
+        realTimeIndicatorView = binding.root.findViewById(R.id.realTimeIndicator)
+        realTimeIndicatorText = binding.root.findViewById<TextView>(R.id.realTimeIndicatorText).apply {
+            background = createRoundedDrawable("#FFD700".toColorInt())
+            setTextColor("#B8860B".toColorInt())
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(8, 4, 8, 4)
+            visibility = View.GONE
+            elevation = 12f
+        }
+        realTimeIndicatorHorizontalLine = binding.root.findViewById<View>(R.id.realTimeIndicatorHorizontalLine).apply {
+            background = createRoundedDrawable("#FFD700".toColorInt())
+            visibility = View.GONE
+            elevation = 10f
+        }
+
         loadViewPreference()
         loadRealTimePreference()
         loadWeekendPreference()
@@ -500,6 +534,8 @@ class GalleryFragment : Fragment() {
     }
 
     private fun toggleCalendarView() {
+        hideRealTimeIndicator()
+
         isDayView = !isDayView
         if (isDayView) {
             currentDayOffset = getCurrentDayOffset()
@@ -508,8 +544,19 @@ class GalleryFragment : Fragment() {
         } else {
             binding.root.findViewById<Button>(R.id.btnEditCalendar).text = getString(R.string.frag_gal_btn_edit_day)
         }
+
+        lastHighlightedLessonNumber = -1
+        lastHighlightedIsBreak = false
+        lastHighlightedBreakAfterLesson = -1
+
         saveViewPreference()
         updateCalendar()
+
+        if (isRealTimeEnabled) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                createRealTimeIndicator()
+            }, 100)
+        }
     }
 
     private fun saveViewPreference() {
@@ -1176,16 +1223,48 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun translateVacationType(internalType: String): String { // suggested to use this
-        return when (internalType) {
-            InternalConstants.HOLIDAY_TYPE_AUTUMN -> getString(R.string.gall_autumn_break)
-            InternalConstants.HOLIDAY_TYPE_WINTER -> getString(R.string.gall_winter_break)
-            InternalConstants.HOLIDAY_TYPE_EASTER -> getString(R.string.gall_easter_break)
-            InternalConstants.HOLIDAY_TYPE_SUMMER -> getString(R.string.gall_summer_break)
-            InternalConstants.HOLIDAY_TYPE_WHITSUN -> getString(R.string.gall_whitesun_break)
-            InternalConstants.HOLIDAY_TYPE_SPRING -> getString(R.string.gall_spring_break)
-            InternalConstants.HOLIDAY_GENERAL -> getString(R.string.gall_holiday)
-            else -> getString(R.string.gall_vacation)
+    private fun translateVacationType(internalType: String): String {
+        return when (internalType.uppercase()) {
+            InternalConstants.HOLIDAY_TYPE_AUTUMN.uppercase(),
+            "HERBSTFERIEN", "AUTUMN BREAK" -> getString(R.string.gall_autumn_break)
+
+            InternalConstants.HOLIDAY_TYPE_WINTER.uppercase(),
+            "WINTERFERIEN", "WINTER BREAK" -> getString(R.string.gall_winter_break)
+
+            InternalConstants.HOLIDAY_TYPE_EASTER.uppercase(),
+            "OSTERFERIEN", "EASTER BREAK" -> getString(R.string.gall_easter_break)
+
+            InternalConstants.HOLIDAY_TYPE_SUMMER.uppercase(),
+            "SOMMERFERIEN", "SUMMER BREAK" -> getString(R.string.gall_summer_break)
+
+            InternalConstants.HOLIDAY_TYPE_WHITSUN.uppercase(),
+            "PFINGSTFERIEN", "WHITSUN BREAK" -> getString(R.string.gall_whitesun_break)
+
+            InternalConstants.HOLIDAY_TYPE_SPRING.uppercase(),
+            "FRÜHLINGSFERIEN", "SPRING BREAK" -> getString(R.string.gall_spring_break)
+
+            InternalConstants.HOLIDAY_GENERAL.uppercase(),
+            "FEIERTAG", "HOLIDAY" -> getString(R.string.gall_holiday)
+
+            InternalConstants.FREE_LESSON.uppercase(),
+            "FREISTUNDE", "FREE LESSON" -> getString(R.string.slide_free_lesson)
+
+            "FERIEN", "VACATION" -> getString(R.string.gall_vacation)
+
+            else -> {
+                val upperType = internalType.uppercase()
+                when {
+                    upperType.contains("HERBST") || upperType.contains("AUTUMN") -> getString(R.string.gall_autumn_break)
+                    upperType.contains("WINTER") -> getString(R.string.gall_winter_break)
+                    upperType.contains("OSTER") || upperType.contains("EASTER") -> getString(R.string.gall_easter_break)
+                    upperType.contains("SOMMER") || upperType.contains("SUMMER") -> getString(R.string.gall_summer_break)
+                    upperType.contains("PFINGST") || upperType.contains("WHITSUN") -> getString(R.string.gall_whitesun_break)
+                    upperType.contains("FRÜHLING") || upperType.contains("SPRING") -> getString(R.string.gall_spring_break)
+                    upperType.contains("FEIERTAG") || upperType.contains("HOLIDAY") -> getString(R.string.gall_holiday)
+                    upperType.contains("FREI") || upperType.contains("FREE") -> getString(R.string.slide_free_lesson)
+                    else -> internalType
+                }
+            }
         }
     }
 
@@ -1373,9 +1452,18 @@ class GalleryFragment : Fragment() {
     }
 
     private fun updateCalendar() {
+        if (detectLanguageChange()) {
+            refreshLanguageDependentContent()
+        }
         updateWeekDisplay()
         buildCalendarGrid()
         setupColorLegend()
+
+        if (isRealTimeEnabled && !isEditMode) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                createRealTimeIndicator()
+            }, 100)
+        }
     }
 
     private fun updateWeekDisplay() = if (isDayView) {
@@ -1384,8 +1472,7 @@ class GalleryFragment : Fragment() {
             add(Calendar.DAY_OF_WEEK, currentDayOffset)
         }
 
-        val dateFormat = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY)
-        currentWeekTextView.text = dateFormat.format(currentDay.time)
+        currentWeekTextView.text = getTranslatedDate(currentDay.time)
     } else {
         val weekEnd = Calendar.getInstance().apply {
             time = currentWeekStart.time
@@ -1550,16 +1637,28 @@ class GalleryFragment : Fragment() {
             )
         }
 
+        val baseBreakHeight = 50
+        val breakHeight = when (breakMinutes) {
+            15 -> baseBreakHeight
+            30 -> baseBreakHeight * 2
+            else -> baseBreakHeight
+        }
+
+        val fontSize = when (breakMinutes) {
+            15 -> 10f
+            30 -> 12f
+            else -> 12f
+        }
+
         val breakView = TextView(requireContext()).apply {
-            text = getString(R.string.gall_break_with_minutes, breakMinutes)
-            textSize = 12f
+            text = translateBreakText(breakMinutes)
+            textSize = fontSize
             gravity = Gravity.CENTER
             setPadding(8, 8, 8, 8)
             setTextColor(Color.BLACK)
-
             background = createRoundedDrawable(Color.LTGRAY)
 
-            layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT).apply {
+            layoutParams = TableRow.LayoutParams(0, if (isRealTimeEnabled) breakHeight else TableRow.LayoutParams.WRAP_CONTENT).apply {
                 span = 2
                 setMargins(2, 1, 2, 1)
             }
@@ -1587,9 +1686,9 @@ class GalleryFragment : Fragment() {
         var cellText: String
         val calendarEntries = mutableListOf<CalendarEntry>()
 
-        // check if in vacation
+        // Check if in vacation
         if (isDateInVacation(currentWeekDay.time)) {
-            val vacationType = getVacationName(currentWeekDay.time)
+            val vacationType = translateVacationType(getVacationName(currentWeekDay.time))
             cellText = vacationType
             val drawable = createRoundedDrawable(Color.LTGRAY)
             cell.background = drawable
@@ -1613,7 +1712,7 @@ class GalleryFragment : Fragment() {
             return cell
         }
 
-        // check for user special occasions with effect
+        // Check for user special occasions with effect
         val userOccasions = getUserSpecialOccasionsForDate(currentWeekDay.time)
         var shouldMarkAsHoliday = false
         var shouldMarkFromLesson4 = false
@@ -1621,26 +1720,30 @@ class GalleryFragment : Fragment() {
         userOccasions.forEach { occasion ->
             when {
                 occasion.contains("Feiertag", ignoreCase = true) ||
-                        occasion.contains("Ferientag", ignoreCase = true) -> {
+                        occasion.contains("Ferientag", ignoreCase = true) ||
+                        occasion.contains("Holiday", ignoreCase = true) -> {
                     shouldMarkAsHoliday = true
                 }
                 occasion.contains("3. Std", ignoreCase = true) ||
-                        occasion.contains("3. Stunde", ignoreCase = true) -> {
+                        occasion.contains("3. Stunde", ignoreCase = true) ||
+                        occasion.contains("3rd period", ignoreCase = true) -> {
                     if (lesson >= 4) shouldMarkFromLesson4 = true
                 }
             }
         }
 
-        // check calendar data manager
+        // Check calendar data manager
         val calendarInfo = calendarDataManager.getCalendarInfoForDate(currentWeekDay.time)
         calendarInfo?.let { info ->
             if (info.isSpecialDay && info.specialNote.isNotBlank()) {
                 when {
                     info.specialNote.contains("Feiertag", ignoreCase = true) ||
-                            info.specialNote.contains("Ferientag", ignoreCase = true) -> {
+                            info.specialNote.contains("Ferientag", ignoreCase = true) ||
+                            info.specialNote.contains("Holiday", ignoreCase = true) -> {
                         shouldMarkAsHoliday = true
                     }
-                    info.specialNote.contains("3. Std.", ignoreCase = true) -> {
+                    info.specialNote.contains("3. Std.", ignoreCase = true) ||
+                            info.specialNote.contains("3rd period", ignoreCase = true) -> {
                         if (lesson >= 4) shouldMarkFromLesson4 = true
                     }
                 }
@@ -1685,8 +1788,6 @@ class GalleryFragment : Fragment() {
                 displaySubject
             }
 
-            cellText = mainInfo
-
             calendarEntries.addAll(
                 getCalendarEntriesForDayAndLesson(
                     currentWeekDay.time,
@@ -1699,25 +1800,64 @@ class GalleryFragment : Fragment() {
             var hasSubstitute = false
             var substituteText = ""
             var isCancelled = false
+            var hasTeacherSubstitute = false
+            var hasRoomChange = false
+            var newRoom = ""
+
+            val substituteDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
+            val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), substituteDateStr)
+
+            substituteEntries.forEach { substitute ->
+                val startLesson = substitute.stunde
+                val endLesson = substitute.stundeBis ?: substitute.stunde
+
+                if (lesson >= startLesson && lesson <= endLesson && substitute.fach == timetableEntry.subject) {
+                    when {
+                        substitute.art == "Wird betreut" || substitute.art == "Wird vertreten" ||
+                                substitute.art == "Is supervised" || substitute.art == "Is substituted" -> {
+                            hasTeacherSubstitute = true
+                        }
+                        substitute.art.matches(Regex(".*entfällt, stattdessen .* in Raum .*", RegexOption.IGNORE_CASE)) ||
+                                substitute.art.matches(Regex(".*cancelled, instead .* in room .*", RegexOption.IGNORE_CASE)) -> {
+                            hasSubstitute = true
+                            substituteText = substitute.art
+                        }
+                        substitute.art.matches(Regex("Findet in Raum .* statt")) ||
+                                substitute.art.matches(Regex("Takes place in room .*")) -> {
+                            hasRoomChange = true
+                            val regex = if (substitute.art.contains("Findet in Raum")) {
+                                Regex("Findet in Raum (.*) statt")
+                            } else {
+                                Regex("Takes place in room (.*)")
+                            }
+                            val matchResult = regex.find(substitute.art)
+                            newRoom = matchResult?.groups?.get(1)?.value ?: ""
+                        }
+                    }
+                }
+            }
 
             calendarEntries.forEach { entry ->
                 when (entry.type) {
                     EntryType.HOMEWORK -> additionalInfo.add(getString(R.string.gall_homework_single))
                     EntryType.EXAM -> additionalInfo.add(getString(R.string.gall_exam_single))
                     EntryType.SUBSTITUTE -> {
-                        if (entry.content.contains("statt", ignoreCase = true)) {
+                        if (entry.content.contains("statt", ignoreCase = true) ||
+                            entry.content.contains("instead", ignoreCase = true)) {
                             hasSubstitute = true
                             substituteText = entry.content
                         } else {
                             additionalInfo.add(entry.content)
-                            if (entry.content.contains("Entfällt", ignoreCase = true) &&
+                            if ((entry.content.contains("Entfällt", ignoreCase = true) ||
+                                        entry.content.contains("Cancelled", ignoreCase = true)) &&
                                 entry.backgroundColor == getColorBlindFriendlyColor("red")) {
                                 isCancelled = true
                             }
                         }
                     }
                     EntryType.SPECIAL_DAY -> {
-                        if (entry.content.contains("Feiertag", ignoreCase = true)) {
+                        if (entry.content.contains("Feiertag", ignoreCase = true) ||
+                            entry.content.contains("Holiday", ignoreCase = true)) {
                             additionalInfo.add(getString(R.string.gall_holiday))
                         } else {
                             additionalInfo.add(entry.content)
@@ -1728,9 +1868,8 @@ class GalleryFragment : Fragment() {
             }
 
             if (hasSubstitute) {
-                // strike through original and new subject below (for "verlegte" subjects)
-                val originalSubject = timetableEntry.subject
-                val newSubjectInfo = substituteText
+                val originalSubject = translateSubjectForDisplay(timetableEntry.subject)
+                val newSubjectInfo = formatSubstituteText(substituteText)
 
                 val htmlText = "<small><s>$originalSubject</s></small><br><b>$newSubjectInfo</b>"
 
@@ -1741,37 +1880,32 @@ class GalleryFragment : Fragment() {
                     cell.text = Html.fromHtml(htmlText, Html.FROM_HTML_MODE_COMPACT)
                 }
             } else {
+                var finalDisplayText = displaySubject
+
+                if (hasTeacherSubstitute && teacherToShow.isNotBlank()) {
+                    finalDisplayText += " | <s>$teacherToShow</s>"
+                } else if (teacherToShow.isNotBlank()) {
+                    finalDisplayText += " | $teacherToShow"
+                }
+
+                if (hasRoomChange && roomToShow.isNotBlank()) {
+                    finalDisplayText += " | <s>$roomToShow</s> ➞ $newRoom"
+                } else if (roomToShow.isNotBlank()) {
+                    finalDisplayText += " | $roomToShow"
+                }
+
                 if (additionalInfo.isNotEmpty()) {
-                    cellText += "\n" + additionalInfo.joinToString(" | ")
+                    finalDisplayText += "<br><small>" + additionalInfo.joinToString(" | ") + "</small>"
                 }
 
-                val lines = cellText.split("\n")
-                if (lines.isNotEmpty()) {
-                    val firstLine = lines[0]
-                    val subjectEndIndex = firstLine.indexOf(" |")
-
-                    val formattedFirstLine = if (subjectEndIndex > 0) {
-                        val subject = firstLine.substring(0, subjectEndIndex)
-                        val restOfFirstLine = firstLine.substring(subjectEndIndex)
-
-                        // strikethrough if cancelled
-                        val subjectHtml = if (isCancelled) "<s><b>$subject</b></s>" else "<b>$subject</b>"
-                        "$subjectHtml$restOfFirstLine"
-                    } else {
-                        // strikethrough if cancelled
-                        if (isCancelled) "<s><b>$firstLine</b></s>" else "<b>$firstLine</b>"
-                    }
-
-                    val finalText = if (lines.size > 1) {
-                        formattedFirstLine + "<br>" + lines.drop(1).joinToString("<br>")
-                    } else {
-                        formattedFirstLine
-                    }
-
-                    cell.text = Html.fromHtml(finalText, Html.FROM_HTML_MODE_COMPACT)
+                if (isCancelled) {
+                    finalDisplayText = "<s><b>$finalDisplayText</b></s>"
                 } else {
-                    cell.text = cellText
+                    // Make subject bold
+                    finalDisplayText = finalDisplayText.replace(displaySubject, "<b>$displaySubject</b>")
                 }
+
+                cell.text = Html.fromHtml(finalDisplayText, Html.FROM_HTML_MODE_COMPACT)
             }
         } else if (isEditMode) {
             cellText = "＋"
@@ -1779,23 +1913,7 @@ class GalleryFragment : Fragment() {
             cell.text = cellText
         }
 
-        if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
-                timetableEntry?.subject ?: "",
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").first,
-                getTeacherAndRoomForSubject(timetableEntry?.subject ?: "").second,
-                calendarEntries,
-                userOccasions,
-                calendarInfo?.specialNote ?: ""
-            )) {
-            cell.alpha = 0.3f
-        } else if (timetableEntry?.subject == "FREE_LESSON") {
-            cell.alpha = 0.6f
-        } else {
-            cell.alpha = 1.0f
-        }
-
-        // search filter
-        val baseOpacity = if (timetableEntry?.subject == getString(R.string.slide_free_lesson)) 0.6f else 1.0f
+        val baseOpacity = if (timetableEntry?.subject == InternalConstants.FREE_LESSON) 0.6f else 1.0f
 
         val actualRoom = timetableEntry?.room ?: ""
         val actualTeacher = timetableEntry?.teacher ?: ""
@@ -1815,7 +1933,6 @@ class GalleryFragment : Fragment() {
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
 
-        // check for current lesson highlight
         if (isCurrentDay) {
             val isCurrentLessonTime = isCurrentLesson(lesson, currentTime)
             val isCurrentBreakTime = isCurrentBreakTime(lesson - 1, currentTime)
@@ -1873,43 +1990,129 @@ class GalleryFragment : Fragment() {
         timetableEntry: TimetableEntry,
         calendarEntries: List<CalendarEntry>
     ) {
-        val dateStr = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY).format(date)
+        val dateStr = getTranslatedDate(date)
         val startTime = lessonTimes[lesson] ?: getString(R.string.unknown)
         val endTime = lessonEndTimes[lesson] ?: getString(R.string.unknown)
 
+        val substituteDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), substituteDateStr)
+
+        var hasTeacherSubstitute = false
+        var hasRoomChange = false
+        var newRoom = ""
+        var isCancelled = false
+
+        calendarEntries.forEach { entry ->
+            if (entry.type == EntryType.SUBSTITUTE && (
+                        entry.content.contains("Entfällt", ignoreCase = true) ||
+                                entry.content.contains("Cancelled", ignoreCase = true) ||
+                                entry.content.contains("Canceled", ignoreCase = true)
+                        ) && entry.backgroundColor == getColorBlindFriendlyColor("red")) {
+                isCancelled = true
+            }
+        }
+
+        substituteEntries.forEach { substitute ->
+            val startLesson = substitute.stunde
+            val endLesson = substitute.stundeBis ?: substitute.stunde
+
+            if (lesson >= startLesson && lesson <= endLesson && substitute.fach == timetableEntry.subject) {
+                if (substitute.art == "Wird betreut" || substitute.art == "Wird vertreten" ||
+                    substitute.art == "Is supervised" || substitute.art == "Is substituted") {
+                    hasTeacherSubstitute = true
+                }
+                if (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
+                    substitute.art.matches(Regex("Takes place in room .*"))) {
+                    hasRoomChange = true
+                    val regex = if (substitute.art.contains("Findet in Raum")) {
+                        Regex("Findet in Raum (.*) statt")
+                    } else {
+                        Regex("Takes place in room (.*)")
+                    }
+                    val matchResult = regex.find(substitute.art)
+                    newRoom = matchResult?.groups?.get(1)?.value ?: ""
+                }
+            }
+        }
+
         val message = buildString {
-            appendLine(getString(R.string.gall_date, dateStr))
-            appendLine(getString(R.string.gall_time, startTime, endTime, lesson))
-            appendLine()
-            appendLine(getString(R.string.gall_subject_details, timetableEntry.subject))
+            append(getString(R.string.gall_date, dateStr)).append("<br/>")
+            append(getString(R.string.gall_time, startTime, endTime, lesson)).append("<br/>")
+            append("<br/>")
+
+            // strikethrough subject when cancelled
+            val subjectText = if (isCancelled) "<s>${timetableEntry.subject}</s>" else timetableEntry.subject
+            append(getString(R.string.gall_subject_details, subjectText)).append("<br/>")
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
-                appendLine(getString(R.string.gall_teacher, timetableEntry.teacher))
+                val teacherText = if (hasTeacherSubstitute) {
+                    "<s>${timetableEntry.teacher}</s>"
+                } else {
+                    timetableEntry.teacher
+                }
+                append(getString(R.string.gall_teacher, teacherText)).append("<br/>")
             }
+
             if (timetableEntry.room.isNotBlank() && timetableEntry.room != "UNKNOWN") {
-                appendLine(getString(R.string.gall_room, timetableEntry.room))
+                val roomText = if (hasRoomChange) {
+                    "<s>${timetableEntry.room}</s> ➞ $newRoom"
+                } else {
+                    timetableEntry.room
+                }
+                append(getString(R.string.gall_room, roomText)).append("<br/>")
             }
 
             if (calendarEntries.isNotEmpty()) {
-                appendLine()
-                appendLine(getString(R.string.gall_additional_information))
+                append("<br/>")
+                append(getString(R.string.gall_additional_information)).append("<br/>")
                 calendarEntries.forEach { entry ->
                     when (entry.type) {
-                        EntryType.HOMEWORK -> appendLine(getString(R.string.gall_homework_due))
-                        EntryType.EXAM -> appendLine(getString(R.string.gall_exam_due))
-                        EntryType.SUBSTITUTE -> appendLine(getString(R.string.gall_substitute_detail, entry.content))
-                        EntryType.SPECIAL_DAY -> appendLine("• ${entry.content}")
-                        else -> appendLine("• ${entry.content}")
+                        EntryType.HOMEWORK -> append(getString(R.string.gall_homework_due)).append("<br/>")
+                        EntryType.EXAM -> append(getString(R.string.gall_exam_due)).append("<br/>")
+                        EntryType.SUBSTITUTE -> {
+                            val formattedSubstitute = formatSubstituteText(entry.content)
+                            append(getString(R.string.gall_substitute_detail, formattedSubstitute)).append("<br/>")
+                        }
+                        EntryType.SPECIAL_DAY -> append("• ${entry.content}").append("<br/>")
+                        else -> append("• ${entry.content}").append("<br/>")
                     }
                 }
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_lesson_details))
-            .setMessage(message)
+            .setMessage(Html.fromHtml(message, Html.FROM_HTML_MODE_COMPACT))
             .setPositiveButton(getString(R.string.gall_close), null)
-            .show()
+            .create()
+
+        dialog.show()
+
+        dialog.findViewById<TextView>(android.R.id.message)?.let { textView ->
+            textView.text = Html.fromHtml(message, Html.FROM_HTML_MODE_COMPACT)
+        }
+    }
+
+    private fun getRelevantSubstitutes(dateStr: String, date: Date): List<SubstituteRepository.SubstituteEntry> {
+        val allSubstituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
+        val dayTimetable = timetableData[dayKey] ?: emptyMap()
+        val lessonSubjectMap = dayTimetable.mapValues { it.value.subject }
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val userSubjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
+        return allSubstituteEntries.filter { substitute ->
+            val lessonRange = substitute.stunde..(substitute.stundeBis ?: substitute.stunde)
+            lessonRange.any { lesson ->
+                val userSubjectForLesson = lessonSubjectMap[lesson]
+                userSubjectForLesson != null && userSubjects.any { userSubject ->
+                    userSubject == substitute.fach ||
+                            userSubject.equals(substitute.fach, ignoreCase = true) ||
+                            (userSubject.contains("-") && substitute.fach.contains("-") &&
+                                    userSubject.equals(substitute.fach, ignoreCase = true))
+                }
+            }
+        }
     }
 
     private fun showEmptyCalendar() {
@@ -1980,7 +2183,7 @@ class GalleryFragment : Fragment() {
     }
 
     private fun showEditDayDialog(date: Date) {
-        val dateStr = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY).format(date)
+        val dateStr = getTranslatedDate(date)
 
         val container = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
@@ -2223,10 +2426,7 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun createDayCell(
-        dayIndex: Int,
-        lesson: Int
-    ): TextView {
+    private fun createDayCell(dayIndex: Int, lesson: Int): TextView {
         val currentWeekDay = Calendar.getInstance().apply {
             time = currentWeekStart.time
             add(Calendar.DAY_OF_WEEK, dayIndex)
@@ -2237,9 +2437,27 @@ class GalleryFragment : Fragment() {
 
         val cell = createStyledCell("")
         var cellText = ""
+        var hasSubstitute = false
+        var hasRoomChange = false
+
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
+        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+
+        substituteEntries.forEach { substitute ->
+            val startLesson = substitute.stunde
+            val endLesson = substitute.stundeBis ?: substitute.stunde
+
+            if (lesson >= startLesson && lesson <= endLesson && substitute.fach == timetableEntry?.subject) {
+                hasSubstitute = true
+                if (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
+                    substitute.art.matches(Regex("Takes place in room .*"))) {
+                    hasRoomChange = true
+                }
+            }
+        }
 
         if (isDateInVacation(currentWeekDay.time)) {
-            val vacationType = getVacationName(currentWeekDay.time)
+            val vacationType = translateVacationType(getVacationName(currentWeekDay.time))
             cell.text = vacationType.take(8)
             val drawable = createRoundedDrawable(Color.LTGRAY)
             cell.background = drawable
@@ -2263,15 +2481,11 @@ class GalleryFragment : Fragment() {
         var shouldMarkFromLesson4 = false
 
         userOccasions.forEach { occasion ->
-            when {
-                occasion.contains("Feiertag", ignoreCase = true) ||
-                        occasion.contains("Ferientag", ignoreCase = true) -> {
-                    shouldMarkAsHoliday = true
-                }
-                occasion.contains("3. Std", ignoreCase = true) ||
-                        occasion.contains("3. Stunde", ignoreCase = true) -> {
-                    if (lesson >= 4) shouldMarkFromLesson4 = true
-                }
+            if (isSpecialOccasionHoliday(occasion)) {
+                shouldMarkAsHoliday = true
+            }
+            if (isSpecialOccasionFromLesson4(occasion)) {
+                if (lesson >= 4) shouldMarkFromLesson4 = true
             }
         }
 
@@ -2280,10 +2494,12 @@ class GalleryFragment : Fragment() {
             if (info.isSpecialDay && info.specialNote.isNotBlank()) {
                 when {
                     info.specialNote.contains("Feiertag", ignoreCase = true) ||
-                            info.specialNote.contains("Ferientag", ignoreCase = true) -> {
+                            info.specialNote.contains("Ferientag", ignoreCase = true) ||
+                            info.specialNote.contains("Holiday", ignoreCase = true) -> {
                         shouldMarkAsHoliday = true
                     }
-                    info.specialNote.contains("3. Std.", ignoreCase = true) -> {
+                    info.specialNote.contains("3. Std.", ignoreCase = true) ||
+                            info.specialNote.contains("3rd period", ignoreCase = true) -> {
                         if (lesson >= 4) shouldMarkFromLesson4 = true
                     }
                 }
@@ -2315,7 +2531,12 @@ class GalleryFragment : Fragment() {
         var isCancelled = false
 
         if (timetableEntry != null && !timetableEntry.isBreak) {
-            cellText = timetableEntry.subject
+            cellText = translateSubjectForDisplay(timetableEntry.subject)
+
+            if (hasRoomChange) {
+                cellText += "*"
+            }
+
             calendarEntries.addAll(
                 getCalendarEntriesForDayAndLesson(
                     currentWeekDay.time,
@@ -2326,7 +2547,8 @@ class GalleryFragment : Fragment() {
 
             calendarEntries.forEach { entry ->
                 if (entry.type == EntryType.SUBSTITUTE &&
-                    entry.content.contains("Entfällt", ignoreCase = true) &&
+                    (entry.content.contains("Entfällt", ignoreCase = true) ||
+                            entry.content.contains("Cancelled", ignoreCase = true)) &&
                     entry.backgroundColor == getColorBlindFriendlyColor("red")) {
                     isCancelled = true
                 }
@@ -2336,14 +2558,13 @@ class GalleryFragment : Fragment() {
             cell.setTextColor(Color.GRAY)
         }
 
-        // strikethrough if cancelled
         if (isCancelled && cellText.isNotEmpty() && cellText != "＋") {
             cell.text = Html.fromHtml("<s>$cellText</s>", Html.FROM_HTML_MODE_COMPACT)
         } else {
             cell.text = cellText
         }
 
-        val baseOpacity = if (timetableEntry?.subject == getString(R.string.slide_free_lesson)) 0.6f else 1.0f
+        val baseOpacity = if (timetableEntry?.subject == InternalConstants.FREE_LESSON) 0.6f else 1.0f
         val actualRoom = timetableEntry?.room ?: ""
         val actualTeacher = timetableEntry?.teacher ?: ""
 
@@ -2362,7 +2583,6 @@ class GalleryFragment : Fragment() {
 
         val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries)
 
-        // set background without automatic highlighting
         if (backgroundColor != Color.TRANSPARENT) {
             val drawable = createRoundedDrawable(backgroundColor)
             cell.background = drawable
@@ -2432,17 +2652,31 @@ class GalleryFragment : Fragment() {
             )
         }
 
+        // dynamic break height
+        val baseBreakHeight = 40
+        val breakHeight = when (breakMinutes) {
+            15 -> baseBreakHeight
+            30 -> baseBreakHeight * 2
+            else -> baseBreakHeight
+        }
+
+        // adjust font size based on break duration
+        val fontSize = when (breakMinutes) {
+            15 -> 9f
+            30 -> 10f
+            else -> 10f
+        }
+
         val breakView = TextView(requireContext()).apply {
-            "Pause ($breakMinutes Min.)".also { text = it }
-            textSize = 10f
+            text = translateBreakText(breakMinutes)
+            textSize = fontSize
             gravity = Gravity.CENTER
             setPadding(4, 4, 4, 4)
             setTextColor(Color.BLACK)
-
             background = createRoundedDrawable(Color.LTGRAY)
 
-            layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT).apply {
-                span = 6 // all columns
+            layoutParams = TableRow.LayoutParams(0, if (isRealTimeEnabled) breakHeight else TableRow.LayoutParams.WRAP_CONTENT).apply {
+                span = 6
                 setMargins(2, 1, 2, 1)
             }
         }
@@ -2740,34 +2974,84 @@ class GalleryFragment : Fragment() {
         text: String,
         isHeader: Boolean = false,
         isLessonColumn: Boolean = false,
-        isDayView: Boolean = false
+        isDayView: Boolean = false,
+        isBreak: Boolean = false,
+        breakMinutes: Int = 15
     ): TextView {
         return TextView(requireContext()).apply {
             this.text = text
             textSize = if (isHeader) 14f else if (isDayView) 12f else 10f
             gravity = Gravity.CENTER
+
+            val cellHeightToUse = if (!isRealTimeEnabled) {
+                // og static heights
+                when {
+                    isBreak -> if (isDayView) 50 else 40
+                    isHeader -> if (isDayView) 160 else 80
+                    else -> if (isDayView) 150 else 80
+                }
+            } else {
+                // dyanmic heights for real time mode
+                val baseBreakHeight = if (isDayView) 50 else 40 // this is cooked
+                val lessonHeight = baseBreakHeight * 3
+                when {
+                    isBreak -> when (breakMinutes) {
+                        15 -> baseBreakHeight
+                        30 -> baseBreakHeight * 2
+                        else -> baseBreakHeight
+                    }
+                    isHeader && isDayView -> 160
+                    isHeader && !isDayView -> 80
+                    else -> lessonHeight
+                }
+            }
+
             if (isDayView) {
                 if (isHeader && isLessonColumn) {
-                    // "Zeit"
                     setPadding(16, 24, 16, 24)
                     textSize = 12f
                     setTypeface(null, Typeface.BOLD)
+                    width = 160
+                    height = cellHeightToUse
                 } else if (isHeader) {
-                    // day name header
                     setPadding(20, 24, 20, 24)
                     textSize = 12f
                     setTypeface(null, Typeface.BOLD)
+                    width = 500
+                    height = cellHeightToUse
                 } else if (isLessonColumn) {
-                    // time cells on left
                     setPadding(12, 24, 12, 24)
                     textSize = 11f
+                    width = 160
+                    height = cellHeightToUse
                 } else {
-                    // main subject content cells
                     setPadding(16, 24, 16, 24)
                     textSize = 12f
+                    width = 500
+                    height = cellHeightToUse
+                }
+
+                layoutParams = TableRow.LayoutParams(
+                    if (isLessonColumn) 160 else 500,
+                    cellHeightToUse
+                ).apply {
+                    setMargins(3, 3, 3, 3)
+                    gravity = Gravity.CENTER_VERTICAL
                 }
             } else {
                 setPadding(8, 16, 8, 16)
+                if (isLessonColumn) {
+                    width = 60
+                    height = cellHeightToUse
+                } else {
+                    width = cellWidth
+                    height = cellHeightToUse
+                }
+                layoutParams = TableRow.LayoutParams().apply {
+                    setMargins(3, 3, 3, 3)
+                    if (!isLessonColumn) weight = 1f
+                    height = cellHeightToUse
+                }
             }
 
             if (isHeader) {
@@ -2779,49 +3063,6 @@ class GalleryFragment : Fragment() {
             } else {
                 background = createRoundedDrawable(Color.WHITE)
                 setTextColor("#212121".toColorInt())
-            }
-
-            if (isDayView) {
-                if (isLessonColumn) {
-                    if (isHeader) {
-                        // "Zeit"
-                        width = 160
-                        height = 160
-                    } else {
-                        // lesson/time cells
-                        width = 160
-                        height = 150
-                    }
-                } else {
-                    if (isHeader) {
-                        // day header
-                        width = 500
-                        height = 160
-                    } else {
-                        // subject cells
-                        width = 500
-                        height = 150
-                    }
-                }
-                layoutParams = TableRow.LayoutParams(
-                    if (isLessonColumn) 160 else 500,
-                    if (isHeader) 160 else 150
-                ).apply {
-                    setMargins(3, 3, 3, 3)
-                    gravity = Gravity.CENTER_VERTICAL
-                }
-            } else {
-                if (isLessonColumn) {
-                    width = 60
-                    height = cellHeight
-                } else {
-                    width = cellWidth
-                    height = if (isHeader) 80 else cellHeight
-                }
-                layoutParams = TableRow.LayoutParams().apply {
-                    setMargins(3, 3, 3, 3)
-                    if (!isLessonColumn) weight = 1f
-                }
             }
         }
     }
@@ -3034,8 +3275,14 @@ class GalleryFragment : Fragment() {
         if (isEditMode) {
             originalTimetableData = Gson().toJson(timetableData)
             editModeControls.visibility = View.VISIBLE
+            hideRealTimeIndicator()
         } else {
             editModeControls.visibility = View.GONE
+            if (isRealTimeEnabled) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    createRealTimeIndicator()
+                }, 100)
+            }
         }
 
         updateCalendar()
@@ -3182,7 +3429,7 @@ class GalleryFragment : Fragment() {
 
     private fun showDayDetails(date: Date) {
         val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
-        val dateStr = SimpleDateFormat("EEEE, dd.MM.yyyy", Locale.GERMANY).format(date)
+        val dateStr = getTranslatedDate(date)
 
         val scrollView = ScrollView(requireContext())
         val container = LinearLayout(requireContext()).apply {
@@ -3194,9 +3441,41 @@ class GalleryFragment : Fragment() {
             text = getString(R.string.gall_details_for, dateStr)
             textSize = 18f
             setTextColor(Color.BLACK)
-            setPadding(0, 0, 0, 24)
+            setPadding(0, 0, 0, 12)
         }
         container.addView(titleText)
+
+        // add date distance calculation
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val targetDate = Calendar.getInstance().apply {
+            time = date
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val daysDifference = ((targetDate.timeInMillis - today.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
+
+        val distanceText = TextView(requireContext()).apply {
+            text = when {
+                daysDifference == 0 -> getString(R.string.gall_today)
+                daysDifference == 1 -> getString(R.string.gall_tomorrow)
+                daysDifference == -1 -> getString(R.string.gall_yesterday)
+                daysDifference > 0 -> getString(R.string.gall_days_away, daysDifference)
+                else -> getString(R.string.gall_days_ago, abs(daysDifference))
+            }
+            textSize = 14f
+            setTextColor(Color.GRAY)
+            setPadding(0, 0, 0, 24)
+        }
+        container.addView(distanceText)
 
         // vacation
         if (isDateInVacation(date)) {
@@ -3314,30 +3593,46 @@ class GalleryFragment : Fragment() {
                 container.addView(homeworkText)
 
                 dayHomework.forEach { homework ->
-                    var lessonText = ""
+                    val homeworkItemContainer = LinearLayout(requireContext()).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(16, 4, 0, 4)
+                    }
 
+                    var lessonText = ""
                     if (homework.lessonNumber != null && homework.lessonNumber!! > 0) {
                         lessonText = getString(R.string.slide_due_date_lesson, homework.lessonNumber)
                     } else {
                         val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
                         val dayTimetable = timetableData[dayKey]
-
                         val firstLessonWithSubject = dayTimetable?.entries
                             ?.filter { it.value.subject == homework.subject }
                             ?.minByOrNull { it.key }?.key
-
                         if (firstLessonWithSubject != null) {
                             lessonText = getString(R.string.slide_due_date_lesson, firstLessonWithSubject)
                         }
                     }
 
                     val homeworkItem = TextView(requireContext()).apply {
-                        "➞ ${homework.subject} $lessonText".also { text = it }
+                        text = "➞ ${homework.subject} $lessonText"
                         textSize = 14f
                         setTextColor(Color.BLACK)
-                        setPadding(16, 4, 0, 4)
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     }
-                    container.addView(homeworkItem)
+
+                    val homeworkButton = ImageButton(requireContext()).apply {
+                        setImageResource(R.drawable.ic_output)
+                        background = null
+                        setPadding(8, 8, 8, 8)
+                        contentDescription = getString(R.string.gall_open_homework_details)
+                        setOnClickListener {
+                            //openHomeworkPage(homework)
+                        }
+                    }
+
+                    homeworkItemContainer.addView(homeworkItem)
+                    homeworkItemContainer.addView(homeworkButton)
+                    container.addView(homeworkItemContainer)
                 }
 
                 val spacer = View(requireContext()).apply {
@@ -3366,13 +3661,32 @@ class GalleryFragment : Fragment() {
                 container.addView(examsText)
 
                 exams.forEach { exam ->
-                    val examItem = TextView(requireContext()).apply {
-                        "➞ ${exam.subject}".also { text = it }
-                        textSize = 14f
-                        setTextColor(Color.BLACK)
+                    val examItemContainer = LinearLayout(requireContext()).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
                         setPadding(16, 4, 0, 4)
                     }
-                    container.addView(examItem)
+
+                    val examItem = TextView(requireContext()).apply {
+                        text = "➞ ${exam.subject}"
+                        textSize = 14f
+                        setTextColor(Color.BLACK)
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+
+                    val examButton = ImageButton(requireContext()).apply {
+                        setImageResource(R.drawable.ic_output)
+                        background = null
+                        setPadding(8, 8, 8, 8)
+                        contentDescription = getString(R.string.gall_open_exam_details)
+                        setOnClickListener {
+                            //openExamPage(exam, date)
+                        }
+                    }
+
+                    examItemContainer.addView(examItem)
+                    examItemContainer.addView(examButton)
+                    container.addView(examItemContainer)
                 }
 
                 val spacer = View(requireContext()).apply {
@@ -3399,13 +3713,32 @@ class GalleryFragment : Fragment() {
             container.addView(examsText)
 
             examsFromManager.forEach { exam ->
-                val examItem = TextView(requireContext()).apply {
-                    "➞ ${exam.subject}".also { text = it }
-                    textSize = 14f
-                    setTextColor(Color.BLACK)
+                val examItemContainer = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
                     setPadding(16, 4, 0, 4)
                 }
-                container.addView(examItem)
+
+                val examItem = TextView(requireContext()).apply {
+                    text = "➞ ${exam.subject}"
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val examButton = ImageButton(requireContext()).apply {
+                    setImageResource(R.drawable.ic_output)
+                    background = null
+                    setPadding(8, 8, 8, 8)
+                    contentDescription = getString(R.string.gall_open_exam_details)
+                    setOnClickListener {
+                        //openExamPageFromManager(exam, date)
+                    }
+                }
+
+                examItemContainer.addView(examItem)
+                examItemContainer.addView(examButton)
+                container.addView(examItemContainer)
             }
 
             val spacer = View(requireContext()).apply {
@@ -3419,26 +3752,7 @@ class GalleryFragment : Fragment() {
 
         // substitutes
         val dateStr3 = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val allSubstituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr3)
-
-        val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
-        val dayTimetable = timetableData[dayKey] ?: emptyMap()
-        val lessonSubjectMap = dayTimetable.mapValues { it.value.subject }
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        val userSubjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
-
-        val relevantSubstitutes = allSubstituteEntries.filter { substitute ->
-            val lessonRange = substitute.stunde..(substitute.stundeBis ?: substitute.stunde)
-            lessonRange.any { lesson ->
-                val userSubjectForLesson = lessonSubjectMap[lesson]
-                userSubjectForLesson != null && userSubjects.any { userSubject ->
-                    userSubject == substitute.fach ||
-                            userSubject.equals(substitute.fach, ignoreCase = true) ||
-                            (userSubject.contains("-") && substitute.fach.contains("-") &&
-                                    userSubject.equals(substitute.fach, ignoreCase = true))
-                }
-            }
-        }
+        val relevantSubstitutes = getRelevantSubstitutes(dateStr3, date)
 
         if (relevantSubstitutes.isNotEmpty()) {
             val substitutesText = TextView(requireContext()).apply {
@@ -3451,23 +3765,43 @@ class GalleryFragment : Fragment() {
             container.addView(substitutesText)
 
             relevantSubstitutes.forEach { substitute ->
+                val substituteItemContainer = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(16, 4, 0, 4)
+                }
+
                 val lessonRange = if (substitute.stundeBis != null && substitute.stundeBis != substitute.stunde) {
                     getString(R.string.gall_lesson_range, substitute.stunde, substitute.stundeBis)
                 } else {
                     getString(R.string.gall_lesson_number, substitute.stunde)
                 }
 
+                val formattedSubstitute = formatSubstituteText(substitute.art)
                 val substituteItem = TextView(requireContext()).apply {
-                    "➞ $lessonRange ${substitute.fach}: ${substitute.art}".also { text = it }
+                    text = "➞ $lessonRange ${substitute.fach}: $formattedSubstitute"
                     textSize = 14f
                     setTextColor(Color.BLACK)
-                    setPadding(16, 4, 0, 4)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
-                container.addView(substituteItem)
+
+                val substituteButton = ImageButton(requireContext()).apply {
+                    setImageResource(R.drawable.ic_output)
+                    background = null
+                    setPadding(8, 8, 8, 8)
+                    contentDescription = getString(R.string.gall_open_substitute_details)
+                    setOnClickListener {
+                        //openSubstitutePage(substitute, date)
+                    }
+                }
+
+                substituteItemContainer.addView(substituteItem)
+                substituteItemContainer.addView(substituteButton)
+                container.addView(substituteItemContainer)
             }
         }
 
-        if (container.childCount <= 1) {
+        if (container.childCount <= 2) { // cuz distance
             val emptyText = TextView(requireContext()).apply {
                 text = getString(R.string.gall_no_special_occasions_for_give_day)
                 textSize = 14f
@@ -3487,6 +3821,88 @@ class GalleryFragment : Fragment() {
                 showEditDayDialog(date)
             }
             .show()
+    }
+    /*
+    private fun openHomeworkPage(homework: SlideshowFragment.HomeworkItem) {
+        try {
+            // Placeholder - replace with actual homework activity class
+            val intent = Intent(requireContext(), SlideshowFragment::class.java)
+            intent.putExtra("highlight_homework_id", homework.id ?: "")
+            intent.putExtra("highlight_homework_subject", homework.subject)
+            intent.putExtra("highlight_homework_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(homework.dueDate))
+            startActivity(intent)
+
+            // Call highlighting method - this would need to be implemented in HomeworkActivity
+            // The activity should check for these extras and call highlightHomeworkEntry()
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error opening homework page", e)
+            Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openExamPage(exam: CalendarDataManager.ExamInfo, date: Date) {
+        try {
+            // Placeholder - replace with actual exam activity class
+            val intent = Intent(requireContext(), ExamActivity::class.java)
+            intent.putExtra("highlight_exam_subject", exam.subject)
+            intent.putExtra("highlight_exam_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
+            startActivity(intent)
+
+            // Call highlighting method - this would need to be implemented in ExamActivity
+            // The activity should check for these extras and call highlightExamEntry()
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error opening exam page", e)
+            Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openExamPageFromManager(exam: ExamManager.ExamEntry, date: Date) {
+        try {
+            // Placeholder - replace with actual exam activity class
+            val intent = Intent(requireContext(), ExamFragment::class.java)
+            intent.putExtra("highlight_exam_subject", exam.subject)
+            intent.putExtra("highlight_exam_date", SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date))
+            intent.putExtra("highlight_exam_id", exam.id ?: "")
+            startActivity(intent)
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error opening exam page", e)
+            Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openSubstitutePage(substitute: SubstituteRepository.SubstituteEntry, date: Date) {
+        try {
+            // Placeholder - replace with actual substitute activity class
+            val intent = Intent(requireContext(), HomeFragment::class.java)
+            intent.putExtra("highlight_substitute_subject", substitute.fach)
+            intent.putExtra("highlight_substitute_lesson", substitute.stunde)
+            intent.putExtra("highlight_substitute_lesson_end", substitute.stundeBis ?: substitute.stunde)
+            intent.putExtra("highlight_substitute_date", SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date))
+            intent.putExtra("highlight_substitute_type", substitute.art)
+            startActivity(intent)
+
+            // Call highlighting method - this would need to be implemented in SubstituteActivity
+            // The activity should check for these extras and call highlightSubstituteEntry()
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error opening substitute page", e)
+            Toast.makeText(requireContext(), getString(R.string.gall_error_opening_page), Toast.LENGTH_SHORT).show()
+        }
+    }
+    */
+
+    private fun getTranslatedDate(date: Date): String {
+        val calendar = Calendar.getInstance().apply { time = date }
+        val dayName = when (calendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> getString(R.string.monday)
+            Calendar.TUESDAY -> getString(R.string.tuesday)
+            Calendar.WEDNESDAY -> getString(R.string.wednesday)
+            Calendar.THURSDAY -> getString(R.string.thursday)
+            Calendar.FRIDAY -> getString(R.string.friday)
+            Calendar.SATURDAY -> getString(R.string.saturday)
+            Calendar.SUNDAY -> getString(R.string.sunday)
+            else -> ""
+        }
+        return "$dayName, ${SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(date)}"
     }
 
     private fun getSubstituteBackgroundColor(text: String): Int {
@@ -3528,9 +3944,39 @@ class GalleryFragment : Fragment() {
                     getString(R.string.home_substitution_subject_replaced, newSubject, originalSubject)
                 } else originalText
             }
-            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.gall_is_cancelled_exc)
+            originalText.matches(Regex("Findet in Raum .* statt")) -> {
+                val regex = Regex("Findet in Raum (.*) statt")
+                val matchResult = regex.find(originalText)
+                if (matchResult != null) {
+                    val newRoom = matchResult.groups[1]?.value ?: ""
+                    getString(R.string.home_room_changed, newRoom)
+                } else {
+                    originalText
+                }
+            }
+            originalText == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung" -> getString(R.string.home_substitution_canceled_event)
+            originalText == "Entfällt" -> getString(R.string.home_is_cancelled)
+            originalText == "Wird vertreten" -> getString(R.string.home_is_substituted)
+            originalText == "Wird betreut" -> getString(R.string.home_is_supervised)
             else -> originalText.take(20)
         }
+    }
+
+    private fun isSpecialOccasionHoliday(occasion: String): Boolean {
+        val lowerOccasion = occasion.lowercase()
+        return lowerOccasion.contains("feiertag") ||
+                lowerOccasion.contains("ferientag") ||
+                lowerOccasion.contains("holiday") ||
+                lowerOccasion.contains("vacation day")
+    }
+
+    private fun isSpecialOccasionFromLesson4(occasion: String): Boolean {
+        val lowerOccasion = occasion.lowercase()
+        return lowerOccasion.contains("3. std") ||
+                lowerOccasion.contains("3. stunde") ||
+                lowerOccasion.contains("3rd period") ||
+                lowerOccasion.contains("from 4th lesson") ||
+                lowerOccasion.contains("ab 4. stunde")
     }
 
     private fun showExportOptions() {
@@ -3847,25 +4293,232 @@ class GalleryFragment : Fragment() {
     }
 
     private fun setupRealTimeUpdates() {
+        stopRealTimeUpdates()
+
         if (isRealTimeEnabled) {
             realTimeUpdateHandler = Handler(Looper.getMainLooper())
             realTimeUpdateRunnable = object : Runnable {
                 override fun run() {
-                    val now = Calendar.getInstance()
-                    val secondsUntilNextMinute = 60 - now.get(Calendar.SECOND)
+                    try {
+                        val now = Calendar.getInstance()
 
-                    // update if at start of a new minute
-                    if (now.get(Calendar.SECOND) == 0) {
-                        updateCalendar()
+                        if (now.get(Calendar.SECOND) == 0) {
+                            updateCalendarWithoutAnimation()
+                        }
+
+                        createRealTimeIndicator()
+
+                        val secondsUntilNextMinute = 60 - now.get(Calendar.SECOND)
+                        val delayMs = secondsUntilNextMinute * 1000L
+
+                        realTimeUpdateHandler?.postDelayed(this, delayMs)
+                    } catch (e: Exception) {
+                        L.e("GalleryFragment", "Error in real-time update", e)
+                        realTimeUpdateHandler?.postDelayed(this, 30000L)
                     }
-
-                    realTimeUpdateHandler?.postDelayed(this, secondsUntilNextMinute * 1000L)
                 }
             }
 
-            realTimeUpdateHandler?.post(realTimeUpdateRunnable!!)
+            val now = Calendar.getInstance()
+            val secondsUntilNextMinute = 60 - now.get(Calendar.SECOND)
+            val initialDelay = if (secondsUntilNextMinute <= 1) 1000L else (secondsUntilNextMinute * 1000L)
+
+            realTimeUpdateHandler?.postDelayed(realTimeUpdateRunnable!!, initialDelay)
+
+            createRealTimeIndicator()
         } else {
-            stopRealTimeUpdates()
+            hideRealTimeIndicator()
+        }
+    }
+
+    private fun updateCalendarWithoutAnimation() {
+        if (detectLanguageChange()) {
+            refreshLanguageDependentContent()
+        }
+        updateWeekDisplay()
+        buildCalendarGridWithoutAnimation()
+        setupColorLegend()
+    }
+
+    private fun buildCalendarGridWithoutAnimation() {
+        if (isLoading) {
+            return
+        }
+
+        calendarGrid.removeAllViews()
+
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+
+        if (!hasScannedDocument) {
+            showEmptyCalendar()
+            return
+        }
+
+        if (isDayView && currentDayOffset < 0) {
+            currentDayOffset = getCurrentDayOffset()
+        }
+
+        if (isDayView) {
+            createDayView()
+        } else {
+            createWeekView()
+        }
+
+        startInitialHighlightingWithoutAnimation()
+    }
+
+    private fun startInitialHighlightingWithoutAnimation() {
+        calendarGrid.post {
+            val currentTime = Calendar.getInstance()
+            val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
+
+            if (!isCurrentWeek && !isDayView) return@post
+
+            if (isDayView) {
+                val currentDay = Calendar.getInstance().apply {
+                    time = currentWeekStart.time
+                    add(Calendar.DAY_OF_WEEK, currentDayOffset)
+                }
+                val isCurrentDay = isSameDay(currentDay.time, currentTime.time)
+                if (!isCurrentDay) return@post
+            }
+
+            val maxLessons = getMaxLessonsForWeek()
+
+            for (lesson in 1..maxLessons) {
+                if (isCurrentBreakTime(lesson, currentTime)) {
+                    if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
+                        lastHighlightedIsBreak = true
+                        lastHighlightedBreakAfterLesson = lesson
+                        lastHighlightedLessonNumber = -1
+                        highlightCurrentBreak(lesson)
+                    } else {
+                        highlightCurrentBreakStatic(lesson)
+                    }
+                    return@post
+                }
+            }
+
+            for (lesson in 1..maxLessons) {
+                if (isCurrentLesson(lesson, currentTime)) {
+                    if (lastHighlightedIsBreak || lastHighlightedLessonNumber != lesson) {
+                        lastHighlightedIsBreak = false
+                        lastHighlightedBreakAfterLesson = -1
+                        lastHighlightedLessonNumber = lesson
+                        highlightCurrentLesson(lesson, currentTime)
+                    } else {
+                        highlightCurrentLessonStatic(lesson, currentTime)
+                    }
+                    return@post
+                }
+            }
+
+            if (lastHighlightedLessonNumber != -1 || lastHighlightedIsBreak) {
+                lastHighlightedLessonNumber = -1
+                lastHighlightedIsBreak = false
+                lastHighlightedBreakAfterLesson = -1
+                stopCurrentHighlight()
+            }
+        }
+    }
+
+    private fun highlightCurrentBreakStatic(afterLesson: Int) {
+        if (isDayView) {
+            for (i in 0 until calendarGrid.childCount) {
+                val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+                if (row.isNotEmpty()) {
+                    val cell = row.getChildAt(0) as? TextView ?: continue
+                    val cellText = cell.text.toString()
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) {
+                        val breakPosition = getBreakPositionForDayView(i)
+                        if (breakPosition == afterLesson) {
+                            currentHighlightedCell = cell
+                            setStaticHighlight(cell, Color.LTGRAY)
+                            return
+                        }
+                    }
+                }
+            }
+        } else {
+            for (i in 0 until calendarGrid.childCount) {
+                val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+                for (j in 0 until row.childCount) {
+                    val cell = row.getChildAt(j) as? TextView ?: continue
+                    val cellText = cell.text.toString()
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) {
+                        val breakPosition = getBreakPositionFromGrid(i)
+                        if (breakPosition == afterLesson) {
+                            currentHighlightedCell = cell
+                            setStaticHighlight(cell, Color.LTGRAY)
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun highlightCurrentLessonStatic(lesson: Int, currentTime: Calendar) {
+        for (i in 0 until calendarGrid.childCount) {
+            val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
+            if (row.isEmpty()) continue
+            val firstCell = row.getChildAt(0) as? TextView ?: continue
+            val cellText = firstCell.text.toString()
+
+            if (cellText.trim() == lesson.toString() || (isDayView && cellText.contains("$lesson."))) {
+                highlightLessonTimeCell(firstCell)
+
+                for (j in 1 until row.childCount) {
+                    val cell = row.getChildAt(j) as? TextView ?: continue
+
+                    if (isDayView) {
+                        val currentDay = Calendar.getInstance().apply {
+                            time = currentWeekStart.time
+                            add(Calendar.DAY_OF_WEEK, currentDayOffset)
+                        }
+                        if (isSameDay(currentDay.time, currentTime.time)) {
+                            val dayKey = getWeekdayKey(currentDayOffset)
+                            val timetableEntry = timetableData[dayKey]?.get(lesson)
+                            val calendarEntries = if (timetableEntry != null) {
+                                getCalendarEntriesForDayAndLesson(currentDay.time, lesson, timetableEntry.subject)
+                            } else {
+                                emptyList()
+                            }
+                            val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries).takeIf {
+                                it != Color.TRANSPARENT
+                            } ?: Color.WHITE
+
+                            currentHighlightedCell = cell
+                            setStaticHighlight(cell, backgroundColor)
+                        }
+                    } else {
+                        val dayIndex = j - 1
+                        if (dayIndex < 5) {
+                            val currentWeekDay = Calendar.getInstance().apply {
+                                time = currentWeekStart.time
+                                add(Calendar.DAY_OF_WEEK, dayIndex)
+                            }
+                            if (isSameDay(currentWeekDay.time, currentTime.time)) {
+                                val dayKey = getWeekdayKey(dayIndex)
+                                val timetableEntry = timetableData[dayKey]?.get(lesson)
+                                val calendarEntries = if (timetableEntry != null) {
+                                    getCalendarEntriesForDayAndLesson(currentWeekDay.time, lesson, timetableEntry.subject)
+                                } else {
+                                    emptyList()
+                                }
+                                val backgroundColor = getHighestPriorityBackgroundColor(calendarEntries).takeIf {
+                                    it != Color.TRANSPARENT
+                                } ?: Color.WHITE
+
+                                currentHighlightedCell = cell
+                                setStaticHighlight(cell, backgroundColor)
+                            }
+                        }
+                    }
+                }
+                return
+            }
         }
     }
 
@@ -3874,6 +4527,7 @@ class GalleryFragment : Fragment() {
         realTimeUpdateHandler = null
         realTimeUpdateRunnable = null
         stopCurrentHighlight()
+        hideRealTimeIndicator()
     }
 
     private fun createOptimizedPulseAnimation(cell: TextView, backgroundColor: Int): ValueAnimator {
@@ -4009,7 +4663,7 @@ class GalleryFragment : Fragment() {
         pulseAnimation.start()
     }
 
-    private fun startCurrentLessonHighlight(cell: TextView, backgroundColor: Int = Color.WHITE) {
+    private fun startCurrentLessonHighlight(cell: TextView, backgroundColor: Int = Color.WHITE, shouldAnimate: Boolean = true) {
         val parent = cell.parent as? TableRow
         if (parent != null && parent.getChildAt(0) == cell) {
             highlightLessonTimeCell(cell)
@@ -4025,8 +4679,12 @@ class GalleryFragment : Fragment() {
             backgroundColor
         }
 
-        val pulseAnimation = createOptimizedPulseAnimation(cell, actualBackgroundColor)
-        pulseAnimation.start()
+        if (shouldAnimate) {
+            val pulseAnimation = createOptimizedPulseAnimation(cell, actualBackgroundColor)
+            pulseAnimation.start()
+        } else {
+            setStaticHighlight(cell, actualBackgroundColor)
+        }
     }
 
     private fun getCurrentCellBackgroundColor(cell: TextView): Int {
@@ -4109,18 +4767,36 @@ class GalleryFragment : Fragment() {
             }
 
             val maxLessons = getMaxLessonsForWeek()
+
             for (lesson in 1..maxLessons) {
                 if (isCurrentBreakTime(lesson, currentTime)) {
-                    highlightCurrentBreak(lesson)
+                    if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
+                        lastHighlightedIsBreak = true
+                        lastHighlightedBreakAfterLesson = lesson
+                        lastHighlightedLessonNumber = -1
+                        highlightCurrentBreak(lesson)
+                    }
                     return@post
                 }
             }
 
             for (lesson in 1..maxLessons) {
                 if (isCurrentLesson(lesson, currentTime)) {
-                    highlightCurrentLesson(lesson, currentTime)
+                    if (lastHighlightedIsBreak || lastHighlightedLessonNumber != lesson) {
+                        lastHighlightedIsBreak = false
+                        lastHighlightedBreakAfterLesson = -1
+                        lastHighlightedLessonNumber = lesson
+                        highlightCurrentLesson(lesson, currentTime)
+                    }
                     return@post
                 }
+            }
+
+            if (lastHighlightedLessonNumber != -1 || lastHighlightedIsBreak) {
+                lastHighlightedLessonNumber = -1
+                lastHighlightedIsBreak = false
+                lastHighlightedBreakAfterLesson = -1
+                stopCurrentHighlight()
             }
         }
     }
@@ -4283,19 +4959,24 @@ class GalleryFragment : Fragment() {
                     currentDayOffset--
                     if (currentDayOffset < 0) {
                         currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
-                        currentDayOffset = 6
+                        currentDayOffset = 6 // sunday
                     }
                 } else {
                     currentDayOffset--
                     if (currentDayOffset < 0) {
                         currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
-                        currentDayOffset = 4
+                        currentDayOffset = 4 // friday
                     }
                 }
             } else {
                 currentWeekStart.add(Calendar.WEEK_OF_YEAR, -1)
             }
             updateCalendar()
+            if (isRealTimeEnabled) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    createRealTimeIndicator()
+                }, 50)
+            }
         }
 
         binding.root.findViewById<Button>(R.id.btnNextWeek).setOnClickListener {
@@ -4304,19 +4985,24 @@ class GalleryFragment : Fragment() {
                     currentDayOffset++
                     if (currentDayOffset > 6) {
                         currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
-                        currentDayOffset = 0
+                        currentDayOffset = 0 // monday
                     }
                 } else {
                     currentDayOffset++
                     if (currentDayOffset > 4) {
                         currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
-                        currentDayOffset = 0
+                        currentDayOffset = 0 // monday
                     }
                 }
             } else {
                 currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
             }
             updateCalendar()
+            if (isRealTimeEnabled) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    createRealTimeIndicator()
+                }, 50)
+            }
         }
     }
 
@@ -4348,10 +5034,10 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun translateSubjectForDisplay(internalSubject: String): String { // suggested to use this
-        return when (internalSubject) {
-            "FREE_LESSON" -> getString(R.string.slide_free_lesson)
-            "NO_SCHOOL" -> getString(R.string.gall_no_school)
+    private fun translateSubjectForDisplay(internalSubject: String): String {
+        return when (internalSubject.uppercase()) {
+            InternalConstants.FREE_LESSON.uppercase(), "FREISTUNDE", "FREE LESSON" -> getString(R.string.slide_free_lesson)
+            InternalConstants.NO_SCHOOL.uppercase(), "KEIN UNTERRICHT", "NO SCHOOL" -> getString(R.string.gall_no_school)
             else -> internalSubject
         }
     }
@@ -4839,14 +5525,368 @@ class GalleryFragment : Fragment() {
         nextButton.contentDescription = getString(R.string.gall_next_week)
     }
 
+    private fun detectLanguageChange(): Boolean {
+        val newLanguage = resources.configuration.locales[0].language
+        val hasChanged = currentLanguage.isNotEmpty() && currentLanguage != newLanguage
+        if (hasChanged || currentLanguage.isEmpty()) {
+            currentLanguage = newLanguage
+            return true
+        }
+        return false
+    }
+
+    private fun refreshLanguageDependentContent() {
+        val updatedVacationWeeks = mutableMapOf<String, VacationWeek>()
+        vacationWeeks.forEach { (key, vacation) ->
+            val updatedName = translateVacationType(vacation.name)
+            updatedVacationWeeks[key] = vacation.copy(name = updatedName)
+        }
+        vacationWeeks.clear()
+        vacationWeeks.putAll(updatedVacationWeeks)
+        saveVacationData()
+
+        timetableData.values.forEach { dayMap ->
+            dayMap.values.forEach { entry ->
+                when {
+                    entry.subject.equals("Freistunde", ignoreCase = true) ||
+                            entry.subject.equals("Free Lesson", ignoreCase = true) ||
+                            entry.subject.equals(getString(R.string.slide_free_lesson), ignoreCase = true) -> {
+                        entry.subject = InternalConstants.FREE_LESSON
+                    }
+                    entry.subject.equals("Kein Unterricht", ignoreCase = true) ||
+                            entry.subject.equals("No School", ignoreCase = true) ||
+                            entry.subject.equals(getString(R.string.gall_no_school), ignoreCase = true) -> {
+                        entry.subject = InternalConstants.NO_SCHOOL
+                    }
+                }
+            }
+        }
+        saveTimetableData()
+    }
+
+    private fun createRealTimeIndicator() {
+        if (!isRealTimeEnabled || isEditMode) {
+            hideRealTimeIndicator()
+            return
+        }
+
+        val currentTime = Calendar.getInstance()
+        val dayOfWeek = currentTime.get(Calendar.DAY_OF_WEEK)
+
+        if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
+            if (!isDayView || !includeWeekendsInDayView) {
+                hideRealTimeIndicator()
+                return
+            }
+        }
+
+        val isCurrentPeriod = if (isDayView) {
+            val currentDay = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+            isSameDay(currentDay.time, currentTime.time)
+        } else {
+            isSameWeek(currentWeekStart.time, currentTime.time)
+        }
+
+        if (!isCurrentPeriod) {
+            hideRealTimeIndicator()
+            return
+        }
+
+        val indicatorPosition = calculateIndicatorPosition(currentTime)
+        if (indicatorPosition < 0) {
+            hideRealTimeIndicator()
+            return
+        }
+
+        calendarContainer.post {
+            showRealTimeIndicatorElements(indicatorPosition, currentTime)
+        }
+    }
+
+    private fun showRealTimeIndicatorElements(indicatorPosition: Int, currentTime: Calendar) {
+        val calendarWidth = calendarGrid.width
+        val leftMargin = if (isDayView) 170 else 70
+        val availableWidth = maxOf(calendarWidth - leftMargin - 20, 200)
+
+        realTimeIndicatorHorizontalLine?.let { line ->
+            val layoutParams = line.layoutParams as FrameLayout.LayoutParams
+            layoutParams.topMargin = indicatorPosition + 7 // eyeballed ah adjustment
+            layoutParams.leftMargin = leftMargin
+            layoutParams.width = availableWidth
+            layoutParams.height = 8
+            layoutParams.gravity = Gravity.TOP or Gravity.START
+            line.layoutParams = layoutParams
+
+            val lineDrawable = GradientDrawable().apply {
+                setColor("#FFD700".toColorInt())
+                cornerRadius = 4f
+                setStroke(2, "#FF8F00".toColorInt())
+            }
+            line.background = lineDrawable
+            line.visibility = View.VISIBLE
+            line.elevation = 11f
+            line.alpha = 0.9f
+        }
+
+        realTimeIndicatorText?.let { text ->
+            val timeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
+            val progress = calculateSchoolDayProgress(currentTime)
+
+            text.text = if (progress != null) {
+                "$timeStr | $progress"
+            } else {
+                timeStr
+            }
+
+            val layoutParams = text.layoutParams as FrameLayout.LayoutParams
+            layoutParams.topMargin = maxOf(0, indicatorPosition - 23)
+            layoutParams.leftMargin = 20
+            layoutParams.width = FrameLayout.LayoutParams.WRAP_CONTENT
+            layoutParams.height = FrameLayout.LayoutParams.WRAP_CONTENT
+            layoutParams.gravity = Gravity.TOP or Gravity.START
+            text.layoutParams = layoutParams
+
+            val textDrawable = GradientDrawable().apply {
+                setColor("#FFF9C4".toColorInt())
+                cornerRadius = 16f
+                setStroke(2, "#FF8F00".toColorInt())
+            }
+            text.background = textDrawable
+            text.setTextColor("#E65100".toColorInt())
+            text.textSize = 12f
+            text.setTypeface(null, Typeface.BOLD)
+            text.setPadding(16, 8, 16, 8)
+            text.visibility = View.VISIBLE
+            text.elevation = 12f
+            text.alpha = 1.0f
+        }
+    }
+
+    private fun calculateIndicatorPosition(currentTime: Calendar): Int {
+        val currentTimeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
+        val currentParts = currentTimeStr.split(":")
+        val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
+
+        var accumulatedHeight = 8
+
+        val headerHeight = if (isDayView) 160 else 80
+        val headerMargin = 6
+        accumulatedHeight += headerHeight + headerMargin
+
+        val maxLessons = getMaxLessonsForWeek()
+
+        val firstLessonTime = lessonTimes[1] ?: return -1
+        val firstParts = firstLessonTime.split(":")
+        val firstMinutes = firstParts[0].toInt() * 60 + firstParts[1].toInt()
+
+        if (currentMinutes <= firstMinutes) {
+            return accumulatedHeight
+        }
+
+        for (lesson in 1..maxLessons) {
+            val breakMinutes = breakTimes[lesson - 1]
+            if (breakMinutes != null && lesson > 1) {
+                val breakHeight = if (isRealTimeEnabled) {
+                    val baseBreakHeight = if (isDayView) 50 else 40
+                    when (breakMinutes) {
+                        15 -> baseBreakHeight
+                        30 -> baseBreakHeight * 2
+                        else -> baseBreakHeight
+                    }
+                } else {
+                    if (isDayView) 50 else 40
+                }
+
+                val previousLessonEndTime = lessonEndTimes[lesson - 1] ?: return -1
+                val currentLessonStartTime = lessonTimes[lesson] ?: return -1
+
+                val endParts = previousLessonEndTime.split(":")
+                val startParts = currentLessonStartTime.split(":")
+                val endMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
+                val startMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
+
+                if (currentMinutes >= endMinutes && currentMinutes < startMinutes) {
+                    val breakProgress = (currentMinutes - endMinutes).toFloat() / (startMinutes - endMinutes).toFloat()
+                    return accumulatedHeight + (breakHeight * breakProgress).toInt()
+                }
+
+                accumulatedHeight += breakHeight + 2
+            }
+
+            val lessonStartTime = lessonTimes[lesson] ?: continue
+            val lessonEndTime = lessonEndTimes[lesson] ?: continue
+
+            val startParts = lessonStartTime.split(":")
+            val endParts = lessonEndTime.split(":")
+            val startMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
+            val endMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
+
+            val lessonHeight = if (isRealTimeEnabled) {
+                val baseBreakHeight = if (isDayView) 50 else 40
+                baseBreakHeight * 3
+            } else {
+                if (isDayView) 150 else 80
+            }
+
+            if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+                val lessonProgress = (currentMinutes - startMinutes).toFloat() / (endMinutes - startMinutes).toFloat()
+                return accumulatedHeight + (lessonHeight * lessonProgress).toInt()
+            }
+
+            accumulatedHeight += lessonHeight + 6
+
+            if (currentMinutes < endMinutes) {
+                break
+            }
+        }
+        return -1
+    }
+
+    private fun hideRealTimeIndicator() {
+        realTimeIndicatorView?.visibility = View.GONE
+        realTimeIndicatorText?.apply {
+            visibility = View.GONE
+            alpha = 0f
+        }
+        realTimeIndicatorHorizontalLine?.apply {
+            visibility = View.GONE
+            alpha = 0f
+        }
+    }
+
+    private fun calculateSchoolDayProgress(currentTime: Calendar): String? {
+        val currentDay = if (isDayView) {
+            Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+        } else {
+            currentTime
+        }
+
+        if (isDayView) {
+            if (!isSameDay(currentDay.time, currentTime.time)) {
+                return null
+            }
+        }
+
+        val dayKey = getWeekdayKey(getDayOfWeekIndex(currentDay.time))
+        val dayTimetable = timetableData[dayKey] ?: return null
+
+        val scheduledLessons = dayTimetable.filter { (_, entry) ->
+            !entry.isBreak &&
+                    entry.subject != InternalConstants.FREE_LESSON &&
+                    entry.subject != InternalConstants.NO_SCHOOL &&
+                    entry.subject.isNotBlank()
+        }
+
+        if (scheduledLessons.isEmpty()) return null
+
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentDay.time)
+        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+
+        val cancelledLessons = mutableSetOf<Int>()
+        substituteEntries.forEach { substitute ->
+            val startLesson = substitute.stunde
+            val endLesson = substitute.stundeBis ?: substitute.stunde
+
+            if (substitute.art.contains("Entfällt", ignoreCase = true) &&
+                !substitute.art.contains("stattdessen", ignoreCase = true)) { // hope this wont create issues
+
+                for (lesson in startLesson..endLesson) {
+                    val timetableEntry = dayTimetable[lesson]
+                    if (timetableEntry?.subject == substitute.fach) {
+                        cancelledLessons.add(lesson)
+                    }
+                }
+            }
+        }
+
+        val sortedScheduledLessons = scheduledLessons.keys.sorted()
+
+        // find first not cancelled lesson
+        val firstActiveLesson = sortedScheduledLessons.firstOrNull { it !in cancelledLessons }
+            ?: return null
+
+        // find last not cancelled lesson
+        val lastActiveLesson = sortedScheduledLessons.lastOrNull { it !in cancelledLessons }
+            ?: return null
+
+        val effectiveLessons = scheduledLessons.filter { (lessonNumber, _) ->
+            lessonNumber in firstActiveLesson..lastActiveLesson
+        }
+
+        if (effectiveLessons.isEmpty()) return null
+
+        val firstLessonStartTime = lessonTimes[firstActiveLesson] ?: return null
+        val lastLessonEndTime = lessonEndTimes[lastActiveLesson] ?: return null
+
+        val currentTimeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
+
+        val startParts = firstLessonStartTime.split(":")
+        val endParts = lastLessonEndTime.split(":")
+        val currentParts = currentTimeStr.split(":")
+
+        val startMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
+        val endMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
+        val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
+
+        return when {
+            currentMinutes < startMinutes -> null // before first active lesson -> show only time
+            currentMinutes >= endMinutes -> "100%" // after last active lesson -> 100%
+            else -> {
+                var totalActiveDuration = 0
+                var completedDuration = 0
+
+                effectiveLessons.keys.sorted().forEach { lessonNumber ->
+                    val lessonStart = lessonTimes[lessonNumber] ?: return@forEach
+                    val lessonEnd = lessonEndTimes[lessonNumber] ?: return@forEach
+
+                    val startParts = lessonStart.split(":")
+                    val endParts = lessonEnd.split(":")
+                    val lessonStartMinutes = startParts[0].toInt() * 60 + startParts[1].toInt()
+                    val lessonEndMinutes = endParts[0].toInt() * 60 + endParts[1].toInt()
+
+                    val lessonDuration = lessonEndMinutes - lessonStartMinutes
+                    totalActiveDuration += lessonDuration
+
+                    when {
+                        currentMinutes >= lessonEndMinutes -> {
+                            completedDuration += lessonDuration
+                        }
+                        currentMinutes >= lessonStartMinutes -> {
+                            val partialDuration = currentMinutes - lessonStartMinutes
+                            completedDuration += partialDuration
+                        }
+                    }
+                }
+
+                val progress = if (totalActiveDuration > 0) {
+                    (completedDuration.toFloat() / totalActiveDuration.toFloat() * 100).toInt()
+                } else {
+                    0
+                }
+                "$progress%"
+            }
+        }
+    }
+
+    private fun translateBreakText(breakMinutes: Int): String {
+        return getString(R.string.gall_break_with_minutes, breakMinutes)
+    }
+
     override fun onResume() {
         super.onResume()
+        if (detectLanguageChange()) {
+            refreshLanguageDependentContent()
+        }
         loadRealTimePreference()
         loadWeekendPreference()
         loadColorBlindSettings()
-
         setupRealTimeUpdates()
-
         updateCalendar()
     }
 

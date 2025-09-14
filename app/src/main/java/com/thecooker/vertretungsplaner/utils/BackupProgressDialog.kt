@@ -76,7 +76,7 @@ class BackupProgressDialog(
         editButton = view.findViewById(R.id.editButton)
         scrollView = view.findViewById(R.id.scrollView)
 
-        titleText.text = if (isExport) "Sicherung wird erstellt..." else "Sicherung wird wiederhergestellt..."
+        titleText.text = if (isExport) context.getString(R.string.bac_pro_backup_is_being_created) else context.getString(R.string.bac_pro_backup_is_being_restored)
 
         errorButton.visibility = View.GONE
         errorButton.setOnClickListener {
@@ -105,12 +105,12 @@ class BackupProgressDialog(
 
     private fun setupSectionViews() {
         val allSections = listOf(
-            BackupManager.BackupSection("TIMETABLE_DATA", "Stundenplan-Daten"),
-            BackupManager.BackupSection("CALENDAR_DATA", "Kalender-Daten"),
-            BackupManager.BackupSection("HOMEWORK_DATA", "Hausaufgaben"),
-            BackupManager.BackupSection("EXAM_DATA", "Klausuren"),
-            BackupManager.BackupSection("GRADE_DATA", "Noten"),
-            BackupManager.BackupSection("APP_SETTINGS", "App-Einstellungen")
+            BackupManager.BackupSection("TIMETABLE_DATA", context.getString(R.string.bac_pro_timetable_data)),
+            BackupManager.BackupSection("CALENDAR_DATA", context.getString(R.string.bac_pro_calendar_data)),
+            BackupManager.BackupSection("HOMEWORK_DATA", context.getString(R.string.bac_pro_homework_data)),
+            BackupManager.BackupSection("EXAM_DATA", context.getString(R.string.bac_pro_exam_data)),
+            BackupManager.BackupSection("GRADE_DATA", context.getString(R.string.bac_pro_grades_data)),
+            BackupManager.BackupSection("APP_SETTINGS", context.getString(R.string.bac_pro_app_settings_data))
         )
 
         val sectionsToShow = if (enabledSections != null) {
@@ -166,12 +166,12 @@ class BackupProgressDialog(
         val hasEmptySections = sections.any { it.status == BackupManager.SectionStatus.EMPTY }
 
         titleText.text = when {
-            success && !hasEmptySections -> if (isExport) "Sicherung erfolgreich erstellt!" else "Sicherung erfolgreich wiederhergestellt!"
-            hasErrors -> if (isExport) "Sicherung mit Fehlern erstellt" else "Wiederherstellung mit Fehlern abgeschlossen"
-            else -> if (isExport) "Sicherung erstellt (einige Bereiche leer)" else "Wiederherstellung abgeschlossen (einige Bereiche leer)"
+            success && !hasEmptySections -> if (isExport) context.getString(R.string.bac_pro_backup_created_successfully) else context.getString(R.string.bac_pro_backup_restored_successfully)
+            hasErrors -> if (isExport) context.getString(R.string.bac_pro_backup_created_with_errors) else context.getString(R.string.bac_pro_backup_restored_with_errors)
+            else -> if (isExport) context.getString(R.string.bac_pro_backup_created_with_empty_sectoins) else context.getString(R.string.bac_pro_backup_restored_with_empty_sections)
         }
 
-        "Fortfahren".also { cancelButton.text = it }
+        context.getString(R.string.bac_pro_continue).also { cancelButton.text = it }
 
         if (hasErrors || hasEmptySections) {
             errorButton.visibility = View.VISIBLE
@@ -197,7 +197,7 @@ class BackupProgressDialog(
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("HKS Error Report", errorReport)
             clipboard.setPrimaryClip(clip)
-            Toast.makeText(context, "Fehlerprotokoll kopiert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.bac_pro_error_log_copied), Toast.LENGTH_SHORT).show()
         }
 
         closeButton.setOnClickListener {
@@ -254,13 +254,13 @@ class BackupProgressDialog(
                 BackupManager.SectionStatus.EMPTY -> {
                     statusIcon.setImageResource(R.drawable.ic_info)
                     statusIcon.setColorFilter(ContextCompat.getColor(context, android.R.color.holo_orange_dark))
-                    "Keine Daten".also { errorText.text = it }
+                    errorText.text = context.getString(R.string.bac_pro_no_data)
                     errorText.visibility = View.VISIBLE
                 }
                 BackupManager.SectionStatus.EXCLUDED -> {
                     statusIcon.setImageResource(R.drawable.ic_remove)
                     statusIcon.setColorFilter(ContextCompat.getColor(context, android.R.color.darker_gray))
-                    "Ausgeschlossen".also { errorText.text = it }
+                    errorText.text = context.getString(R.string.bac_pro_excluded)
                     errorText.visibility = View.VISIBLE
                     nameText.alpha = 0.6f
                 }

@@ -103,7 +103,7 @@ class MainActivity : BaseActivity() {
             return
         }
 
-        val startupPageIndex = sharedPreferences.getInt("startup_page_index", 0)
+        val startupPageIndex = sharedPreferences.getInt("startup_page_index", 1) // default = home page
 
         binding.root.postDelayed({
             try {
@@ -214,8 +214,6 @@ class MainActivity : BaseActivity() {
 
             sharedPreferences.edit {
                 putString(if (isHomework) "pending_shared_homework_uri" else "pending_shared_exam_uri", uri.toString())
-                putBoolean("skip_home_loading", true)
-                putBoolean("shared_content_processed", true)
             }
 
             binding.root.postDelayed({
@@ -224,35 +222,35 @@ class MainActivity : BaseActivity() {
 
                     if (isHomework) {
                         val bundle = Bundle().apply { putString("shared_homework_uri", uri.toString()) }
-                        navController.navigate(R.id.nav_slideshow, bundle)
+                        navController.navigate(R.id.nav_slideshow, bundle, androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.nav_home, false)
+                            .build())
                     } else {
                         val bundle = Bundle().apply { putString("shared_exam_uri", uri.toString()) }
-                        navController.navigate(R.id.nav_klausuren, bundle)
+                        navController.navigate(R.id.nav_klausuren, bundle, androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.nav_home, false)
+                            .build())
                     }
 
                     binding.root.postDelayed({
-                        sharedPreferences.edit {
-                            remove("skip_home_loading")
-                            remove("shared_content_processed")
-                        }
-                        isProcessingSharedContent = false
-                    }, 2000)
+                        cleanupSharedContentState()
+                    }, 100)
 
                 } catch (e: Exception) {
                     L.e("MainActivity", "Error handling shared content", e)
                     Toast.makeText(this, getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
-                    sharedPreferences.edit {
-                        remove("skip_home_loading")
-                        remove("shared_content_processed")
-                    }
-                    isProcessingSharedContent = false
-                    hasProcessedSharedContent = false
+                    cleanupSharedContentState()
                 }
-            }, 200)
+            }, 100)
 
             return true
         }
         return false
+    }
+
+    private fun cleanupSharedContentState() {
+        isProcessingSharedContent = false
+        hasProcessedSharedContent = false
     }
 
     private fun isHomeworkFile(uri: Uri): Boolean {
@@ -299,8 +297,6 @@ class MainActivity : BaseActivity() {
             } catch (e: Exception) {
                 L.e("MainActivity", "Error processing stored shared homework", e)
                 Toast.makeText(this, getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
-            } finally {
-                isProcessingSharedContent = false
             }
         }
     }
@@ -321,8 +317,6 @@ class MainActivity : BaseActivity() {
             } catch (e: Exception) {
                 L.e("MainActivity", "Error processing stored shared exam", e)
                 Toast.makeText(this, getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
-            } finally {
-                isProcessingSharedContent = false
             }
         }
     }

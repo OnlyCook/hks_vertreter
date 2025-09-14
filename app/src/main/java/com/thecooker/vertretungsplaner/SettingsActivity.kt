@@ -80,6 +80,7 @@ class SettingsActivity : BaseActivity() {
     private var allSearchableViews = mutableListOf<SearchableView>()
     private var originalBackgroundColors = mutableMapOf<View, Int>()
     private var noResultsTextView: TextView? = null
+    private lateinit var btnClearSearch: ImageView
 
     companion object {
         private const val PDF_PICKER_REQUEST_CODE = 100
@@ -185,6 +186,7 @@ class SettingsActivity : BaseActivity() {
 
     private fun initializeSearchViews() {
         searchBarSettings = findViewById(R.id.searchBarSettings)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
         settingsContainer = findViewById(R.id.settingsContainer)
         noResultsTextView = findViewById(R.id.tvNoSearchResults)
 
@@ -196,11 +198,21 @@ class SettingsActivity : BaseActivity() {
             buildSearchableViewsList()
         }
 
+        btnClearSearch.visibility = View.GONE
+
+        btnClearSearch.setOnClickListener {
+            searchBarSettings.text.clear()
+            searchBarSettings.clearFocus()
+        }
+
         searchBarSettings.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val query = s?.toString()?.trim() ?: ""
+
+                btnClearSearch.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
+
                 performSearch(query)
 
                 if (query.isNotEmpty()) {
@@ -1912,17 +1924,31 @@ class SettingsActivity : BaseActivity() {
         }
 
         btnAutoUpdateTime.setOnClickListener {
-            TimePickerDialogHelper.showTimePicker(this, autoUpdateTime) { selectedTime ->
-                sharedPreferences.edit { putString("auto_update_time", selectedTime) }
+            val timeParts = autoUpdateTime.split(":")
+            val hour = timeParts[0].toIntOrNull() ?: 6
+            val minute = timeParts[1].toIntOrNull() ?: 0
 
-                btnAutoUpdateTime.text = getString(R.string.set_act_update_time_format, selectedTime)
+            val timePickerDialog = TimePickerDialog(
+                this,
+                { _, selectedHour, selectedMinute ->
+                    val selectedTime = String.format("%02d:%02d", selectedHour, selectedMinute)
+                    sharedPreferences.edit { putString("auto_update_time", selectedTime) }
 
-                if (switchAutoUpdate.isChecked) {
-                    WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
-                    val message = getString(R.string.set_act_update_time_changed_format, selectedTime)
-                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-                }
-            }
+                    btnAutoUpdateTime.text = getString(R.string.set_act_update_time_format, selectedTime)
+
+                    if (switchAutoUpdate.isChecked) {
+                        WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
+                        val message = getString(R.string.set_act_update_time_changed_format, selectedTime)
+                        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                hour,
+                minute,
+                true
+            )
+
+            timePickerDialog.setTitle("")
+            timePickerDialog.show()
         }
 
         switchUpdateWifiOnly.setOnCheckedChangeListener { _, isChecked ->
@@ -2504,7 +2530,7 @@ class SettingsActivity : BaseActivity() {
     private fun setupCalendarSettings() {
         val switchCalendarRealTime = findViewById<Switch>(R.id.switchCalendarRealTime)
 
-        val realTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", false)
+        val realTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
         switchCalendarRealTime.isChecked = realTimeEnabled
 
         switchCalendarRealTime.setOnCheckedChangeListener { _, isChecked ->
@@ -3074,6 +3100,14 @@ class SettingsActivity : BaseActivity() {
             return
         }
 
+        if (isGreetingQuery(query)) {
+            clearHighlights()
+            showGreetingMessage()
+            currentMatches = emptyList()
+            currentMatchIndex = 0
+            return
+        }
+
         val matches = findMatches(query)
         highlightMatches(matches, query)
 
@@ -3081,6 +3115,23 @@ class SettingsActivity : BaseActivity() {
         currentMatchIndex = 0
 
         L.d(TAG, "Search for '$query' found ${matches.size} matches")
+    }
+
+    private fun isGreetingQuery(query: String): Boolean {
+        val queryLower = query.lowercase().trim()
+        val greetingKeywords = getString(R.string.set_act_greeting_keywords)
+            .split(",")
+            .map { it.trim().lowercase() }
+
+        return greetingKeywords.any { keyword ->
+            queryLower == keyword || queryLower.startsWith("$keyword ")
+        }
+    }
+
+    private fun showGreetingMessage() {
+        val noResultsContainer = findViewById<LinearLayout>(R.id.noResultsContainer)
+        noResultsTextView?.text = getString(R.string.set_act_greeting_response)
+        noResultsContainer?.visibility = View.VISIBLE
     }
 
     private fun findMatches(query: String): List<Pair<SearchableView, Int>> {
@@ -3203,6 +3254,7 @@ class SettingsActivity : BaseActivity() {
 
     private fun showNoResultsMessage() {
         val noResultsContainer = findViewById<LinearLayout>(R.id.noResultsContainer)
+        noResultsTextView?.text = getString(R.string.settings_no_results)
         noResultsContainer?.visibility = View.VISIBLE
     }
 

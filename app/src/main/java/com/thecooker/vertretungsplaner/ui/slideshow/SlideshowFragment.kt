@@ -35,7 +35,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.utils.HomeworkShareHelper
-import kotlin.reflect.KProperty
 
 class SlideshowFragment : Fragment() {
 
@@ -151,23 +150,6 @@ class SlideshowFragment : Fragment() {
             } else {
                 dateStr
             }
-        }
-
-        fun getDetailedDueDateString(context: Context): String {
-            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-            val timeFormat = SimpleDateFormat("HH:mm", Locale.GERMANY)
-
-            var result = context.getString(R.string.slide_due_date_format, dateFormat.format(dueDate))
-
-            if (dueTime != null) {
-                result += " ${context.getString(R.string.slide_due_date_time, timeFormat.format(dueTime!!))}"
-            }
-
-            if (lessonNumber != null) {
-                result += " ${context.getString(R.string.slide_due_date_lesson, lessonNumber)}"
-            }
-
-            return result
         }
 
         fun getBackgroundColor(): Int = when {
@@ -1006,6 +988,9 @@ class SlideshowFragment : Fragment() {
             .setTitle(getString(R.string.slide_homework_details))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.slide_close), null)
+            .setNeutralButton(getString(R.string.gall_edit)) { _, _ ->
+                showAddHomeworkDialog(homework)
+            }
             .show()
     }
 

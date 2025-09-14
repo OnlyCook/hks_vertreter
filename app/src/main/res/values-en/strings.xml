@@ -318,7 +318,7 @@
     <!-- FRAGMENT_GALLERY.XML -->
     <string name="frag_gal_search_hint">Search in calendar...</string>
     <string name="frag_gal_btn_edit">W</string>
-    <string name="frag_gal_btn_edit_day">T</string>
+    <string name="frag_gal_btn_edit_day">D</string>
     <string name="frag_gal_week_loading">Loading calendar week...</string>
     <string name="frag_gal_btn_undo">Undo</string>
     <string name="frag_gal_btn_redo">Redo</string>
@@ -573,6 +573,9 @@
     <string name="set_act_reminder_time_format">Reminder time: %s</string>
     <string name="set_act_days_before_format">%d days before</string>
     <string name="set_act_exam_due_date_reminder_format">Reminder: %s</string>
+    <string name="set_act_clear_search">Clear search</string>
+    <string name="set_act_greeting_keywords">hello,hi,hey,howdy,good morning,good afternoon,good evening,greetings</string>
+    <string name="set_act_greeting_response">Hi! :3</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -747,6 +750,8 @@
     <string name="home_restart_dialog_message">The page could not be loaded. Please restart the app.</string>
     <string name="home_restart_button">Restart app</string>
     <string name="home_cancel_button">Cancel</string>
+    <string name="home_network_error_using_cache">No internet connection, loading cached data</string>
+    <string name="home_offline_mode">Offline mode</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">You must first scan your timetable to see your grades.</string>
@@ -1097,6 +1102,10 @@
     <string name="gall_error_reading_file">Error reading file: %s</string>
     <string name="gall_search_results">%d results for \'%s\'</string>
     <string name="gall_today">Today</string>
+    <string name="gall_tomorrow">Tomorrow</string>
+    <string name="gall_yesterday">Yesterday</string>
+    <string name="gall_days_away">%d days away</string>
+    <string name="gall_days_ago">%d days ago</string>
     <string name="gall_mark_vacations">Mark vacations</string>
     <string name="gall_statistics">Statistics</string>
     <string name="gall_one_weeks">1 week</string>
@@ -1114,7 +1123,7 @@
     <string name="gall_select_day">Select day</string>
     <string name="gall_week_text_view">%s - %s%s\nCalendar week %s</string>
     <string name="galL_hour_single">Period</string>
-    <string name="gall_break_with_minutes">Break\n(%d min.)</string>
+    <string name="gall_break_with_minutes">Break (%d min.)</string>
     <string name="gall_homework_single">Homework</string>
     <string name="gall_exam_single">Exam</string>
     <string name="gall_subsequent_break">Subsequent break: %d minutes</string>
@@ -1154,6 +1163,10 @@
     <string name="gall_next_week">Next week</string>
     <string name="gall_one_day_statistics">1 day</string>
     <string name="gall_days_statistics">%d days</string>
+    <string name="gall_open_homework_details">Open homework details</string>
+    <string name="gall_open_exam_details">Open exam details</string>
+    <string name="gall_open_substitute_details">Open substitute details</string>
+    <string name="gall_error_opening_page">Error opening page</string>
 
     <!-- AUTOUPDATEWORKER.KT -->
     <string name="auto_update_notification_channel">Automatic Updates</string>
@@ -1252,5 +1265,39 @@
 
     <string name="dia_ex_det_share">Share exam</string>
     <string name="dia_ex_det_copy">Copy notes</string>
+
+    <!-- SECTIONSELECTIONDIALOG.KT -->
+    <string name="sec_sel_select_sections_to_export">Select sections to export</string>
+    <string name="sec_sel_select_sections_to_import">Select sections to import</string>
+    <string name="sec_sel_error_couldnt_import">Error - cannot import</string>
+    <string name="sec_sel_no_data_available">No data available</string>
+    <string name="sec_sel_please_select_at_least_one_section">Please select at least one section</string>
+
+    <!-- BACKUPPROGRESSDIALOG.KT -->
+    <string name="bac_pro_backup_is_being_created">Backup is being created…</string>
+    <string name="bac_pro_backup_is_being_restored">Backup is being restored…</string>
+    <string name="bac_pro_timetable_data">Timetable data</string>
+    <string name="bac_pro_calendar_data">Calendar data</string>
+    <string name="bac_pro_homework_data">Homework</string>
+    <string name="bac_pro_exam_data">Exams</string>
+    <string name="bac_pro_grades_data">Grades</string>
+    <string name="bac_pro_app_settings_data">App settings</string>
+    <string name="bac_pro_backup_created_successfully">Backup created successfully!</string>
+    <string name="bac_pro_backup_restored_successfully">Backup restored successfully!</string>
+    <string name="bac_pro_backup_created_with_errors">Backup created with errors</string>
+    <string name="bac_pro_backup_restored_with_errors">Restoration completed with errors</string>
+    <string name="bac_pro_backup_created_with_empty_sectoins">Backup created (some sections empty)</string>
+    <string name="bac_pro_backup_restored_with_empty_sections">Restoration completed (some sections empty)</string>
+    <string name="bac_pro_continue">Continue</string>
+    <string name="bac_pro_error_log_copied">Error log copied</string>
+    <string name="bac_pro_no_data">No data</string>
+    <string name="bac_pro_excluded">Excluded</string>
+
+    <!-- TIMEPICKERDIALOGHELPER.KT -->
+    <string name="time_select_update_time">Select update time</string>
+    <string name="time_minutes_number">%d minutes</string>
+    <string name="time_hour_single">1 hour</string>
+    <string name="time_hour_multiple">%d hours</string>
+    <string name="time_check_interval_select">Select check interval</string>
 
 </resources>

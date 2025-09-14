@@ -3,6 +3,7 @@ package com.thecooker.vertretungsplaner.utils
 import android.app.TimePickerDialog
 import android.content.Context
 import android.widget.TimePicker
+import com.thecooker.vertretungsplaner.R
 
 object TimePickerDialogHelper {
 
@@ -24,7 +25,7 @@ object TimePickerDialogHelper {
             true
         )
 
-        timePickerDialog.setTitle("Update-Zeit auswählen")
+        timePickerDialog.setTitle(context.getString(R.string.time_select_update_time))
         timePickerDialog.show()
     }
 
@@ -36,9 +37,9 @@ object TimePickerDialogHelper {
         val intervals = arrayOf(5, 10, 15, 30, 60, 120, 180) // minutes
         val intervalTexts = intervals.map {
             when {
-                it < 60 -> "$it Minuten"
-                it == 60 -> "1 Stunde"
-                else -> "${it / 60} Stunden"
+                it < 60 -> context.getString(R.string.time_minutes_number, it)
+                it == 60 -> context.getString(R.string.time_hour_single)
+                else -> context.getString(R.string.time_hour_multiple, it / 60)
             }
         }.toTypedArray()
 
@@ -47,12 +48,12 @@ object TimePickerDialogHelper {
         }
 
         android.app.AlertDialog.Builder(context)
-            .setTitle("Prüfintervall auswählen")
+            .setTitle(context.getString(R.string.time_check_interval_select))
             .setSingleChoiceItems(intervalTexts, currentIndex) { dialog, which ->
                 onIntervalSelected(intervals[which])
                 dialog.dismiss()
             }
-            .setNegativeButton("Abbrechen", null)
+            .setNegativeButton(context.getString(R.string.cancel), null)
             .show()
     }
 

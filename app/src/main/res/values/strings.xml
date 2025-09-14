@@ -573,6 +573,9 @@
     <string name="set_act_reminder_time_format">Erinnerungszeit: %s</string>
     <string name="set_act_days_before_format">%d Tage vorher</string>
     <string name="set_act_exam_due_date_reminder_format">Erinnerung: %s</string>
+    <string name="set_act_clear_search">Suche löschen</string>
+    <string name="set_act_greeting_keywords">hallo,hi,hey,moin,servus,guten tag,guten morgen,guten abend</string>
+    <string name="set_act_greeting_response">Hi! :3</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -747,6 +750,8 @@
     <string name="home_restart_dialog_message">Die Seite konnte nicht geladen werden. Bitte starten Sie die App neu.</string>
     <string name="home_restart_button">App neustarten</string>
     <string name="home_cancel_button">Abbrechen</string>
+    <string name="home_network_error_using_cache">Keine Internetverbindung, Cache wird geladen</string>
+    <string name="home_offline_mode">Offline-Modus</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.</string>
@@ -1097,6 +1102,10 @@
     <string name="gall_error_reading_file">Fehler beim Lesen der Datei: %s</string>
     <string name="gall_search_results">%d Ergebnisse für \'%s\'</string>
     <string name="gall_today">Heute</string>
+    <string name="gall_tomorrow">Morgen</string>
+    <string name="gall_yesterday">Gestern</string>
+    <string name="gall_days_away">In %d Tagen</string>
+    <string name="gall_days_ago">Vor %d Tagen</string>
     <string name="gall_mark_vacations">Ferien markieren</string>
     <string name="gall_statistics">Statistiken</string>
     <string name="gall_one_weeks">1 Woche</string>
@@ -1114,7 +1123,7 @@
     <string name="gall_select_day">Tag auswählen</string>
     <string name="gall_week_text_view">%s - %s%s\nKalenderwoche %s</string>
     <string name="galL_hour_single">Stunde</string>
-    <string name="gall_break_with_minutes">Pause\n(%d Min.)</string>
+    <string name="gall_break_with_minutes">Pause (%d Min.)</string>
     <string name="gall_homework_single">Hausaufgabe</string>
     <string name="gall_exam_single">Klausur</string>
     <string name="gall_subsequent_break">Anschließende Pause: %d Minuten</string>
@@ -1154,6 +1163,10 @@
     <string name="gall_next_week">Nächste Woche</string>
     <string name="gall_one_day_statistics">1 Tag</string>
     <string name="gall_days_statistics">%d Tage</string>
+    <string name="gall_open_homework_details">Hausaufgaben-Details öffnen</string>
+    <string name="gall_open_exam_details">Klausur-Details öffnen</string>
+    <string name="gall_open_substitute_details">Vertretungs-Details öffnen</string>
+    <string name="gall_error_opening_page">Fehler beim Öffnen der Seite</string>
 
     <!-- AUTOUPDATEWORKER.KT -->
     <string name="auto_update_notification_channel">Automatische Updates</string>
@@ -1253,5 +1266,39 @@
 
     <string name="dia_ex_det_share">Klausur teilen</string>
     <string name="dia_ex_det_copy">Notizen kopieren</string>
+
+    <!-- SECTIONSELECTIONDIALOG.KT -->
+    <string name="sec_sel_select_sections_to_export">Zu exportierende Bereiche auswählen</string>
+    <string name="sec_sel_select_sections_to_import">Zu importierende Bereiche auswählen</string>
+    <string name="sec_sel_error_couldnt_import">Fehler - kann nicht importiert werden</string>
+    <string name="sec_sel_no_data_available">Keine Daten verfügbar</string>
+    <string name="sec_sel_please_select_at_least_one_section">Bitte wählen Sie mindestens einen Bereich aus</string>
+
+    <!-- BACKUPPROGRESSDIALOG.KT -->
+    <string name="bac_pro_backup_is_being_created">Sicherung wird erstellt...</string>
+    <string name="bac_pro_backup_is_being_restored">Sicherung wird wiederhergestellt...</string>
+    <string name="bac_pro_timetable_data">Stundenplan-Daten</string>
+    <string name="bac_pro_calendar_data">Kalender-Daten</string>
+    <string name="bac_pro_homework_data">Hausaufgaben</string>
+    <string name="bac_pro_exam_data">Klausuren</string>
+    <string name="bac_pro_grades_data">Noten</string>
+    <string name="bac_pro_app_settings_data">App-Einstellungen</string>
+    <string name="bac_pro_backup_created_successfully">Sicherung erfolgreich erstellt!</string>
+    <string name="bac_pro_backup_restored_successfully">Sicherung erfolgreich wiederhergestellt!</string>
+    <string name="bac_pro_backup_created_with_errors">Sicherung mit Fehlern erstellt</string>
+    <string name="bac_pro_backup_restored_with_errors">Wiederherstellung mit Fehlern abgeschlossen</string>
+    <string name="bac_pro_backup_created_with_empty_sectoins">Sicherung erstellt (einige Bereiche leer)</string>
+    <string name="bac_pro_backup_restored_with_empty_sections">Wiederherstellung abgeschlossen (einige Bereiche leer)</string>
+    <string name="bac_pro_continue">Fortfahren</string>
+    <string name="bac_pro_error_log_copied">Fehlerprotokoll kopiert</string>
+    <string name="bac_pro_no_data">Keine Daten</string>
+    <string name="bac_pro_excluded">Ausgeschlossen</string>
+    
+    <!-- TIMEPICKERDIALOGHELPER.KT -->
+    <string name="time_select_update_time">Update-Zeit auswählen</string>
+    <string name="time_minutes_number">%d Minuten</string>
+    <string name="time_hour_single">"1 Stunde"</string>
+    <string name="time_hour_multiple">%d Stunden</string>
+    <string name="time_check_interval_select">Prüfintervall auswählen</string>
 
 </resources>
