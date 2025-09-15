@@ -11,6 +11,7 @@ import com.thecooker.vertretungsplaner.data.CalendarDataManager
 import java.text.DecimalFormat
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.R
+import com.thecooker.vertretungsplaner.data.ExamManager
 
 class BackupManager(private val context: Context) {
 
@@ -212,7 +213,7 @@ class BackupManager(private val context: Context) {
                 success = false,
                 restoredSections = 0,
                 totalSections = 6,
-                errors = listOf("Backup parsing failed: ${e.message}")
+                errors = listOf(context.getString(R.string.backup_parsing_failed, e.message ?: ""))
             )
         } finally {
             isFullBackupRestore = false
@@ -360,7 +361,7 @@ class BackupManager(private val context: Context) {
                     val sectionContent = parsedSections[section.name]
                     if (sectionContent == null) {
                         section.status = SectionStatus.EMPTY
-                        section.errorMessage = "Keine Daten in der Sicherung gefunden"
+                        section.errorMessage = context.getString(R.string.backup_no_data_found)
                         notifySectionCompleted(section)
                         return@forEach
                     }
@@ -424,7 +425,7 @@ class BackupManager(private val context: Context) {
                 success = false,
                 restoredSections = 0,
                 totalSections = sectionsToProcess.size,
-                errors = listOf("Backup parsing failed: ${e.message}")
+                errors = listOf(context.getString(R.string.backup_parsing_failed, e.message ?: ""))
             )
         } finally {
             isFullBackupRestore = false
@@ -794,8 +795,8 @@ class BackupManager(private val context: Context) {
             sb.appendLine()
 
             val examListJson = sharedPreferences.getString("exam_list", "[]")
-            val type = object : TypeToken<MutableList<ExamEntry>>() {}.type
-            val examList: MutableList<ExamEntry> = Gson().fromJson(examListJson, type) ?: mutableListOf()
+            val type = object : TypeToken<MutableList<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>>() {}.type
+            val examList: MutableList<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry> = Gson().fromJson(examListJson, type) ?: mutableListOf()
 
             for (exam in examList) {
                 val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(exam.date)
@@ -821,11 +822,11 @@ class BackupManager(private val context: Context) {
     fun importExamData(content: String) {
         try {
             if (!content.contains("# Heinrich-Kleyer-Schule Klausuren Export")) {
-                throw IllegalArgumentException("Ungültiges Datenformat")
+                throw IllegalArgumentException(context.getString(R.string.backup_invalid_data_format))
             }
 
             val lines = content.split("\n")
-            val examList = mutableListOf<ExamEntry>()
+            val examList = mutableListOf<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>()
 
             val calendarManager = CalendarDataManager.getInstance(context)
             calendarManager.clearCalendarData()
@@ -856,7 +857,7 @@ class BackupManager(private val context: Context) {
                             val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
                             val mark = parts.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
 
-                            val exam = ExamEntry(
+                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
                                 subject = subject,
                                 date = date,
                                 note = note,
@@ -885,18 +886,20 @@ class BackupManager(private val context: Context) {
                 putString("exam_list", json)
             }
 
+            ExamManager.setExams(examList)
+
             L.d(TAG, "Imported $importedExamCount exams successfully")
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)
-            throw Exception("Importfehler: ${e.message}")
+            throw Exception(context.getString(R.string.backup_import_error, e.message ?: ""))
         }
     }
 
     private fun importExamDataFromFullBackup(content: String) {
         try {
             val lines = content.split("\n")
-            val examList = mutableListOf<ExamEntry>()
+            val examList = mutableListOf<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>()
 
             var importedExamCount = 0
             val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
@@ -918,7 +921,7 @@ class BackupManager(private val context: Context) {
                             val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
                             val mark = parts.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
 
-                            val exam = ExamEntry(
+                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
                                 subject = subject,
                                 date = date,
                                 note = note,
@@ -943,6 +946,8 @@ class BackupManager(private val context: Context) {
                     putString("exam_list", json)
                 }
 
+                ExamManager.setExams(examList)
+
                 L.d(TAG, "Imported $importedExamCount exams from full backup successfully")
             } else {
                 L.w(TAG, "No exam data found in full backup section")
@@ -950,7 +955,7 @@ class BackupManager(private val context: Context) {
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data from full backup", e)
-            throw Exception("Failed to import exam data from full backup: ${e.message}")
+            throw Exception(context.getString(R.string.backup_exam_import_failed, e.message ?: ""))
         }
     }
 
@@ -1275,14 +1280,14 @@ class BackupManager(private val context: Context) {
             }
 
             if (!timetableImported && !vacationImported && !userDayDataImported && !alternativeRoomUsageImported) {
-                throw Exception("No valid calendar data found in backup")
+                throw Exception(context.getString(R.string.backup_no_calendar_data))
             }
 
             L.d(TAG, "Import completed - Timetable: $timetableImported, Vacation: $vacationImported, UserData: $userDayDataImported, AltRoomUsage: $alternativeRoomUsageImported")
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing calendar data", e)
-            throw Exception("Failed to import calendar data: ${e.message}")
+            throw Exception(context.getString(R.string.backup_calendar_import_failed, e.message ?: ""))
         }
     }
 
@@ -1528,11 +1533,11 @@ class BackupManager(private val context: Context) {
 
                 L.d(TAG, "Imported $importedCount homework entries successfully")
             } else {
-                throw Exception("No valid homework entries found in backup")
+                throw Exception(context.getString(R.string.backup_no_homework_data))
             }
         } catch (e: Exception) {
             L.e(TAG, "Error importing homework data", e)
-            throw Exception("Failed to import homework data: ${e.message}")
+            throw Exception(context.getString(R.string.backup_homework_import_failed, e.message ?: ""))
         }
     }
 
@@ -1836,7 +1841,7 @@ class BackupManager(private val context: Context) {
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing grade data", e)
-            throw Exception("Failed to import grade data: ${e.message}")
+            throw Exception(context.getString(R.string.backup_grade_import_failed, e.message ?: ""))
         }
     }
 

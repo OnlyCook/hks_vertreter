@@ -640,6 +640,16 @@
 
     <!-- BACKUPMANAGER.KT -->
     <string name="backup_no_data_in_backup_found">Keine Daten in der Sicherung gefunden</string>
+    <string name="backup_no_data_found">Keine Daten in der Sicherung gefunden</string>
+    <string name="backup_parsing_failed">Backup-Analyse fehlgeschlagen: %s</string>
+    <string name="backup_invalid_data_format">Ungültiges Datenformat</string>
+    <string name="backup_import_error">Importfehler: %s</string>
+    <string name="backup_exam_import_failed">Fehler beim Importieren der Klausurdaten aus vollständiger Sicherung: %s</string>
+    <string name="backup_no_calendar_data">Keine gültigen Kalenderdaten in der Sicherung gefunden</string>
+    <string name="backup_calendar_import_failed">Fehler beim Importieren der Kalenderdaten: %s</string>
+    <string name="backup_no_homework_data">Keine gültigen Hausaufgaben in der Sicherung gefunden</string>
+    <string name="backup_homework_import_failed">Fehler beim Importieren der Hausaufgabendaten: %s</string>
+    <string name="backup_grade_import_failed">Fehler beim Importieren der Notendaten: %s</string>
 
     <!-- SUBSITUTEREPOSITORY.KT -->
     <string name="sub_repo_not_selected">Nicht ausgewählt</string>

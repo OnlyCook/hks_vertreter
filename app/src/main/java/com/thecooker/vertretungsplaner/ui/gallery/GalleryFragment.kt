@@ -2071,13 +2071,21 @@ class GalleryFragment : Fragment() {
                 append(getString(R.string.gall_room, roomText)).append("<br/>")
             }
 
-            if (calendarEntries.isNotEmpty()) {
+            if (calendarEntries.isNotEmpty()) { // just restrict it to one exam per lesson max (seems logical)
                 append("<br/>")
                 append(getString(R.string.gall_additional_information)).append("<br/>")
+
+                var hasExam = false
+
                 calendarEntries.forEach { entry ->
                     when (entry.type) {
                         EntryType.HOMEWORK -> append(getString(R.string.gall_homework_due)).append("<br/>")
-                        EntryType.EXAM -> append(getString(R.string.gall_exam_due)).append("<br/>")
+                        EntryType.EXAM -> {
+                            if (!hasExam) {
+                                append(getString(R.string.gall_exam_due)).append("<br/>")
+                                hasExam = true
+                            }
+                        }
                         EntryType.SUBSTITUTE -> {
                             val formattedSubstitute = formatSubstituteText(entry.content)
                             append(getString(R.string.gall_substitute_detail, formattedSubstitute)).append("<br/>")

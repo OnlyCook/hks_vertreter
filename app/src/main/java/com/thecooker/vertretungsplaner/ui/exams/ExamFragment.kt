@@ -1919,6 +1919,13 @@ class ExamFragment : Fragment() {
             backupManager.importExamData(content)
 
             loadExams()
+
+            val calendarManager = CalendarDataManager.getInstance(requireContext())
+            for (exam in examList) {
+                addExamToCalendarDataManager(exam)
+            }
+            calendarManager.saveCalendarData()
+
             filterExams(searchBar.text.toString())
             updateExamCount()
 
@@ -2315,10 +2322,43 @@ class ExamFragment : Fragment() {
             }
         }
 
+        ExamManager.setExams(examList)
+
         syncManualExamsToCalendarManager()
 
         sortExams()
         filterExams("")
+    }
+
+    private fun addImportedExamToCalendarDataManager(exam: ExamEntry) {
+        val calendarManager = CalendarDataManager.getInstance(requireContext())
+        val existingInfo = calendarManager.getCalendarInfoForDate(exam.date)
+
+        if (existingInfo != null) {
+            val updatedExams = existingInfo.exams.toMutableList()
+            if (!updatedExams.any { it.id == exam.id }) {
+                updatedExams.add(exam)
+                val updatedInfo = existingInfo.copy(exams = updatedExams)
+                calendarManager.updateCalendarDay(updatedInfo)
+                L.d(TAG, "Added imported exam to existing calendar day: ${exam.subject}")
+            }
+        } else {
+            val cal = Calendar.getInstance().apply { time = exam.date }
+            val dayOfWeek = getGermanWeekday(exam.date)
+
+            val newInfo = CalendarDataManager.CalendarDayInfo(
+                date = exam.date,
+                dayOfWeek = dayOfWeek,
+                month = cal.get(Calendar.MONTH) + 1,
+                year = cal.get(Calendar.YEAR),
+                content = exam.subject,
+                exams = listOf(exam),
+                isSpecialDay = false,
+                specialNote = ""
+            )
+            calendarManager.addCalendarDay(newInfo)
+            L.d(TAG, "Created new calendar day with imported exam: ${exam.subject}")
+        }
     }
 
     private fun syncManualExamsToCalendarManager() {

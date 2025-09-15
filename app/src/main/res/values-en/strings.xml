@@ -640,6 +640,16 @@
 
     <!-- BACKUPMANAGER.KT -->
     <string name="backup_no_data_in_backup_found">No data found in backup</string>
+    <string name="backup_no_data_found">No data found in backup</string>
+    <string name="backup_parsing_failed">Backup parsing failed: %s</string>
+    <string name="backup_invalid_data_format">Invalid data format</string>
+    <string name="backup_import_error">Import error: %s</string>
+    <string name="backup_exam_import_failed">Failed to import exam data from full backup: %s</string>
+    <string name="backup_no_calendar_data">No valid calendar data found in backup</string>
+    <string name="backup_calendar_import_failed">Failed to import calendar data: %s</string>
+    <string name="backup_no_homework_data">No valid homework entries found in backup</string>
+    <string name="backup_homework_import_failed">Failed to import homework data: %s</string>
+    <string name="backup_grade_import_failed">Failed to import grade data: %s</string>
 
     <!-- SUBSITUTEREPOSITORY.KT -->
     <string name="sub_repo_not_selected">Not selected</string>
