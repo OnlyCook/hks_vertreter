@@ -184,7 +184,7 @@ class MainActivity : BaseActivity() {
         L.d("MainActivity", "Intent extras: ${intent.extras}")
         L.d("MainActivity", "Intent data: ${intent.data}")
 
-        // clear extra intent
+        // clear intent extras
         if (intent.hasExtra("highlight_homework_id")) {
             L.d("MainActivity", "Clearing lingering homework intent data")
             intent.removeExtra("highlight_homework_id")
@@ -259,7 +259,13 @@ class MainActivity : BaseActivity() {
         val checkedItem = navView.checkedItem
         L.d("MainActivity", "Navigation drawer checked item: ${checkedItem?.title}")
 
-        if (!sharedPreferences.getBoolean("shared_content_processed", false)) {
+        if (sharedPreferences.getBoolean("has_pending_shared_content", false) &&
+            !sharedPreferences.getBoolean("shared_content_processed", false)) {
+
+            sharedPreferences.edit {
+                putBoolean("shared_content_processed", true)
+            }
+
             binding.root.postDelayed({
                 processStoredSharedHomework()
                 processStoredSharedExam()
@@ -268,7 +274,11 @@ class MainActivity : BaseActivity() {
 
         binding.root.postDelayed({
             hasProcessedSharedContent = false
-        }, 5000)
+            sharedPreferences.edit {
+                putBoolean("shared_content_processed", false)
+                putBoolean("has_pending_shared_content", false)
+            }
+        }, 10000)
     }
 
     private fun navigateToStartupPage() {
@@ -362,10 +372,7 @@ class MainActivity : BaseActivity() {
         if (intent.action == Intent.ACTION_VIEW && intent.data != null) {
             val uri = intent.data!!
 
-            if (isProcessingSharedContent || hasProcessedSharedContent) {
-                L.d("MainActivity", "Already processing or processed shared content - ignoring")
-                return true
-            }
+            L.d("MainActivity", "Processing shared content URI: $uri")
 
             val isHomework = isHomeworkFile(uri)
             val isExam = isExamFile(uri)
@@ -383,11 +390,9 @@ class MainActivity : BaseActivity() {
                 return false
             }
 
-            isProcessingSharedContent = true
-            hasProcessedSharedContent = true
-
             sharedPreferences.edit {
                 putString(if (isHomework) "pending_shared_homework_uri" else "pending_shared_exam_uri", uri.toString())
+                putBoolean("has_pending_shared_content", true)
             }
 
             binding.root.postDelayed({
@@ -405,11 +410,6 @@ class MainActivity : BaseActivity() {
                             .setPopUpTo(R.id.nav_home, false)
                             .build())
                     }
-
-                    binding.root.postDelayed({
-                        cleanupSharedContentState()
-                    }, 100)
-
                 } catch (e: Exception) {
                     L.e("MainActivity", "Error handling shared content", e)
                     Toast.makeText(this, getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
@@ -425,6 +425,12 @@ class MainActivity : BaseActivity() {
     private fun cleanupSharedContentState() {
         isProcessingSharedContent = false
         hasProcessedSharedContent = false
+        sharedPreferences.edit {
+            putBoolean("shared_content_processed", false)
+            putBoolean("has_pending_shared_content", false)
+            remove("pending_shared_homework_uri")
+            remove("pending_shared_exam_uri")
+        }
     }
 
     private fun isHomeworkFile(uri: Uri): Boolean {
@@ -478,19 +484,48 @@ class MainActivity : BaseActivity() {
     private fun processStoredSharedExam() {
         val uriString = sharedPreferences.getString("pending_shared_exam_uri", null)
         if (uriString != null && !isProcessingSharedContent) {
-            sharedPreferences.edit { remove("pending_shared_exam_uri") }
+            L.d("MainActivity", "Processing stored shared exam: $uriString")
+
+            isProcessingSharedContent = true
 
             try {
                 val navController = findNavController(R.id.nav_host_fragment_content_main)
                 val bundle = Bundle().apply {
                     putString("shared_exam_uri", uriString)
                 }
-                navController.navigate(R.id.nav_klausuren, bundle, androidx.navigation.NavOptions.Builder()
-                    .setPopUpTo(R.id.nav_home, false)
-                    .build())
+
+                if (navController.currentDestination?.id != R.id.nav_klausuren) {
+                    navController.navigate(R.id.nav_klausuren, bundle, androidx.navigation.NavOptions.Builder()
+                        .setPopUpTo(R.id.nav_home, false)
+                        .build())
+                } else {
+                    val currentFragment = supportFragmentManager.primaryNavigationFragment
+                        ?.childFragmentManager?.fragments?.firstOrNull()
+
+                    if (currentFragment is com.thecooker.vertretungsplaner.ui.exams.ExamFragment) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            currentFragment.arguments?.putString("shared_exam_uri", uriString)
+                            currentFragment.handleSharedExam()
+                        }, 50)
+                    }
+                }
+
+                sharedPreferences.edit {
+                    remove("pending_shared_exam_uri")
+                }
+
             } catch (e: Exception) {
                 L.e("MainActivity", "Error processing stored shared exam", e)
                 Toast.makeText(this, getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+
+                sharedPreferences.edit {
+                    remove("pending_shared_exam_uri")
+                    putBoolean("shared_content_processed", true)
+                }
+            } finally {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    isProcessingSharedContent = false
+                }, 500)
             }
         }
     }

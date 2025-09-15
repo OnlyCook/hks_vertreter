@@ -1787,7 +1787,7 @@ class GalleryFragment : Fragment() {
 
             val displaySubject = translateSubjectForDisplay(timetableEntry.subject)
 
-            val mainInfo = if (teacherRoomDisplay.isNotBlank()) {
+            if (teacherRoomDisplay.isNotBlank()) {
                 "$displaySubject | $teacherRoomDisplay"
             } else {
                 displaySubject
@@ -2044,9 +2044,14 @@ class GalleryFragment : Fragment() {
             append(getString(R.string.gall_time, startTime, endTime, lesson)).append("<br/>")
             append("<br/>")
 
-            // strikethrough subject when cancelled
-            val subjectText = if (isCancelled) "<s>${timetableEntry.subject}</s>" else timetableEntry.subject
-            append(getString(R.string.gall_subject_details, subjectText)).append("<br/>")
+            val displaySubject = translateSubjectForDisplay(timetableEntry.subject)
+            val subjectText = if (isCancelled) "<s>$displaySubject</s>" else displaySubject
+            if (timetableEntry.subject == InternalConstants.FREE_LESSON) {
+                append(subjectText).append("<br/>")
+            }
+            else {
+                append(getString(R.string.gall_subject_details, subjectText)).append("<br/>")
+            }
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
                 val teacherText = if (hasTeacherSubstitute) {
@@ -2441,7 +2446,6 @@ class GalleryFragment : Fragment() {
 
         val cell = createStyledCell("")
         var cellText = ""
-        var hasSubstitute = false
         var hasRoomChange = false
 
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
@@ -2452,7 +2456,6 @@ class GalleryFragment : Fragment() {
             val endLesson = substitute.stundeBis ?: substitute.stunde
 
             if (lesson >= startLesson && lesson <= endLesson && substitute.fach == timetableEntry?.subject) {
-                hasSubstitute = true
                 if (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
                     substitute.art.matches(Regex("Takes place in room .*"))) {
                     hasRoomChange = true
@@ -3481,7 +3484,7 @@ class GalleryFragment : Fragment() {
 
         // vacation
         if (isDateInVacation(date)) {
-            val vacationType = determineVacationType(date)
+            val vacationType = translateVacationType(getVacationName(date))
             val vacationText = TextView(requireContext()).apply {
                 text = vacationType
                 textSize = 16f
@@ -4290,7 +4293,7 @@ class GalleryFragment : Fragment() {
 
     private fun loadRealTimePreference() {
         val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        isRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", false)
+        isRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
     }
 
     private fun loadWeekendPreference() {
@@ -5045,11 +5048,12 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun translateSubjectForDisplay(internalSubject: String): String {
-        return when (internalSubject.uppercase()) {
-            InternalConstants.FREE_LESSON.uppercase(), "FREISTUNDE", "FREE LESSON" -> getString(R.string.slide_free_lesson)
-            InternalConstants.NO_SCHOOL.uppercase(), "KEIN UNTERRICHT", "NO SCHOOL" -> getString(R.string.gall_no_school)
-            else -> internalSubject
+    private fun translateSubjectForDisplay(subject: String): String {
+        return when {
+            subject == InternalConstants.FREE_LESSON -> getString(R.string.slide_free_lesson)
+            subject == InternalConstants.NO_SCHOOL -> getString(R.string.gall_no_school)
+            subject.contains("_BREAK") -> translateVacationType(subject)
+            else -> subject
         }
     }
 
@@ -5619,7 +5623,7 @@ class GalleryFragment : Fragment() {
 
     private fun showRealTimeIndicatorElements(indicatorPosition: Int, currentTime: Calendar) {
         val calendarWidth = calendarGrid.width
-        val leftMargin = if (isDayView) 170 else 70
+        val leftMargin = 70
         val availableWidth = maxOf(calendarWidth - leftMargin - 20, 200)
 
         realTimeIndicatorHorizontalLine?.let { line ->
@@ -5784,6 +5788,42 @@ class GalleryFragment : Fragment() {
             }
         }
 
+        if (isDateInVacation(currentDay.time)) {
+            return null
+        }
+
+        val userOccasions = getUserSpecialOccasionsForDate(currentDay.time)
+        val calendarInfo = calendarDataManager.getCalendarInfoForDate(currentDay.time)
+
+        val isHoliday = userOccasions.any { isSpecialOccasionHoliday(it) } ||
+                (calendarInfo?.isSpecialDay == true && calendarInfo.specialNote.isNotBlank() && (
+                        calendarInfo.specialNote.contains("Feiertag", ignoreCase = true) ||
+                                calendarInfo.specialNote.contains("Ferientag", ignoreCase = true) ||
+                                calendarInfo.specialNote.contains("Holiday", ignoreCase = true)
+                        ))
+
+        if (isHoliday) {
+            return null
+        }
+
+        val dayOfWeek = currentDay.get(Calendar.DAY_OF_WEEK)
+        if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
+            val dayKey = getWeekdayKey(getDayOfWeekIndex(currentDay.time))
+            val dayTimetable = timetableData[dayKey] ?: return null
+
+            val hasActiveLessons = dayTimetable.any { (_, entry) ->
+                !entry.isBreak &&
+                        entry.subject != InternalConstants.FREE_LESSON &&
+                        entry.subject != InternalConstants.NO_SCHOOL &&
+                        !entry.subject.contains("_BREAK") &&
+                        entry.subject.isNotBlank()
+            }
+
+            if (!hasActiveLessons) {
+                return null
+            }
+        }
+
         val dayKey = getWeekdayKey(getDayOfWeekIndex(currentDay.time))
         val dayTimetable = timetableData[dayKey] ?: return null
 
@@ -5791,6 +5831,7 @@ class GalleryFragment : Fragment() {
             !entry.isBreak &&
                     entry.subject != InternalConstants.FREE_LESSON &&
                     entry.subject != InternalConstants.NO_SCHOOL &&
+                    !entry.subject.contains("_BREAK") &&
                     entry.subject.isNotBlank()
         }
 
@@ -5805,7 +5846,7 @@ class GalleryFragment : Fragment() {
             val endLesson = substitute.stundeBis ?: substitute.stunde
 
             if (substitute.art.contains("Entfällt", ignoreCase = true) &&
-                !substitute.art.contains("stattdessen", ignoreCase = true)) { // hope this wont create issues
+                !substitute.art.contains("stattdessen", ignoreCase = true)) {
 
                 for (lesson in startLesson..endLesson) {
                     val timetableEntry = dayTimetable[lesson]
@@ -5818,11 +5859,9 @@ class GalleryFragment : Fragment() {
 
         val sortedScheduledLessons = scheduledLessons.keys.sorted()
 
-        // find first not cancelled lesson
         val firstActiveLesson = sortedScheduledLessons.firstOrNull { it !in cancelledLessons }
             ?: return null
 
-        // find last not cancelled lesson
         val lastActiveLesson = sortedScheduledLessons.lastOrNull { it !in cancelledLessons }
             ?: return null
 
@@ -5846,8 +5885,8 @@ class GalleryFragment : Fragment() {
         val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
 
         return when {
-            currentMinutes < startMinutes -> null // before first active lesson -> show only time
-            currentMinutes >= endMinutes -> "100%" // after last active lesson -> 100%
+            currentMinutes < startMinutes -> null
+            currentMinutes >= endMinutes -> "100%"
             else -> {
                 var totalActiveDuration = 0
                 var completedDuration = 0

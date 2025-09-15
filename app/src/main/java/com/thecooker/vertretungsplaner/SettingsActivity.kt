@@ -1845,6 +1845,7 @@ class SettingsActivity : BaseActivity() {
                 putExtra(SubjectSelectionActivity.EXTRA_ROOMS, allExtractedRooms.toTypedArray())
                 putExtra(SubjectSelectionActivity.EXTRA_SCHULJAHR, schuljahr)
                 putExtra(SubjectSelectionActivity.EXTRA_KLASSE, klasse)
+                putExtra(SubjectSelectionActivity.EXTRA_IS_EDITING_MODE, true)
             }
 
             startActivityForResult(intent, SUBJECT_SELECTION_REQUEST_CODE)
@@ -2852,6 +2853,7 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
+
     private fun showFullBackupImportConfirmationDialog(content: String, selectedSections: Set<String>) {
         val sectionNames = listOf(
             "TIMETABLE_DATA" to getString(R.string.set_act_timetable),
@@ -2865,15 +2867,16 @@ class SettingsActivity : BaseActivity() {
         val selectedSectionsList = selectedSections.mapNotNull { sectionNames[it] }
         val sectionText = selectedSectionsList.joinToString("\n• ", "• ")
 
-        val message = """
-        ${getString(R.string.set_act_backup_sections_restore)}
+        val message = buildString {
+            append(getString(R.string.set_act_backup_sections_restore))
+            append("\n\n")
+            append(sectionText)
+            append("\n\n")
+            append(getString(R.string.set_act_backup_data_replaced))
+            append("\n\n")
+            append(getString(R.string.set_act_backup_no_undo))
+        }
 
-        $sectionText
-
-        ${getString(R.string.set_act_backup_data_replaced)}
-
-        ${getString(R.string.set_act_backup_no_undo)}
-    """.trimIndent()
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_backup_dialog_title))
             .setMessage(message)
@@ -2917,10 +2920,6 @@ class SettingsActivity : BaseActivity() {
                             }
 
                             Toast.makeText(this@SettingsActivity, errorMessage, Toast.LENGTH_LONG).show()
-                        }
-
-                        if (result.restoredSections > 0) {
-                            // restart dialog -> dismissed separately
                         }
                     }
 

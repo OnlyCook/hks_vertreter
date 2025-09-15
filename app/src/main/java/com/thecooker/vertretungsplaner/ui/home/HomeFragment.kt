@@ -2186,24 +2186,11 @@ class HomeFragment : Fragment() {
         val originalBackground = targetView.background
         val highlightColor = resources.getColor(android.R.color.holo_orange_light, null)
 
-        val flashDuration = 400L
-        var flashCount = 0
+        targetView.setBackgroundColor(highlightColor)
 
-        fun flashNext() {
-            if (flashCount < 8) { // 4 flashes
-                if (flashCount % 2 == 0) {
-                    targetView.setBackgroundColor(highlightColor)
-                } else {
-                    targetView.background = originalBackground
-                }
-                flashCount++
-                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
-            } else {
-                targetView.background = originalBackground
-            }
-        }
-
-        flashNext()
+        Handler(Looper.getMainLooper()).postDelayed({  // restore after 2 seconds
+            targetView.background = originalBackground
+        }, 2000)
     }
 
     private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {

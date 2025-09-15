@@ -1577,17 +1577,34 @@ class SlideshowFragment : Fragment() {
             if (sharedHomework != null && sharedHomework.type == "homework") {
                 val homeworkEntry = shareHelper.convertToHomeworkEntry(sharedHomework)
 
-                if (homeworkEntry != null) {
+                if (homeworkEntry != null) { // clear already to prevent retry
+                    sharedPreferences.edit {
+                        remove("pending_shared_homework_uri")
+                        putBoolean("shared_content_processed", true)
+                    }
+
                     showSharedHomeworkDialog(homeworkEntry, sharedHomework.sharedBy)
                 } else {
                     Toast.makeText(requireContext(), getString(R.string.share_parse_error), Toast.LENGTH_LONG).show()
+                    sharedPreferences.edit {
+                        remove("pending_shared_homework_uri")
+                        putBoolean("shared_content_processed", true)
+                    }
                 }
             } else {
                 Toast.makeText(requireContext(), getString(R.string.share_invalid_file), Toast.LENGTH_LONG).show()
+                sharedPreferences.edit {
+                    remove("pending_shared_homework_uri")
+                    putBoolean("shared_content_processed", true)
+                }
             }
         } catch (e: Exception) {
             L.e(TAG, "Error handling shared homework", e)
             Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+            sharedPreferences.edit {
+                remove("pending_shared_homework_uri")
+                putBoolean("shared_content_processed", true)
+            }
         }
     }
 
@@ -1629,7 +1646,12 @@ class SlideshowFragment : Fragment() {
                     else getString(R.string.slide_homework_added),
                     Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton(getString(R.string.cancel), null)
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                // do nothing as was cancelled already
+            }
+            .setOnCancelListener {
+                // same here
+            }
             .show()
     }
 
@@ -1780,24 +1802,11 @@ class SlideshowFragment : Fragment() {
         val originalBackground = itemView.background
         val highlightColor = resources.getColor(android.R.color.holo_blue_light)
 
-        val flashDuration = 300L
-        var flashCount = 0
+        itemView.setBackgroundColor(highlightColor)
 
-        fun flashNext() {
-            if (flashCount < 6) { // 3 flashes
-                if (flashCount % 2 == 0) {
-                    itemView.setBackgroundColor(highlightColor)
-                } else {
-                    itemView.background = originalBackground
-                }
-                flashCount++
-                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
-            } else {
-                itemView.background = originalBackground
-            }
-        }
-
-        flashNext()
+        Handler(Looper.getMainLooper()).postDelayed({ // restore after 2 seconds
+            itemView.background = originalBackground
+        }, 2000)
     }
 
     private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {

@@ -43,6 +43,7 @@ import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.utils.ExamShareHelper
 import android.provider.Settings
 import android.graphics.Color
+import androidx.core.net.toUri
 
 class ExamFragment : Fragment() {
 
@@ -69,6 +70,7 @@ class ExamFragment : Fragment() {
     private lateinit var backupManager: BackupManager
 
     private lateinit var examShareHelper: ExamShareHelper
+    private var isProcessingSharedExam = false
 
     data class ExamEntry(
         val id: String = UUID.randomUUID().toString(),
@@ -2609,28 +2611,9 @@ class ExamFragment : Fragment() {
         return statusText
     }
 
-    private fun handleSharedExam() {
+    fun handleSharedExam() {
         arguments?.getString("shared_exam_uri")?.let { uriString ->
-            try {
-                val uri = Uri.parse(uriString)
-                val sharedExam = examShareHelper.parseSharedExam(uri)
-
-                if (sharedExam != null) {
-                    val examEntry = examShareHelper.convertToExamEntry(sharedExam)
-                    if (examEntry != null) {
-                        showSharedExamDialog(examEntry, sharedExam.sharedBy)
-                    } else {
-                        Toast.makeText(requireContext(), getString(R.string.share_exam_invalid), Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    Toast.makeText(requireContext(), getString(R.string.share_exam_parse_error), Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                L.e(TAG, "Error handling shared exam", e)
-                Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
-            }
-
-            // Clear the argument to prevent reprocessing
+            handleSharedExamFromUri(uriString)
             arguments?.remove("shared_exam_uri")
         }
     }
@@ -2642,6 +2625,7 @@ class ExamFragment : Fragment() {
 
         if (!hasCompletedSetup || selectedKlasse.isNullOrEmpty() || selectedBildungsgang.isNullOrEmpty()) {
             Toast.makeText(requireContext(), getString(R.string.share_setup_required), Toast.LENGTH_LONG).show()
+            clearSharedContentState()
             return
         }
 
@@ -2668,18 +2652,36 @@ class ExamFragment : Fragment() {
             .setTitle(getString(R.string.share_exam_received_title))
             .setMessage(message)
             .setPositiveButton(if (existingExam != null) getString(R.string.share_overwrite) else getString(R.string.share_add)) { _, _ ->
-                if (existingExam != null) {
-                    existingExam.note = sharedExam.note
-                    sortExams()
-                    saveExams()
-                    filterExams(searchBar.text.toString())
-                    Toast.makeText(requireContext(), getString(R.string.share_exam_updated), Toast.LENGTH_SHORT).show()
-                } else {
-                    addExam(sharedExam.subject, sharedExam.date, sharedExam.note, sharedExam.mark)
-                    Toast.makeText(requireContext(), getString(R.string.share_exam_added), Toast.LENGTH_SHORT).show()
+                try {
+                    if (existingExam != null) {
+                        existingExam.note = sharedExam.note
+                        sortExams()
+                        saveExams()
+                        filterExams(searchBar.text.toString())
+                        Toast.makeText(requireContext(), getString(R.string.share_exam_updated), Toast.LENGTH_SHORT).show()
+                    } else {
+                        addExam(sharedExam.subject, sharedExam.date, sharedExam.note, sharedExam.mark)
+                        Toast.makeText(requireContext(), getString(R.string.share_exam_added), Toast.LENGTH_SHORT).show()
+                    }
+                    clearSharedContentState()
+                } catch (e: Exception) {
+                    L.e(TAG, "Error adding/updating shared exam", e)
+                    Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+                    clearSharedContentState()
                 }
             }
-            .setNegativeButton(getString(R.string.cancel), null)
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                L.d(TAG, "User cancelled shared exam import")
+                clearSharedContentState()
+            }
+            .setOnCancelListener {
+                L.d(TAG, "Shared exam dialog was cancelled")
+                clearSharedContentState()
+            }
+            .setOnDismissListener {
+                L.d(TAG, "Shared exam dialog was dismissed")
+                clearSharedContentState()
+            }
             .show()
     }
 
@@ -2724,7 +2726,12 @@ class ExamFragment : Fragment() {
     }
 
     fun highlightAndShowExam(examId: String) {
-        val exam = examList.find { it.id == examId }
+        var exam = examList.find { it.id == examId }
+
+        if (exam == null) {
+            exam = ExamManager.findExamById(examId)
+        }
+
         if (exam == null) {
             Toast.makeText(requireContext(), getString(R.string.exam_exam_not_found), Toast.LENGTH_SHORT).show()
             return
@@ -2737,6 +2744,8 @@ class ExamFragment : Fragment() {
             val newPosition = filteredExamList.indexOf(exam)
             if (newPosition != -1) {
                 highlightAndScrollToPosition(newPosition, exam)
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.exam_exam_not_in_current_list), Toast.LENGTH_SHORT).show()
             }
         } else {
             highlightAndScrollToPosition(position, exam)
@@ -2831,24 +2840,11 @@ class ExamFragment : Fragment() {
         val originalBackground = itemView.background
         val highlightColor = resources.getColor(android.R.color.holo_blue_light)
 
-        val flashDuration = 300L
-        var flashCount = 0
+        itemView.setBackgroundColor(highlightColor)
 
-        fun flashNext() {
-            if (flashCount < 6) { // 3 simple flashes
-                if (flashCount % 2 == 0) {
-                    itemView.setBackgroundColor(highlightColor)
-                } else {
-                    itemView.background = originalBackground
-                }
-                flashCount++
-                Handler(Looper.getMainLooper()).postDelayed({ flashNext() }, flashDuration)
-            } else {
-                itemView.background = originalBackground
-            }
-        }
-
-        flashNext()
+        Handler(Looper.getMainLooper()).postDelayed({ // restore after 2 seconds (aint working but it is what it is)
+            itemView.background = originalBackground
+        }, 2000)
     }
 
     private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
@@ -2867,6 +2863,18 @@ class ExamFragment : Fragment() {
         L.d("ExamFragment", "Arguments: $arguments")
 
         arguments?.getString("shared_exam_uri")?.let { uriString ->
+            L.d("ExamFragment", "Processing shared exam URI: $uriString")
+
+            if (isLoading) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    handleSharedExamFromUri(uriString)
+                }, 100)
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    handleSharedExamFromUri(uriString)
+                }, 100)
+            }
+
             arguments?.remove("shared_exam_uri")
         }
 
@@ -2886,6 +2894,48 @@ class ExamFragment : Fragment() {
             L.d("ExamFragment", "Clearing arguments to prevent reuse")
             arguments?.clear()
             arguments = Bundle()
+        }
+    }
+
+    private fun handleSharedExamFromUri(uriString: String) {
+        if (isProcessingSharedExam) {
+            L.d(TAG, "Already processing shared exam, ignoring duplicate call")
+            return
+        }
+
+        isProcessingSharedExam = true
+
+        try {
+            val uri = uriString.toUri()
+            val sharedExam = examShareHelper.parseSharedExam(uri)
+
+            if (sharedExam != null) {
+                val examEntry = examShareHelper.convertToExamEntry(sharedExam)
+                if (examEntry != null) {
+                    showSharedExamDialog(examEntry, sharedExam.sharedBy)
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.share_exam_invalid), Toast.LENGTH_LONG).show()
+                    clearSharedContentState()
+                }
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.share_exam_parse_error), Toast.LENGTH_LONG).show()
+                clearSharedContentState()
+            }
+        } catch (e: Exception) {
+            L.e(TAG, "Error handling shared exam", e)
+            Toast.makeText(requireContext(), getString(R.string.share_error_generic), Toast.LENGTH_LONG).show()
+            clearSharedContentState()
+        } finally {
+            Handler(Looper.getMainLooper()).postDelayed({
+                isProcessingSharedExam = false
+            }, 1000)
+        }
+    }
+
+    private fun clearSharedContentState() {
+        sharedPreferences.edit {
+            remove("pending_shared_exam_uri")
+            putBoolean("shared_content_processed", true)
         }
     }
 

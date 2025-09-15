@@ -35,4 +35,12 @@ object ExamManager {
         val targetDate = parseDateFromString(dateStr)?.let { normalizeDate(it) } ?: return emptyList()
         return examList.filter { normalizeDate(it.date) == targetDate }
     }
+
+    fun findExamById(examId: String): ExamFragment.ExamEntry? {
+        return examList.find { it.id == examId }
+    }
+
+    fun getAllExams(): List<ExamFragment.ExamEntry> {
+        return examList.toList()
+    }
 }

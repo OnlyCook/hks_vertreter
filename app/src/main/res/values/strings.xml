@@ -299,7 +299,7 @@
     <string name="dialog_sec_select_all">Alle auswählen</string>
     <string name="dialog_sec_deselect_all">Alle abwählen</string>
     <string name="dialog_sec_cancel">Abbrechen</string>
-    <string name="dialog_sec_save">Speichern</string>
+    <string name="dialog_sec_save">Fortfahren</string>
 
     <!-- DIALOG_SUBJECT_DETAILS.XML -->
     <string name="dia_sub_det_subject_name">Mathematik</string>
@@ -615,6 +615,8 @@
     <string name="sub_sel_return">Zurück</string>
     <string name="sub_sel_subject_name_updated">Fach \'%s\' wurde aktualisiert</string>
     <string name="sub_sel_subject_identical_with_existing">Fach \'%s\' mit identischen Daten existiert bereits</string>
+    <string name="sub_sel_save">Speichern</string>
+    <string name="sub_sel_save_with_count">Speichern (%d)</string>
 
     <!-- SETUPACTIVITY.KT -->
     <string name="setup_choose_educational_program">Bildungsgang auswählen</string>
@@ -629,6 +631,12 @@
     <string name="setup_email_body">Hallo,\n\nmir fehlt folgender Bildungsgang/Klasse in der App:\n\nBildungsgang: \nKlasse: </string>
     <string name="setup_selection_saved">Auswahl gespeichert: %s - %s</string>
     <string name="setup_no_email_app_found">Keine E-Mail-App gefunden</string>
+    <string name="setup_loading_classes">Klassen werden geladen</string>
+    <string name="setup_loading_classes_message">Aktuelle Klassendaten werden vom Server abgerufen…</string>
+    <string name="setup_fetch_error_title">Verbindungsfehler</string>
+    <string name="setup_fetch_error_message">Klassendaten konnten nicht vom Server abgerufen werden. Du kannst die Offline-Daten verwenden (diese werden nicht aktiv aktualisiert) oder es erneut versuchen.</string>
+    <string name="setup_use_offline_data">Offline-Daten verwenden</string>
+    <string name="setup_retry">Erneut versuchen</string>
 
     <!-- BACKUPMANAGER.KT -->
     <string name="backup_no_data_in_backup_found">Keine Daten in der Sicherung gefunden</string>
@@ -753,7 +761,7 @@
     <string name="home_restart_button">App neustarten</string>
     <string name="home_cancel_button">Abbrechen</string>
     <string name="home_network_error_using_cache">Keine Internetverbindung, Cache wird geladen</string>
-    <string name="home_offline_mode">Offline-Modus</string>
+    <string name="home_offline_mode">Offline</string>
     <string name="home_substitute_not_found">Vertretungsplan-Eintrag nicht gefunden</string>
     <string name="home_substitute_highlight_error">Fehler beim Hervorheben des Vertretunsplan-Eintrags</string>
 
@@ -1005,6 +1013,7 @@
         <item quantity="other">Noch %d Jahre und %d Monate bis zur Klausur</item>
     </plurals>
     <string name="exam_exam_not_found">Klausur nicht gefunden</string>
+    <string name="exam_exam_not_in_current_list">Klausur nicht in der Liste enthalten</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen...</string>

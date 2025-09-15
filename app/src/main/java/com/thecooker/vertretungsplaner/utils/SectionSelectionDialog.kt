@@ -72,6 +72,18 @@ class SectionSelectionDialog(
         return view
     }
 
+    private fun translateSectionDisplayName(originalDisplayName: String): String {
+        return when (originalDisplayName.lowercase()) {
+            "stundenplan-daten" -> context.getString(R.string.bac_pro_timetable_data)
+            "kalender-daten" -> context.getString(R.string.bac_pro_calendar_data)
+            "hausaufgaben" -> context.getString(R.string.bac_pro_homework_data)
+            "klausuren" -> context.getString(R.string.bac_pro_exam_data)
+            "noten" -> context.getString(R.string.bac_pro_grades_data)
+            "app-einstellungen" -> context.getString(R.string.bac_pro_app_settings_data)
+            else -> originalDisplayName
+        }
+    }
+
     private fun setupSectionCheckboxes() {
         availableSections.forEach { section ->
             val checkboxView = LayoutInflater.from(context).inflate(R.layout.item_section_checkbox, sectionsContainer, false)
@@ -79,7 +91,8 @@ class SectionSelectionDialog(
             val checkBox = checkboxView.findViewById<CheckBox>(R.id.sectionCheckbox)
             val statusText = checkboxView.findViewById<TextView>(R.id.statusText)
 
-            checkBox.text = section.displayName
+            val translatedName = translateSectionDisplayName(section.displayName)
+            checkBox.text = translatedName
 
             val canBeToggled = when {
                 isExport -> true

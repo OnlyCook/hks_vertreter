@@ -80,15 +80,19 @@ class SubjectSelectionActivity : BaseActivity() {
         const val EXTRA_ROOMS = "rooms"
         const val EXTRA_SCHULJAHR = "schuljahr"
         const val EXTRA_KLASSE = "klasse"
+        const val EXTRA_IS_EDITING_MODE = "is_editing_mode"
         const val RESULT_SELECTED_SUBJECTS = "selected_subjects"
         private const val TAG = "SubjectSelection"
     }
+
+    private var isEditingMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_subject_selection)
 
         sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        isEditingMode = intent.getBooleanExtra(EXTRA_IS_EDITING_MODE, false)
 
         initializeViews()
         setupToolbar()
@@ -110,17 +114,21 @@ class SubjectSelectionActivity : BaseActivity() {
     }
 
     private fun handleBackPress() {
-        if (selectedSubjects.isNotEmpty()) {
-            AlertDialog.Builder(this)
-                .setTitle(getString(R.string.sub_sel_discard_selection))
-                .setMessage(getString(R.string.sub_sel_discard_confirm, selectedSubjects.size))
-                .setPositiveButton(getString(R.string.sub_sel_yes_discard)) { _, _ ->
-                    finish()
-                }
-                .setNegativeButton(getString(R.string.sub_sel_back_to_selection), null)
-                .show()
+        if (isEditingMode) {
+            finish() // just return and skip confirmation
         } else {
-            finish()
+            if (selectedSubjects.isNotEmpty()) {
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.sub_sel_discard_selection))
+                    .setMessage(getString(R.string.sub_sel_discard_confirm, selectedSubjects.size))
+                    .setPositiveButton(getString(R.string.sub_sel_yes_discard)) { _, _ ->
+                        finish()
+                    }
+                    .setNegativeButton(getString(R.string.sub_sel_back_to_selection), null)
+                    .show()
+            } else {
+                finish()
+            }
         }
     }
 
@@ -768,9 +776,13 @@ class SubjectSelectionActivity : BaseActivity() {
         tvTotalCount.text = filteredSubjectTriplets.size.toString()
 
         btnConfirm.text = if (selectedSubjects.isEmpty()) {
-            getString(R.string.sub_sel_confirm)
+            if (isEditingMode) getString(R.string.sub_sel_save) else getString(R.string.sub_sel_confirm)
         } else {
-            getString(R.string.sub_sel_confirm_with_count, selectedSubjects.size)
+            if (isEditingMode) {
+                getString(R.string.sub_sel_save_with_count, selectedSubjects.size)
+            } else {
+                getString(R.string.sub_sel_confirm_with_count, selectedSubjects.size)
+            }
         }
 
         val visibleSelectedCount = selectedSubjects.intersect(filteredSubjectTriplets.map { it.subject }.toSet()).size

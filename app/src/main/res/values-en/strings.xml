@@ -188,7 +188,7 @@
     <string name="act_set_school_name">Heinrich-Kleyer-School</string>
     <string name="act_set_app_purpose">Student Helper App</string>
     <string name="act_set_welcome_text">Welcome! Please first select your education program and your class to use the app.</string>
-    <string name="act_set_missing_program">Education program/class missing?</string>
+    <string name="act_set_missing_program">Something missing?</string>
     <string name="act_set_program_select">Select education program</string>
     <string name="act_set_program_hint">Choose your education program from the list:</string>
     <string name="act_set_class_select">Select class</string>
@@ -299,7 +299,7 @@
     <string name="dialog_sec_select_all">Select all</string>
     <string name="dialog_sec_deselect_all">Deselect all</string>
     <string name="dialog_sec_cancel">Cancel</string>
-    <string name="dialog_sec_save">Save</string>
+    <string name="dialog_sec_save">Continue</string>
 
     <!-- DIALOG_SUBJECT_DETAILS.XML -->
     <string name="dia_sub_det_subject_name">Mathematics</string>
@@ -615,6 +615,8 @@
     <string name="sub_sel_return">Back</string>
     <string name="sub_sel_subject_name_updated">Subject \'%s\' has been updated</string>
     <string name="sub_sel_subject_identical_with_existing">Subject \'%s\' with identical data already exists</string>
+    <string name="sub_sel_save">Save</string>
+    <string name="sub_sel_save_with_count">Save (%d)</string>
 
     <!-- SETUPACTIVITY.KT -->
     <string name="setup_choose_educational_program">Choose education program</string>
@@ -629,6 +631,12 @@
     <string name="setup_email_body">Hello,\n\nI\'m missing the following education program/class in the app:\n\nEducation program: \nClass: </string>
     <string name="setup_selection_saved">Selection saved: %s - %s</string>
     <string name="setup_no_email_app_found">No email app found</string>
+    <string name="setup_loading_classes">Loading Classes</string>
+    <string name="setup_loading_classes_message">Fetching latest class data from server...</string>
+    <string name="setup_fetch_error_title">Connection Error</string>
+    <string name="setup_fetch_error_message">Could not fetch class data from server. You can use the offline data, but please note it is not actively maintained, or try again.</string>
+    <string name="setup_use_offline_data">Use Offline Data</string>
+    <string name="setup_retry">Retry</string>
 
     <!-- BACKUPMANAGER.KT -->
     <string name="backup_no_data_in_backup_found">No data found in backup</string>
@@ -753,7 +761,7 @@
     <string name="home_restart_button">Restart app</string>
     <string name="home_cancel_button">Cancel</string>
     <string name="home_network_error_using_cache">No internet connection, loading cached data</string>
-    <string name="home_offline_mode">Offline mode</string>
+    <string name="home_offline_mode">Offline</string>
     <string name="home_substitute_not_found">Substitute entry not found</string>
     <string name="home_substitute_highlight_error">Error highlighting substitute entry</string>
 
@@ -1005,6 +1013,7 @@
         <item quantity="other">%d years and %d months until exam</item>
     </plurals>
     <string name="exam_exam_not_found">Couldn\'t find exam</string>
+    <string name="exam_exam_not_in_current_list">Exam not in the current list</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Loading calendar...</string>

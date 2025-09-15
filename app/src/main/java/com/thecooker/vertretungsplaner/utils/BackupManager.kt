@@ -579,6 +579,8 @@ class BackupManager(private val context: Context) {
         val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
         val calendarRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", false)
         val calendarIncludeWeekends = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
+        val autoDetectLang = sharedPreferences.getBoolean("language_auto_detect", true)
+        val savedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -605,6 +607,8 @@ class BackupManager(private val context: Context) {
             appendLine("FOLLOW_SYSTEM_THEME=$followSystemTheme")
             appendLine("CALENDAR_REAL_TIME_ENABLED=$calendarRealTimeEnabled")
             appendLine("CALENDAR_INCLUDE_WEEKENDS=$calendarIncludeWeekends")
+            appendLine("LANGUAGE_AUTO_DETECT=$autoDetectLang")
+            appendLine("SELECTED_LANGUAGE=$savedLanguage")
         }
     }
 
@@ -731,6 +735,16 @@ class BackupManager(private val context: Context) {
                     line.startsWith("CALENDAR_INCLUDE_WEEKENDS=") -> putBoolean(
                         "calendar_include_weekends_dayview",
                         line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("LANGUAGE_AUTO_DETECT=") -> putBoolean(
+                        "language_auto_detect",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("SELECTED_LANGUAGE=") -> putString(
+                        "selected_language",
+                        line.substringAfter("=")
                     )
                 }
             }

@@ -10,6 +10,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.core.net.toUri
 import androidx.core.content.edit
+import com.thecooker.vertretungsplaner.R.string.setup_loading_classes
+import kotlinx.coroutines.*
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONArray
 
 class SetupActivity : AppCompatActivity() {
     private lateinit var spinnerBildungsgang: Spinner
@@ -19,30 +24,32 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnHilfe: Button
     private lateinit var sharedPreferences: SharedPreferences
 
+    private var fetchedBildungsgangData: Map<String, List<String>>? = null
+
     private val verifiedBildungsgang = setOf("BG") // thoroughly tested bgs
 
 	// check which one of these is "Fachschule für Technik" or "Fachhochschulreife" (custom lessons)
     private val bildungsgangData = mapOf(
         "AM" to listOf("10AM", "11AM", "12AM"),
-        "AO" to listOf("10AO1", "10AO2", "11AO1", "11AO2", "11AO3", "11AO4", "12AO1", "12AO2", "12AO3", "12AO4"),
-		"AOB" to listOf("10AOB", "11AOB", "12AOB"),
-		"AOW" to listOf("10AOW", "11AOW", "12AOW"),
+        "AO" to listOf("10AO1", "10AO2", "10AO3", "10AO4", "11AO1", "11AO2", "11AO3", "11AO4", "12AO1", "12AO2", "12AO3", "12AO4"),
+        "AOB" to listOf("11AOB", "12AOB"),
+        "AOW" to listOf("12AOW"),
         "BFS" to listOf("10BFS1", "10BFS2", "11BFS1", "11BFS2"),
-        "BG" to listOf("11BG1", "11BG2", "11BG3", "12BG1", "12BG2", "12BG3", "13BG1", "13BG2"),
+        "BG" to listOf("11BG1", "11BG2", "11BG3", "12BG1", "12BG2", "13BG1", "13BG2"),
         "BzB" to listOf("10BzB1", "10BzB2", "10BzB3"),
-        "EL" to listOf("10EL1", "10EL2", "11EL1", "11EL2", "13EL1", "13EL2"),
-        "EZ" to listOf("11EZ1", "11EZ2", "12EZ1", "12EZ2"),
+        "EL" to listOf("10EL1", "10EL2", "10EL3", "11EL1", "11EL2", "11EL3", "12EL1", "12EL2", "12ELW"),
+        "EZ" to listOf("10EZ1", "10EZ2", "11EZ1", "11EZ2", "12EZ1", "12EZ2"),
         "FOS" to listOf("11FOS1", "11FOS2", "12FOS1", "12FOS2"),
         "FS" to listOf("02FS", "03FS", "04FS"),
-        "IGS" to listOf("IGS"),
-        "IM" to listOf("10IM1", "10IM2", "11IM1", "11IM2", "12IM1", "12IM2", "13IM"),
-        "KB" to listOf("10KB1", "10KB2", "11KB1", "11KB2", "11KB3", "12KB1", "12KB2", "12KB3", "13KB1", "13KB2"),
-        "KM" to listOf("10KM1", "10KM2", "11KM1", "11KM2", "11KM3", "11KM4", "11KM5", "12KM1", "12KM2", "12KM3", "12KM4", "12KM5", "13KM1", "13KM2", "13KM3"),
-        "KOM" to listOf("10KOM", "11KOM1", "11KOM2", "12KOM1", "12KOM2", "13KOM"),
-        "ME" to listOf("10ME1", "10ME2", "11ME1", "11ME2", "11ME3", "11ME4", "12ME1", "12ME2", "12ME3", "12ME4", "13ME1", "13ME2", "13ME3"),
-        "ZM" to listOf("11ZM", "12ZM", "13ZM"),
-		"ZU" to listOf("11ZU1", "11ZU2", "12ZU1", "12ZU2", "13ZU"),
-        "ZW" to listOf("10ZW1", "10ZW2", "10ZW3", "10ZW4", "11ZW1", "11ZW2", "11ZW3", "11ZW4", "12ZW1", "12ZW2", "12ZW3", "12ZW4", "13ZW1", "13ZW2", "13ZW3")
+        "Förd" to listOf("Förd"),
+        "IM" to listOf("10IM1", "10IM2", "11IM1", "11IM2", "11IM3", "12IM1", "12IM2", "13IM"),
+        "KB" to listOf("10KB1", "10KB3", "11KB2", "11KB3", "12KB1", "12KB2", "13KB"),
+        "KM" to listOf("10KM1", "10KM2", "10KM3", "10KM4", "10KM5", "11KM1", "11KM2", "11KM3", "11KM4", "11KM5", "12KM1", "12KM2", "12KM3", "12KM4", "12KM5", "13KM1", "13KM2", "13KM3"),
+        "KOM" to listOf("10KOM", "11KOM", "12KOM", "13KOM"),
+        "ME" to listOf("10ME1", "10ME2", "10ME3", "10ME4", "11ME1", "11ME2", "11ME3", "11ME4", "12ME1", "12ME2", "12ME3", "12ME4", "13ME1", "13ME2"),
+        "ZM" to listOf("11ZM", "12ZM"),
+        "ZU" to listOf("12ZU1"),
+        "ZW" to listOf("10ZW1", "10ZW2", "10ZW4", "11ZW1", "11ZW2", "11ZW3", "11ZW4", "12ZW1", "12ZW2", "12ZW4", "13ZW1", "13ZW2")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,7 +65,9 @@ class SetupActivity : AppCompatActivity() {
         }
 
         initializeViews()
-        setupBildungsgangSpinner()
+
+        fetchClassesFromAPI() // fetch classes/bildungsgänge
+
         setupListeners()
         setupLanguageButton()
     }
@@ -73,7 +82,7 @@ class SetupActivity : AppCompatActivity() {
 
     private fun setupBildungsgangSpinner() {
         val bildungsgangOptions = mutableListOf(getString(R.string.act_set_program_select))
-        bildungsgangOptions.addAll(bildungsgangData.keys)
+        bildungsgangOptions.addAll(getCurrentBildungsgangData().keys.sorted())
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, bildungsgangOptions)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -139,7 +148,7 @@ class SetupActivity : AppCompatActivity() {
 
     private fun populateKlasseSpinner(bildungsgang: String) {
         val klasseOptions = mutableListOf(getString(R.string.act_set_class_select))
-        bildungsgangData[bildungsgang]?.let { classes ->
+        getCurrentBildungsgangData()[bildungsgang]?.let { classes ->
             klasseOptions.addAll(classes)
         }
 
@@ -216,7 +225,14 @@ class SetupActivity : AppCompatActivity() {
 
     private fun showLanguageSelectionDialog() {
         val sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
-        val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+        val isAutoDetect = sharedPreferences.getBoolean("language_auto_detect", true)
+
+        val currentLanguage = if (isAutoDetect) {
+            val systemLanguage = java.util.Locale.getDefault().language
+            if (systemLanguage in arrayOf("de", "en")) systemLanguage else "de"
+        } else {
+            sharedPreferences.getString("selected_language", "de") ?: "de"
+        }
 
         val languages = arrayOf("de", "en")
         val languageNames = arrayOf(
@@ -263,5 +279,109 @@ class SetupActivity : AppCompatActivity() {
         intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
         finish()
+    }
+
+    private fun fetchClassesFromAPI() {
+        showLoadingDialog()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("https://www.heinrich-kleyer-schule.de/kontakt/nachricht-klassenlehrer/api/classes")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val responseCode = connection.responseCode
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val jsonArray = JSONArray(response)
+
+                    val classes = mutableListOf<String>()
+                    for (i in 0 until jsonArray.length()) {
+                        classes.add(jsonArray.getString(i))
+                    }
+
+                    val organizedData = organizeClassesByBildungsgang(classes)
+
+                    withContext(Dispatchers.Main) {
+                        fetchedBildungsgangData = organizedData
+                        hideLoadingDialog()
+                        setupBildungsgangSpinner()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        hideLoadingDialog()
+                        showFetchErrorDialog()
+                    }
+                }
+                connection.disconnect()
+
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    hideLoadingDialog()
+                    showFetchErrorDialog()
+                }
+            }
+        }
+    }
+
+    private fun organizeClassesByBildungsgang(classes: List<String>): Map<String, List<String>> {
+        val organized = mutableMapOf<String, MutableList<String>>()
+
+        for (className in classes) {
+            val bildungsgang = extractBildungsgang(className)
+            if (organized[bildungsgang] == null) {
+                organized[bildungsgang] = mutableListOf()
+            }
+            organized[bildungsgang]!!.add(className)
+        }
+
+        organized.forEach { (_, classList) ->
+            classList.sort()
+        }
+
+        return organized.toMap()
+    }
+
+    private fun extractBildungsgang(className: String): String {
+        // remove all digits from the class name
+        return className.replace(Regex("\\d"), "")
+    }
+
+    private var loadingDialog: AlertDialog? = null
+
+    private fun showLoadingDialog() {
+        loadingDialog = AlertDialog.Builder(this)
+            .setTitle(getString(setup_loading_classes))
+            .setMessage(getString(R.string.setup_loading_classes_message))
+            .setCancelable(false)
+            .create()
+        loadingDialog?.show()
+    }
+
+    private fun hideLoadingDialog() {
+        loadingDialog?.dismiss()
+        loadingDialog = null
+    }
+
+    private fun showFetchErrorDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.setup_fetch_error_title))
+            .setMessage(getString(R.string.setup_fetch_error_message))
+            .setNegativeButton(getString(R.string.setup_use_offline_data)) { dialog, _ ->
+                dialog.dismiss()
+                fetchedBildungsgangData = null
+                setupBildungsgangSpinner()
+            }
+            .setPositiveButton(getString(R.string.setup_retry)) { dialog, _ ->
+                dialog.dismiss()
+                fetchClassesFromAPI()
+            }
+            .show()
+    }
+
+    private fun getCurrentBildungsgangData(): Map<String, List<String>> {
+        return fetchedBildungsgangData ?: bildungsgangData
     }
 }
