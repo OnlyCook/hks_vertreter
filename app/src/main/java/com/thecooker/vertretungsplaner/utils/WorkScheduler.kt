@@ -19,6 +19,7 @@ object WorkScheduler {
         if (!autoUpdateEnabled) {
             L.d(TAG, "Auto update disabled, canceling scheduled work")
             WorkManager.getInstance(context).cancelUniqueWork(AutoUpdateWorker.WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork("${AutoUpdateWorker.WORK_NAME}_initial")
             return
         }
 
@@ -33,39 +34,31 @@ object WorkScheduler {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(
                 if (sharedPreferences.getBoolean("update_wifi_only", false)) {
-                    NetworkType.UNMETERED // WiFi only
+                    NetworkType.UNMETERED
                 } else {
-                    NetworkType.CONNECTED // Any connection
+                    NetworkType.CONNECTED
                 }
             )
+            .setRequiresBatteryNotLow(false)
+            .setRequiresDeviceIdle(false)
             .build()
 
-        val workData = workDataOf("work_type" to "update")
+        WorkManager.getInstance(context).cancelUniqueWork(AutoUpdateWorker.WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork("${AutoUpdateWorker.WORK_NAME}_initial")
 
-        // Use OneTimeWorkRequest with initial delay, then schedule periodic work
-        val initialWorkRequest = OneTimeWorkRequest.Builder(AutoUpdateWorker::class.java)
-            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .setInputData(workData)
-            .addTag("auto_update_initial")
-            .build()
-
-        // Schedule the initial work
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork(
-                "${AutoUpdateWorker.WORK_NAME}_initial",
-                ExistingWorkPolicy.REPLACE,
-                initialWorkRequest
-            )
-
-        // Schedule periodic work (WorkManager has minimum 15 minutes for periodic work)
         val periodicWorkRequest = PeriodicWorkRequest.Builder(
             AutoUpdateWorker::class.java,
             24, TimeUnit.HOURS
         )
             .setConstraints(constraints)
-            .setInputData(workData)
+            .setInputData(workDataOf("work_type" to "update"))
+            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
             .addTag("auto_update")
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                30000L, // 30 seconds
+                TimeUnit.MILLISECONDS
+            )
             .build()
 
         WorkManager.getInstance(context)
@@ -88,10 +81,7 @@ object WorkScheduler {
         }
 
         var intervalMinutes = sharedPreferences.getInt("change_notification_interval", 15)
-
-        // WorkManager requires minimum 15 minutes for periodic work
         if (intervalMinutes < 15) {
-            L.w(TAG, "Interval $intervalMinutes minutes is too short, using 15 minutes minimum")
             intervalMinutes = 15
         }
 
@@ -100,14 +90,16 @@ object WorkScheduler {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(
                 if (sharedPreferences.getBoolean("update_wifi_only", false)) {
-                    NetworkType.UNMETERED // WiFi only
+                    NetworkType.UNMETERED
                 } else {
-                    NetworkType.CONNECTED // Any connection
+                    NetworkType.CONNECTED
                 }
             )
+            .setRequiresBatteryNotLow(false)
+            .setRequiresDeviceIdle(false)
             .build()
 
-        val workData = workDataOf("work_type" to "check_changes")
+        WorkManager.getInstance(context).cancelUniqueWork(AutoUpdateWorker.CHANGE_NOTIFICATION_WORK)
 
         val workRequest = PeriodicWorkRequest.Builder(
             AutoUpdateWorker::class.java,
@@ -115,8 +107,13 @@ object WorkScheduler {
             TimeUnit.MINUTES
         )
             .setConstraints(constraints)
-            .setInputData(workData)
+            .setInputData(workDataOf("work_type" to "check_changes"))
             .addTag("change_notification")
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                30000L,
+                TimeUnit.MILLISECONDS
+            )
             .build()
 
         WorkManager.getInstance(context)
@@ -178,41 +175,33 @@ object WorkScheduler {
             return
         }
 
-        // Check if work is already scheduled to avoid unnecessary rescheduling
-        val workManager = WorkManager.getInstance(context)
-        val workInfos = workManager.getWorkInfosForUniqueWork(HomeworkReminderWorker.WORK_NAME_DUE_DATE).get()
-        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
-            L.d(TAG, "Due date reminder work already scheduled")
-            return
-        }
-
         L.d(TAG, "Scheduling due date reminder checks")
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-            .setRequiresBatteryNotLow(false) // Allow on low battery for important reminders
+            .setRequiresBatteryNotLow(false)
+            .setRequiresDeviceIdle(false)
             .build()
 
-        val workData = workDataOf("work_type" to "due_date_reminder")
+        WorkManager.getInstance(context).cancelUniqueWork(HomeworkReminderWorker.WORK_NAME_DUE_DATE)
 
-        // Use 2-hour intervals for better battery optimization while maintaining reliability
         val workRequest = PeriodicWorkRequest.Builder(
             HomeworkReminderWorker::class.java,
             2, TimeUnit.HOURS
         )
             .setConstraints(constraints)
-            .setInputData(workData)
+            .setInputData(workDataOf("work_type" to "due_date_reminder"))
             .addTag("due_date_reminder")
             .setBackoffCriteria(
-                BackoffPolicy.LINEAR,
-                15000L, // 15 seconds in milliseconds
+                BackoffPolicy.EXPONENTIAL,
+                30000L,
                 TimeUnit.MILLISECONDS
             )
             .build()
 
-        workManager.enqueueUniquePeriodicWork(
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             HomeworkReminderWorker.WORK_NAME_DUE_DATE,
-            ExistingPeriodicWorkPolicy.KEEP, // Changed from REPLACE to KEEP
+            ExistingPeriodicWorkPolicy.REPLACE,
             workRequest
         )
 
@@ -229,13 +218,6 @@ object WorkScheduler {
             return
         }
 
-        val workManager = WorkManager.getInstance(context)
-        val workInfos = workManager.getWorkInfosForUniqueWork(HomeworkReminderWorker.WORK_NAME_DAILY).get()
-        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
-            L.d(TAG, "Daily homework reminder work already scheduled")
-            return
-        }
-
         val reminderTimeString = sharedPreferences.getString("daily_homework_reminder_time", "19:00") ?: "19:00"
         L.d(TAG, "Scheduling daily homework reminder for time: $reminderTimeString")
 
@@ -247,43 +229,30 @@ object WorkScheduler {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .setRequiresBatteryNotLow(false)
+            .setRequiresDeviceIdle(false)
             .build()
 
-        val workData = workDataOf("work_type" to "daily_reminder")
+        WorkManager.getInstance(context).cancelUniqueWork(HomeworkReminderWorker.WORK_NAME_DAILY)
+        WorkManager.getInstance(context).cancelUniqueWork("${HomeworkReminderWorker.WORK_NAME_DAILY}_initial")
 
-        // Initial work request
-        val initialWorkRequest = OneTimeWorkRequest.Builder(HomeworkReminderWorker::class.java)
-            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .setInputData(workData)
-            .addTag("daily_homework_reminder_initial")
-            .build()
-
-        // Schedule the initial work
-        workManager.enqueueUniqueWork(
-            "${HomeworkReminderWorker.WORK_NAME_DAILY}_initial",
-            ExistingWorkPolicy.REPLACE,
-            initialWorkRequest
-        )
-
-        // Schedule periodic daily work
         val periodicWorkRequest = PeriodicWorkRequest.Builder(
             HomeworkReminderWorker::class.java,
             24, TimeUnit.HOURS
         )
             .setConstraints(constraints)
-            .setInputData(workData)
+            .setInputData(workDataOf("work_type" to "daily_reminder"))
+            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
             .addTag("daily_homework_reminder")
             .setBackoffCriteria(
-                BackoffPolicy.LINEAR,
-                15000L, // 15 seconds in milliseconds
+                BackoffPolicy.EXPONENTIAL,
+                30000L,
                 TimeUnit.MILLISECONDS
             )
             .build()
 
-        workManager.enqueueUniquePeriodicWork(
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             HomeworkReminderWorker.WORK_NAME_DAILY,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.REPLACE,
             periodicWorkRequest
         )
 
@@ -310,40 +279,33 @@ object WorkScheduler {
             return
         }
 
-        val workManager = WorkManager.getInstance(context)
-        val workInfos = workManager.getWorkInfosForUniqueWork(ExamReminderWorker.WORK_NAME_EXAM_REMINDER).get()
-        if (workInfos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING }) {
-            L.d(TAG, "Exam reminder work already scheduled")
-            return
-        }
-
         L.d(TAG, "Scheduling exam reminder checks")
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
             .setRequiresBatteryNotLow(false)
+            .setRequiresDeviceIdle(false)
             .build()
 
-        val workData = workDataOf("work_type" to "exam_reminder")
+        WorkManager.getInstance(context).cancelUniqueWork(ExamReminderWorker.WORK_NAME_EXAM_REMINDER)
 
-        // Changed to 4 hours for better battery optimization while maintaining reliability
         val workRequest = PeriodicWorkRequest.Builder(
             ExamReminderWorker::class.java,
             4, TimeUnit.HOURS
         )
             .setConstraints(constraints)
-            .setInputData(workData)
+            .setInputData(workDataOf("work_type" to "exam_reminder"))
             .addTag("exam_reminder")
             .setBackoffCriteria(
-                BackoffPolicy.LINEAR,
-                15000L, // 15 seconds in milliseconds
+                BackoffPolicy.EXPONENTIAL,
+                30000L,
                 TimeUnit.MILLISECONDS
             )
             .build()
 
-        workManager.enqueueUniquePeriodicWork(
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             ExamReminderWorker.WORK_NAME_EXAM_REMINDER,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.REPLACE,
             workRequest
         )
 

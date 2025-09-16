@@ -370,7 +370,11 @@ class GalleryFragment : Fragment() {
 
                     isLoading = false
                     updateCalendar()
-                    setupRealTimeUpdates()
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        startInitialHighlighting()
+                        setupRealTimeUpdates()
+                    }, 100)
                 }
             } catch (e: Exception) {
                 L.e("GalleryFragment", "Error loading calendar data", e)
@@ -1467,7 +1471,7 @@ class GalleryFragment : Fragment() {
         if (isRealTimeEnabled && !isEditMode) {
             Handler(Looper.getMainLooper()).postDelayed({
                 createRealTimeIndicator()
-            }, 100)
+            }, 60)
         }
     }
 
@@ -1519,7 +1523,11 @@ class GalleryFragment : Fragment() {
             createWeekView()
         }
 
-        startInitialHighlighting()
+        if (!isEditMode) {
+            calendarGrid.post {
+                checkAndRestoreCurrentHighlight()
+            }
+        }
     }
 
     private fun createWeekView() {
@@ -4674,6 +4682,38 @@ class GalleryFragment : Fragment() {
         currentHighlightedCell = null
     }
 
+    private fun checkAndRestoreCurrentHighlight() {
+        val currentTime = Calendar.getInstance()
+        val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
+
+        if (isDayView) {
+            val currentDay = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+            val isCurrentDay = isSameDay(currentDay.time, currentTime.time)
+            if (isCurrentDay) {
+                lastHighlightedLessonNumber = -1
+                lastHighlightedIsBreak = false
+                lastHighlightedBreakAfterLesson = -1
+                stopCurrentHighlight()
+
+                calendarGrid.post {
+                    startInitialHighlighting()
+                }
+            }
+        } else if (isCurrentWeek) {
+            lastHighlightedLessonNumber = -1
+            lastHighlightedIsBreak = false
+            lastHighlightedBreakAfterLesson = -1
+            stopCurrentHighlight()
+
+            calendarGrid.post {
+                startInitialHighlighting()
+            }
+        }
+    }
+
     private fun getCalendarEntriesForCurrentHighlightedCell(): List<CalendarEntry> {
         return emptyList()
     }
@@ -4797,6 +4837,8 @@ class GalleryFragment : Fragment() {
                         lastHighlightedBreakAfterLesson = lesson
                         lastHighlightedLessonNumber = -1
                         highlightCurrentBreak(lesson)
+                    } else {
+                        highlightCurrentBreakStatic(lesson)
                     }
                     return@post
                 }
@@ -4809,6 +4851,8 @@ class GalleryFragment : Fragment() {
                         lastHighlightedBreakAfterLesson = -1
                         lastHighlightedLessonNumber = lesson
                         highlightCurrentLesson(lesson, currentTime)
+                    } else {
+                        highlightCurrentLessonStatic(lesson, currentTime)
                     }
                     return@post
                 }
@@ -5287,6 +5331,10 @@ class GalleryFragment : Fragment() {
     }
 
     private fun navigateToPrevious() {
+        if (isCurrentWeekOrDay()) {
+            stopCurrentHighlight()
+        }
+
         if (isDayView) {
             if (includeWeekendsInDayView) {
                 currentDayOffset--
@@ -5308,6 +5356,10 @@ class GalleryFragment : Fragment() {
     }
 
     private fun navigateToNext() {
+        if (isCurrentWeekOrDay()) {
+            stopCurrentHighlight()
+        }
+
         if (isDayView) {
             if (includeWeekendsInDayView) {
                 currentDayOffset++
@@ -5326,6 +5378,19 @@ class GalleryFragment : Fragment() {
             currentWeekStart.add(Calendar.WEEK_OF_YEAR, 1)
         }
         updateCalendar()
+    }
+
+    private fun isCurrentWeekOrDay(): Boolean {
+        val currentTime = Calendar.getInstance()
+        return if (isDayView) {
+            val currentDay = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+            isSameDay(currentDay.time, currentTime.time)
+        } else {
+            isSameWeek(currentWeekStart.time, currentTime.time)
+        }
     }
 
     private fun showSwipeIndicator(isRightSwipe: Boolean, progress: Float) {
@@ -5603,6 +5668,16 @@ class GalleryFragment : Fragment() {
             }
         }
 
+        val currentTimeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
+        val currentParts = currentTimeStr.split(":")
+        val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
+        val schoolStartMinutes = 7 * 60 + 30 // 450 mins = 7:30
+
+        if (currentMinutes < schoolStartMinutes) {
+            hideRealTimeIndicator()
+            return
+        }
+
         val isCurrentPeriod = if (isDayView) {
             val currentDay = Calendar.getInstance().apply {
                 time = currentWeekStart.time
@@ -5692,6 +5767,11 @@ class GalleryFragment : Fragment() {
         val currentTimeStr = SimpleDateFormat("HH:mm", Locale.GERMANY).format(currentTime.time)
         val currentParts = currentTimeStr.split(":")
         val currentMinutes = currentParts[0].toInt() * 60 + currentParts[1].toInt()
+
+        // school always starts at 7:30 (450 minutes from midnight -> lp ref and hardcoded ah)
+        if (currentMinutes < (7 * 60 + 30)) {
+            return -1
+        }
 
         var accumulatedHeight = 8
 

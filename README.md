@@ -28,7 +28,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 - **Klein**: Geringer Speicherbedarf auf dem Gerät
 - **Schnell**: Optimiert für flüssige Nutzung
-- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Vertretungsplan und ggf. Feriendaten)
+- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Klassen bei der Ersteinrichtung, Vertretungsplan und ggf. Feriendaten)
 
 ## 🔧 Technische Details
 

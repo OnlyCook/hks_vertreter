@@ -42,19 +42,31 @@ class AutoUpdateWorker(
         context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
 
     override fun doWork(): Result {
-        L.d(TAG, "AutoUpdateWorker started")
+        L.d(TAG, "AutoUpdateWorker started - Work ID: $id")
 
         val workType = inputData.getString("work_type") ?: "update"
+        L.d(TAG, "Processing work type: $workType")
 
         return try {
-            when (workType) {
+            val result = when (workType) {
                 "update" -> handleAutoUpdate()
                 "check_changes" -> handleChangeNotification()
-                else -> Result.failure()
+                else -> {
+                    L.w(TAG, "Unknown work type: $workType")
+                    Result.failure()
+                }
             }
+
+            L.d(TAG, "Work completed with result: $result")
+            result
+
         } catch (e: Exception) {
             L.e(TAG, "Error in background work: ${e.message}", e)
-            Result.retry()
+            if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException) {
+                Result.retry()
+            } else {
+                Result.failure()
+            }
         }
     }
 
@@ -69,8 +81,8 @@ class AutoUpdateWorker(
 
         val wifiOnly = sharedPreferences.getBoolean("update_wifi_only", false)
         if (wifiOnly && !isWifiConnected()) {
-            L.d(TAG, "WiFi only mode enabled but not on WiFi, skipping")
-            return Result.success()
+            L.d(TAG, "WiFi only mode enabled but not on WiFi, retrying later")
+            return Result.retry()
         }
 
         if (!isNetworkAvailable()) {
@@ -79,8 +91,8 @@ class AutoUpdateWorker(
         }
 
         val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
-        if (klasse.isEmpty() || klasse == context.getString(R.string.auto_not_selected)) { // be cautious about this
-            L.d(TAG, "No class selected, skipping update")
+        if (klasse.isEmpty() || klasse == context.getString(R.string.auto_not_selected)) {
+            L.w(TAG, "No class selected, skipping update")
             return Result.success()
         }
 
@@ -91,12 +103,9 @@ class AutoUpdateWorker(
                 val lastUpdate = fetchLastUpdateTime()
                 val substitutePlan = fetchSubstitutePlan(klasse)
 
-                // Save to cache
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
-                // Show notification if enabled
-                val showNotifications =
-                    sharedPreferences.getBoolean("show_update_notifications", true)
+                val showNotifications = sharedPreferences.getBoolean("show_update_notifications", true)
                 if (showNotifications) {
                     showUpdateNotification(lastUpdate)
                 }
@@ -106,7 +115,18 @@ class AutoUpdateWorker(
 
             } catch (e: Exception) {
                 L.e(TAG, "Error during auto update: ${e.message}", e)
-                Result.retry()
+                when (e) {
+                    is java.net.UnknownHostException,
+                    is java.net.SocketTimeoutException,
+                    is java.net.ConnectException -> {
+                        L.d(TAG, "Network error, will retry")
+                        Result.retry()
+                    }
+                    else -> {
+                        L.e(TAG, "Non-recoverable error during update", e)
+                        Result.failure()
+                    }
+                }
             }
         }
     }
@@ -122,8 +142,8 @@ class AutoUpdateWorker(
 
         val wifiOnly = sharedPreferences.getBoolean("update_wifi_only", false)
         if (wifiOnly && !isWifiConnected()) {
-            L.d(TAG, "WiFi only mode enabled but not on WiFi, skipping")
-            return Result.success()
+            L.d(TAG, "WiFi only mode enabled but not on WiFi, retrying later")
+            return Result.retry()
         }
 
         if (!isNetworkAvailable()) {
@@ -133,7 +153,7 @@ class AutoUpdateWorker(
 
         val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
         if (klasse.isEmpty() || klasse == context.getString(R.string.auto_not_selected)) {
-            L.d(TAG, "No class selected, skipping change check")
+            L.w(TAG, "No class selected, skipping change check")
             return Result.success()
         }
 
@@ -147,11 +167,9 @@ class AutoUpdateWorker(
                 if (hasChanges) {
                     L.d(TAG, "Changes detected!")
 
-                    // Update cache with new data
                     val lastUpdate = fetchLastUpdateTime()
                     saveSubstitutePlanToCache(klasse, currentPlan.toString(), lastUpdate)
 
-                    // Show change notification
                     showChangeNotification()
                 } else {
                     L.d(TAG, "No changes detected")
@@ -161,7 +179,18 @@ class AutoUpdateWorker(
 
             } catch (e: Exception) {
                 L.e(TAG, "Error during change check: ${e.message}", e)
-                Result.retry()
+                when (e) {
+                    is java.net.UnknownHostException,
+                    is java.net.SocketTimeoutException,
+                    is java.net.ConnectException -> {
+                        L.d(TAG, "Network error during change check, will retry")
+                        Result.retry()
+                    }
+                    else -> {
+                        L.e(TAG, "Non-recoverable error during change check", e)
+                        Result.failure()
+                    }
+                }
             }
         }
     }

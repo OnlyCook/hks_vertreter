@@ -173,9 +173,13 @@ class SlideshowFragment : Fragment() {
                     val timeCalendar = Calendar.getInstance().apply { this.time = time }
                     set(Calendar.HOUR_OF_DAY, timeCalendar.get(Calendar.HOUR_OF_DAY))
                     set(Calendar.MINUTE, timeCalendar.get(Calendar.MINUTE))
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
                 } ?: run {
                     set(Calendar.HOUR_OF_DAY, 23)
                     set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
                 }
             }
             return !isCompleted && now.after(due)
@@ -881,7 +885,7 @@ class SlideshowFragment : Fragment() {
         saveHomework()
         updateHomeworkCount()
 
-        Toast.makeText(requireContext(), getString(R.string.slide_homework_added), Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.slide_homework_updated), Toast.LENGTH_SHORT).show()
     }
 
     private fun parseContentWithChecklistItems(content: String): Pair<MutableList<ChecklistItem>, Boolean> {

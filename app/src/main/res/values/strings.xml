@@ -151,7 +151,7 @@
     <string name="act_set_landscape_mode_desc">Ermöglicht das Drehen des Bildschirms</string>
     <string name="act_set_data">Daten</string>
     <string name="act_set_full_backup">Vollständige Datensicherung</string>
-    <string name="act_set_backup_desc">Sichere alle deine App-Daten in einer einzigen .hks-Datei (Stundenplan, Kalender, Hausaufgaben, Klausuren und Noten)</string>
+    <string name="act_set_backup_desc">Sichere alle deine App-Daten in einer einzigen .hks-Datei (Klasse/Bildungsgang, Stundenplan, Kalender, Hausaufgaben, Klausuren, Noten und App-Einstellungen)</string>
     <string name="act_set_import">Importieren</string>
     <string name="act_set_export">Exportieren</string>
     <string name="act_set_reset_data">Daten zurücksetzen</string>
@@ -576,6 +576,26 @@
     <string name="set_act_clear_search">Suche löschen</string>
     <string name="set_act_greeting_keywords">hallo,hi,hey,moin,servus,guten tag,guten morgen,guten abend</string>
     <string name="set_act_greeting_response">Hi! :3</string>
+    <string name="act_set_class_advancement">Klassenaufstieg</string>
+    <string name="act_set_class_advancement_desc">Wechseln Sie in die nächste Klasse oder ein anderes Jahr Ihres Bildungsgangs, ohne alle Daten zu verlieren.</string>
+    <string name="act_set_advance_class">Klasse wechseln</string>
+    <string name="act_set_select_new_class_title">Neue Klasse auswählen</string>
+    <string name="act_set_select_new_class_desc">Wählen Sie Ihre neue Klasse aus. Ihre Notendaten können bei Bedarf übertragen werden.</string>
+    <string name="act_set_select_new_class">Neue Klasse auswählen</string>
+    <string name="act_set_advancing_class">Sie steigen in eine höhere Klasse auf</string>
+    <string name="act_set_descending_class">Sie wiederholen ein Jahr oder wechseln in eine niedrigere Klasse</string>
+    <string name="act_set_repeating_year">Sie wechseln in eine andere Klasse des gleichen Jahres</string>
+    <string name="act_set_preserve_grades_data">Notendaten beibehalten</string>
+    <string name="act_set_remove_last_year_data">Daten des letzten Jahres entfernen</string>
+    <string name="act_set_continue">Fortfahren</string>
+    <string name="act_set_confirm_grade_deletion">Notenlöschung bestätigen</string>
+    <string name="act_set_confirm_grade_deletion_message">Sind Sie sicher, dass Sie alle Notendaten löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="act_set_delete_grades">Noten löschen</string>
+    <string name="act_set_no_current_class">Keine aktuelle Klasse gefunden</string>
+    <string name="act_set_no_other_classes">Keine anderen Klassen für Ihren Bildungsgang verfügbar</string>
+    <string name="act_set_class_advanced_successfully">Erfolgreich in Klasse %s aufgestiegen</string>
+    <string name="act_set_class_descended_successfully">Erfolgreich in Klasse %s gewechselt</string>
+    <string name="act_set_class_changed_successfully">Erfolgreich zu Klasse %s gewechselt</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -868,6 +888,7 @@
     <string name="grades_total_grade_none">Gesamtnote: -</string>
     <string name="grades_total_grade">Gesamtnote: %s</string>
     <string name="grades_all_semesters_count_with_count">"Alle Halbjahre zählen (%d)"</string>
+    <string name="grades_subject_migration_complete">Migration abgeschlossen: %1$d von %2$d aktuellen Fächern wurden mit vorherigen Daten abgeglichen. Vorherige Fächer: %3$d</string>
 
     <!-- GRADESADAPTER.KT -->
     <string name="gra_ada_main_item_format">%s | Lehrer: %s</string>

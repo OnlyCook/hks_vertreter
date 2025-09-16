@@ -151,7 +151,7 @@
     <string name="act_set_landscape_mode_desc">Enables screen rotation</string>
     <string name="act_set_data">Data</string>
     <string name="act_set_full_backup">Full Data Backup</string>
-    <string name="act_set_backup_desc">Back up all your app data in a single .hks file (timetable, calendar, homework, exams and grades)</string>
+    <string name="act_set_backup_desc">Back up all your app data in a single .hks file (class/examination program, timetable, calendar, homework, exams, grades and app settings)</string>
     <string name="act_set_import">Import</string>
     <string name="act_set_export">Export</string>
     <string name="act_set_reset_data">Reset Data</string>
@@ -576,6 +576,26 @@
     <string name="set_act_clear_search">Clear search</string>
     <string name="set_act_greeting_keywords">hello,hi,hey,howdy,good morning,good afternoon,good evening,greetings</string>
     <string name="set_act_greeting_response">Hi! :3</string>
+    <string name="act_set_class_advancement">Class Advancement</string>
+    <string name="act_set_class_advancement_desc">Move to the next class or another year of your education program without losing all your data.</string>
+    <string name="act_set_advance_class">Change Class</string>
+    <string name="act_set_select_new_class_title">Select New Class</string>
+    <string name="act_set_select_new_class_desc">Choose your new class. Your grade data can be transferred if needed.</string>
+    <string name="act_set_select_new_class">Select new class</string>
+    <string name="act_set_advancing_class">You are advancing to a higher class</string>
+    <string name="act_set_descending_class">You are repeating a year or moving to a lower class</string>
+    <string name="act_set_repeating_year">You are switching to another class in the same year</string>
+    <string name="act_set_preserve_grades_data">Preserve grade data</string>
+    <string name="act_set_remove_last_year_data">Remove last year\'s data</string>
+    <string name="act_set_continue">Continue</string>
+    <string name="act_set_confirm_grade_deletion">Confirm Grade Deletion</string>
+    <string name="act_set_confirm_grade_deletion_message">Are you sure you want to delete all grade data? This action cannot be undone.</string>
+    <string name="act_set_delete_grades">Delete Grades</string>
+    <string name="act_set_no_current_class">No current class found</string>
+    <string name="act_set_no_other_classes">No other classes available for your education program</string>
+    <string name="act_set_class_advanced_successfully">Successfully advanced to class %s</string>
+    <string name="act_set_class_descended_successfully">Successfully changed to class %s</string>
+    <string name="act_set_class_changed_successfully">Successfully switched to class %s</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -868,6 +888,7 @@
     <string name="grades_total_grade_none">Overall grade: -</string>
     <string name="grades_total_grade">Overall grade: %s</string>
     <string name="grades_all_semesters_count_with_count">All semesters count (%d)</string>
+    <string name="grades_subject_migration_complete">Migration complete: %1$d of %2$d current subjects matched with previous data. Previous subjects: %3$d</string>
 
     <!-- GRADESADAPTER.KT -->
     <string name="gra_ada_main_item_format">%s | Teacher: %s</string>

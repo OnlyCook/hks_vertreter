@@ -12,6 +12,8 @@
     <color name="light_yellow">#ffff85</color>
     <color name="light_green">#caffb0</color>
     <color name="warning_background">#FFF3CD</color>
+    <color name="green">#4CAF50</color>
+    <color name="orange">#FF9800</color>
 
     <!-- Your custom blue colors -->
     <item name="primary_blue" type="color">#0e5292</item>

@@ -772,7 +772,11 @@ class GradesFragment : Fragment() {
         tvTeacher.text = getString(R.string.grades_subject_teacher, subject.teacher)
         tvOralGrade.text = getString(R.string.grades_subject_oral, subject.getFormattedOralGrade(currentHalfyear))
         tvWrittenAverage.text = getString(R.string.grades_subject_written, subject.getFormattedWrittenAverage(currentHalfyear))
-        tvRatio.text = getString(R.string.grades_subject_ratio, subject.ratio.first, subject.ratio.second)
+
+        val ratioFirst = subject.ratio.first
+        val ratioSecond = subject.ratio.second
+        tvRatio.text = getString(R.string.grades_subject_ratio, ratioFirst, ratioSecond)
+
         tvFinalGrade.text = getString(R.string.grades_subject_final, subject.getFormattedFinalGrade(requirements, currentHalfyear))
 
         val examJson = sharedPreferences.getString("exam_list", "[]")
@@ -1835,6 +1839,9 @@ class GradesFragment : Fragment() {
         if (isFirstTimeSetup) {
             saveCurrentSubjectsAsGradesSubjects()
             hasSubjectChanges = false
+        } else if (gradesSubjects.isNullOrEmpty()) {
+            saveCurrentSubjectsAsGradesSubjects()
+            hasSubjectChanges = false
         } else {
             // check for changes
             hasSubjectChanges = currentSubjects != gradesSubjects || currentTeachers != gradesTeachers || currentRooms != gradesRooms
@@ -1892,13 +1899,28 @@ class GradesFragment : Fragment() {
             .setTitle(getString(R.string.grades_subject_update_title))
             .setMessage(getString(R.string.grades_subject_update_message))
             .setPositiveButton(getString(R.string.grades_subject_update_confirm)) { _, _ ->
-                clearAllGradeData()
+                val oldSubjects = getGradesSubjects()
+                val newSubjects = sharedPreferences.getString("student_subjects", "")?.split(",")?.map { it.trim() } ?: emptyList()
+
+                migrateGradeDataForSubjectChanges(oldSubjects, newSubjects)
+
                 saveCurrentSubjectsAsGradesSubjects()
                 hasSubjectChanges = false
                 hideSubjectChangeWarning()
                 loadGrades()
                 updateFinalGrade()
-                Toast.makeText(requireContext(), getString(R.string.grades_subject_update_complete), Toast.LENGTH_SHORT).show()
+
+                val migratedCount = newSubjects.count { newSubject ->
+                    findMatchingSubject(newSubject, oldSubjects) != null
+                }
+                val totalOldSubjects = oldSubjects.size
+                val totalNewSubjects = newSubjects.size
+
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.grades_subject_migration_complete, migratedCount, totalNewSubjects, totalOldSubjects),
+                    Toast.LENGTH_LONG
+                ).show()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -1932,20 +1954,6 @@ class GradesFragment : Fragment() {
         Toast.makeText(requireContext(), getString(R.string.grades_subject_reset_complete), Toast.LENGTH_SHORT).show()
     }
 
-    private fun clearAllGradeData() {
-        sharedPreferences.edit {
-            remove(PREFS_ORAL_GRADES_HISTORY)
-                .remove(PREFS_WRITTEN_GRADES_HISTORY)
-                .remove(PREFS_GRADE_RATIOS)
-                .remove(PREFS_PRUEFUNGSFAECHER)
-                .remove(PREFS_PRUEFUNGSERGEBNISSE)
-                .remove(PREFS_SELECTED_HALF_YEARS)
-                .remove(PREFS_GOAL_GRADE)
-                .remove(PREFS_GRADE_HISTORY)
-                .remove(PREFS_ORAL_GRADES)
-        }
-    }
-
     private fun getGradesSubjects(): List<String> {
         val gradesSubjects = sharedPreferences.getString(PREFS_GRADES_SUBJECTS, "") ?: ""
         return if (gradesSubjects.isEmpty()) emptyList() else gradesSubjects.split(",")
@@ -1961,4 +1969,144 @@ class GradesFragment : Fragment() {
         val year: Int,
         var grade: Double
     )
+
+    private fun extractSubjectBaseName(subject: String): String {
+        val firstHyphenIndex = subject.indexOf("-")
+
+        // no hyphen
+        if (firstHyphenIndex == -1) {
+            return subject
+        }
+
+        val prefix = subject.substring(0, firstHyphenIndex)
+        val remainder = subject.substring(firstHyphenIndex + 1)
+
+        // find end of course (next hyphen or end of string)
+        val nextHyphenIndex = remainder.indexOf("-")
+
+        return if (nextHyphenIndex == -1) {
+            // no second hyphen
+            prefix
+        } else {
+            // second hyphen found => keep prefix + everything after the course
+            prefix + remainder.substring(nextHyphenIndex)
+        }
+    }
+
+    private fun findMatchingSubject(targetSubject: String, availableSubjects: List<String>): String? {
+        val targetBaseName = extractSubjectBaseName(targetSubject)
+
+        return availableSubjects.find { subject ->
+            extractSubjectBaseName(subject) == targetBaseName
+        }
+    }
+
+    private fun migrateGradeDataForSubjectChanges(oldSubjects: List<String>, newSubjects: List<String>) {
+        val oralGradesHistoryJson = sharedPreferences.getString(PREFS_ORAL_GRADES_HISTORY, "{}")
+        val oralGradesHistoryType = object : TypeToken<MutableMap<String, MutableMap<Int, Double?>>>() {}.type
+        val oralGradesHistory: MutableMap<String, MutableMap<Int, Double?>> = try {
+            Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val writtenGradesHistoryJson = sharedPreferences.getString(PREFS_WRITTEN_GRADES_HISTORY, "{}")
+        val writtenGradesHistoryType = object : TypeToken<MutableMap<String, MutableMap<Int, List<Double>>>>() {}.type
+        val writtenGradesHistory: MutableMap<String, MutableMap<Int, List<Double>>> = try {
+            Gson().fromJson(writtenGradesHistoryJson, writtenGradesHistoryType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val ratiosJson = sharedPreferences.getString(PREFS_GRADE_RATIOS, "{}")
+        val ratiosType = object : TypeToken<MutableMap<String, Any>>() {}.type
+        val ratiosRaw: MutableMap<String, Any> = try {
+            Gson().fromJson(ratiosJson, ratiosType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val ratios = mutableMapOf<String, Pair<Int, Int>>()
+        for ((key, value) in ratiosRaw) {
+            when (value) {
+                is Map<*, *> -> {
+                    try {
+                        val first = (value["first"] as? Number)?.toInt() ?: 50
+                        val second = (value["second"] as? Number)?.toInt() ?: 50
+                        ratios[key] = Pair(first, second)
+                    } catch (e: Exception) {
+                        ratios[key] = Pair(50, 50)
+                    }
+                }
+                else -> {
+                    ratios[key] = Pair(50, 50)
+                }
+            }
+        }
+
+        val pruefungsfaecherJson = sharedPreferences.getString(PREFS_PRUEFUNGSFAECHER, "{}")
+        val pruefungsfaecherType = object : TypeToken<MutableMap<String, Boolean>>() {}.type
+        val pruefungsfaecher: MutableMap<String, Boolean> = try {
+            Gson().fromJson(pruefungsfaecherJson, pruefungsfaecherType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val pruefungsergebnisseJson = sharedPreferences.getString(PREFS_PRUEFUNGSERGEBNISSE, "{}")
+        val pruefungsergebnisseType = object : TypeToken<MutableMap<String, Double>>() {}.type
+        val pruefungsergebnisse: MutableMap<String, Double> = try {
+            Gson().fromJson(pruefungsergebnisseJson, pruefungsergebnisseType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val selectedHalfYearsJson = sharedPreferences.getString(PREFS_SELECTED_HALF_YEARS, "{}")
+        val selectedHalfYearsType = object : TypeToken<MutableMap<String, Int>>() {}.type
+        val selectedHalfYearsMap: MutableMap<String, Int> = try {
+            Gson().fromJson(selectedHalfYearsJson, selectedHalfYearsType) ?: mutableMapOf()
+        } catch (_: Exception) {
+            mutableMapOf()
+        }
+
+        val newOralGradesHistory = mutableMapOf<String, MutableMap<Int, Double?>>()
+        val newWrittenGradesHistory = mutableMapOf<String, MutableMap<Int, List<Double>>>()
+        val newRatios = mutableMapOf<String, Pair<Int, Int>>()
+        val newPruefungsfaecher = mutableMapOf<String, Boolean>()
+        val newPruefungsergebnisse = mutableMapOf<String, Double>()
+        val newSelectedHalfYears = mutableMapOf<String, Int>()
+
+        for (newSubject in newSubjects) {
+            val matchingOldSubject = findMatchingSubject(newSubject, oldSubjects)
+
+            if (matchingOldSubject != null) {
+                oralGradesHistory[matchingOldSubject]?.let {
+                    newOralGradesHistory[newSubject] = it
+                }
+                writtenGradesHistory[matchingOldSubject]?.let {
+                    newWrittenGradesHistory[newSubject] = it
+                }
+                ratios[matchingOldSubject]?.let {
+                    newRatios[newSubject] = it
+                }
+                pruefungsfaecher[matchingOldSubject]?.let {
+                    newPruefungsfaecher[newSubject] = it
+                }
+                pruefungsergebnisse[matchingOldSubject]?.let {
+                    newPruefungsergebnisse[newSubject] = it
+                }
+                selectedHalfYearsMap[matchingOldSubject]?.let {
+                    newSelectedHalfYears[newSubject] = it
+                }
+            }
+        }
+
+        sharedPreferences.edit {
+            putString(PREFS_ORAL_GRADES_HISTORY, Gson().toJson(newOralGradesHistory))
+                .putString(PREFS_WRITTEN_GRADES_HISTORY, Gson().toJson(newWrittenGradesHistory))
+                .putString(PREFS_GRADE_RATIOS, Gson().toJson(newRatios))
+                .putString(PREFS_PRUEFUNGSFAECHER, Gson().toJson(newPruefungsfaecher))
+                .putString(PREFS_PRUEFUNGSERGEBNISSE, Gson().toJson(newPruefungsergebnisse))
+                .putString(PREFS_SELECTED_HALF_YEARS, Gson().toJson(newSelectedHalfYears))
+        }
+    }
 }

@@ -51,6 +51,7 @@ import android.text.TextWatcher
 import android.text.Editable
 import android.widget.ScrollView
 import androidx.core.graphics.toColorInt
+import android.widget.CheckBox
 
 class SettingsActivity : BaseActivity() {
 
@@ -143,6 +144,9 @@ class SettingsActivity : BaseActivity() {
     // backup
     private var tempImportContent: String? = null
     private var tempImportSections: List<BackupManager.BackupSection>? = null
+
+    // class advancement
+    private lateinit var btnAdvanceClass: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -385,6 +389,7 @@ class SettingsActivity : BaseActivity() {
         btnExportFullBackup = findViewById(R.id.btnExportFullBackup)
         btnImportFullBackup = findViewById(R.id.btnImportFullBackup)
         switchLeftFilterLift = findViewById(R.id.switchLeftFilterLift)
+        btnAdvanceClass = findViewById(R.id.btnAdvanceClass)
     }
 
     private fun setupToolbar() {
@@ -462,6 +467,10 @@ class SettingsActivity : BaseActivity() {
                     putBoolean("remove_update_cooldown", isChecked)
                 }
             }
+        }
+
+        btnAdvanceClass.setOnClickListener {
+            showClassAdvancementDialog()
         }
 
         setupHomeworkReminderListeners()
@@ -2097,6 +2106,12 @@ class SettingsActivity : BaseActivity() {
         ivChangeNotificationInfo.setOnClickListener {
             showNotificationInfoDialog()
         }
+
+        val ivChangeNotificationInfo2 = findViewById<ImageView>(R.id.ivChangeNotificationInfo2)
+
+        ivChangeNotificationInfo2.setOnClickListener {
+            showNotificationInfoDialog()
+        }
     }
 
     private fun showNotificationInfoDialog() {
@@ -3272,6 +3287,327 @@ class SettingsActivity : BaseActivity() {
         val klasse: String,
         val subjects: List<String>
     )
+
+    private fun showClassAdvancementDialog() {
+        val currentBildungsgang = sharedPreferences.getString("selected_bildungsgang", "") ?: ""
+        val currentKlasse = sharedPreferences.getString("selected_klasse", "") ?: ""
+
+        if (currentBildungsgang.isEmpty() || currentKlasse.isEmpty()) {
+            Toast.makeText(this, getString(R.string.act_set_no_current_class), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val availableClasses = getClassesForBildungsgang(currentBildungsgang).filter { it != currentKlasse }
+
+        if (availableClasses.isEmpty()) {
+            Toast.makeText(this, getString(R.string.act_set_no_other_classes), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_class_advancement, null)
+        val spinnerNewClass = dialogView.findViewById<Spinner>(R.id.spinnerNewClass)
+        val checkboxPreserveGrades = dialogView.findViewById<CheckBox>(R.id.checkboxPreserveGrades)
+        val tvAdvancementType = dialogView.findViewById<TextView>(R.id.tvAdvancementType)
+        val btnContinue = dialogView.findViewById<Button>(R.id.btnContinue)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        val classOptions = mutableListOf(getString(R.string.act_set_select_new_class))
+        classOptions.addAll(availableClasses)
+
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, classOptions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerNewClass.adapter = adapter
+
+        btnContinue.isEnabled = false
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+
+        spinnerNewClass.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position == 0) {
+                    btnContinue.isEnabled = false
+                    return
+                }
+
+                val selectedClass = availableClasses[position - 1]
+                val advancementType = determineAdvancementType(currentKlasse, selectedClass)
+
+                updateAdvancementDialog(advancementType, tvAdvancementType, checkboxPreserveGrades)
+                btnContinue.isEnabled = true
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                btnContinue.isEnabled = false
+            }
+        }
+
+        checkboxPreserveGrades.setOnCheckedChangeListener { _, isChecked ->
+            val selectedPosition = spinnerNewClass.selectedItemPosition
+            if (selectedPosition > 0) {
+                val selectedClass = availableClasses[selectedPosition - 1]
+                val advancementType = determineAdvancementType(currentKlasse, selectedClass)
+
+                if (!isChecked && advancementType != AdvancementType.ASCENDING) {
+                    showGradePreservationConfirmationDialog { confirmed ->
+                        if (!confirmed) {
+                            checkboxPreserveGrades.isChecked = true
+                        }
+                    }
+                }
+            }
+        }
+
+        btnContinue.setOnClickListener {
+            val selectedPosition = spinnerNewClass.selectedItemPosition
+            if (selectedPosition > 0) {
+                val selectedClass = availableClasses[selectedPosition - 1]
+                val preserveGrades = checkboxPreserveGrades.isChecked
+                executeClassAdvancement(currentKlasse, selectedClass, preserveGrades)
+                dialog.dismiss()
+            }
+        }
+
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun getClassesForBildungsgang(bildungsgang: String): List<String> {
+        val bildungsgangData = mapOf(
+            "AM" to listOf("10AM", "11AM", "12AM"),
+            "AO" to listOf("10AO1", "10AO2", "10AO3", "10AO4", "11AO1", "11AO2", "11AO3", "11AO4", "12AO1", "12AO2", "12AO3", "12AO4"),
+            "AOB" to listOf("11AOB", "12AOB"),
+            "AOW" to listOf("12AOW"),
+            "BFS" to listOf("10BFS1", "10BFS2", "11BFS1", "11BFS2"),
+            "BG" to listOf("11BG1", "11BG2", "11BG3", "12BG1", "12BG2", "13BG1", "13BG2"),
+            "BzB" to listOf("10BzB1", "10BzB2", "10BzB3"),
+            "EL" to listOf("10EL1", "10EL2", "10EL3", "11EL1", "11EL2", "11EL3", "12EL1", "12EL2", "12ELW"),
+            "EZ" to listOf("10EZ1", "10EZ2", "11EZ1", "11EZ2", "12EZ1", "12EZ2"),
+            "FOS" to listOf("11FOS1", "11FOS2", "12FOS1", "12FOS2"),
+            "FS" to listOf("02FS", "03FS", "04FS"),
+            "Förd" to listOf("Förd"),
+            "IM" to listOf("10IM1", "10IM2", "11IM1", "11IM2", "11IM3", "12IM1", "12IM2", "13IM"),
+            "KB" to listOf("10KB1", "10KB3", "11KB2", "11KB3", "12KB1", "12KB2", "13KB"),
+            "KM" to listOf("10KM1", "10KM2", "10KM3", "10KM4", "10KM5", "11KM1", "11KM2", "11KM3", "11KM4", "11KM5", "12KM1", "12KM2", "12KM3", "12KM4", "12KM5", "13KM1", "13KM2", "13KM3"),
+            "KOM" to listOf("10KOM", "11KOM", "12KOM", "13KOM"),
+            "ME" to listOf("10ME1", "10ME2", "10ME3", "10ME4", "11ME1", "11ME2", "11ME3", "11ME4", "12ME1", "12ME2", "12ME3", "12ME4", "13ME1", "13ME2"),
+            "ZM" to listOf("11ZM", "12ZM"),
+            "ZU" to listOf("12ZU1"),
+            "ZW" to listOf("10ZW1", "10ZW2", "10ZW4", "11ZW1", "11ZW2", "11ZW3", "11ZW4", "12ZW1", "12ZW2", "12ZW4", "13ZW1", "13ZW2")
+        )
+
+        return bildungsgangData[bildungsgang] ?: emptyList()
+    }
+
+    private enum class AdvancementType {
+        ASCENDING, DESCENDING, SAME_YEAR_DIFFERENT_COURSE
+    }
+
+    private fun determineAdvancementType(currentClass: String, newClass: String): AdvancementType {
+        val currentYear = extractYearFromClass(currentClass)
+        val newYear = extractYearFromClass(newClass)
+
+        return when {
+            newYear > currentYear -> AdvancementType.ASCENDING
+            newYear < currentYear -> AdvancementType.DESCENDING
+            newYear == currentYear -> AdvancementType.SAME_YEAR_DIFFERENT_COURSE
+            else -> AdvancementType.ASCENDING
+        }
+    }
+
+    private fun extractYearFromClass(className: String): Int {
+        val yearMatch = Regex("^(\\d+)").find(className)
+        return yearMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    }
+
+    private fun updateAdvancementDialog(
+        type: AdvancementType,
+        tvAdvancementType: TextView,
+        checkboxPreserveGrades: CheckBox
+    ) {
+        when (type) {
+            AdvancementType.ASCENDING -> {
+                tvAdvancementType.text = getString(R.string.act_set_advancing_class)
+                tvAdvancementType.setTextColor(getColor(R.color.green))
+                checkboxPreserveGrades.text = getString(R.string.act_set_preserve_grades_data)
+                checkboxPreserveGrades.isChecked = true
+            }
+            AdvancementType.DESCENDING -> {
+                tvAdvancementType.text = getString(R.string.act_set_descending_class)
+                tvAdvancementType.setTextColor(getColor(R.color.orange))
+                checkboxPreserveGrades.text = getString(R.string.act_set_remove_last_year_data)
+                checkboxPreserveGrades.isChecked = true
+            }
+            AdvancementType.SAME_YEAR_DIFFERENT_COURSE -> {
+                tvAdvancementType.text = getString(R.string.act_set_repeating_year)
+                tvAdvancementType.setTextColor(getColor(R.color.orange))
+                checkboxPreserveGrades.text = getString(R.string.act_set_remove_last_year_data)
+                checkboxPreserveGrades.isChecked = true
+            }
+        }
+    }
+
+    private fun showGradePreservationConfirmationDialog(callback: (Boolean) -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.act_set_confirm_grade_deletion))
+            .setMessage(getString(R.string.act_set_confirm_grade_deletion_message))
+            .setPositiveButton(getString(R.string.act_set_delete_grades)) { _, _ ->
+                callback(true)
+            }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                callback(false)
+            }
+            .show()
+    }
+
+    private fun executeClassAdvancement(currentClass: String, newClass: String, preserveGrades: Boolean) {
+        val advancementType = determineAdvancementType(currentClass, newClass)
+
+        var gradeDataToPreserve: String? = null
+        if (preserveGrades) {
+            try {
+                gradeDataToPreserve = backupManager.exportGradeData()
+            } catch (e: Exception) {
+                L.e(TAG, "Error backing up grades before class advancement", e)
+            }
+        }
+
+        val settingsToPreserve = mutableMapOf<String, Any?>()
+
+        if (preserveGrades) {
+            settingsToPreserve["grades_subjects"] = sharedPreferences.getString("grades_subjects", "")
+            settingsToPreserve["grades_teachers"] = sharedPreferences.getString("grades_teachers", "")
+            settingsToPreserve["grades_rooms"] = sharedPreferences.getString("grades_rooms", "")
+        }
+
+        settingsToPreserve["language_auto_detect"] = sharedPreferences.getBoolean("language_auto_detect", true)
+        settingsToPreserve["selected_language"] = sharedPreferences.getString("selected_language", "de")
+        settingsToPreserve["dark_mode_enabled"] = sharedPreferences.getBoolean("dark_mode_enabled", false)
+        settingsToPreserve["follow_system_theme"] = sharedPreferences.getBoolean("follow_system_theme", true)
+        settingsToPreserve["landscape_mode_enabled"] = sharedPreferences.getBoolean("landscape_mode_enabled", true)
+        settingsToPreserve["colorblind_mode"] = sharedPreferences.getString("colorblind_mode", "none")
+        settingsToPreserve["startup_page_index"] = sharedPreferences.getInt("startup_page_index", 1)
+        settingsToPreserve["auto_update_enabled"] = sharedPreferences.getBoolean("auto_update_enabled", false)
+        settingsToPreserve["auto_update_time"] = sharedPreferences.getString("auto_update_time", "06:00")
+        settingsToPreserve["update_wifi_only"] = sharedPreferences.getBoolean("update_wifi_only", false)
+        settingsToPreserve["show_update_notifications"] = sharedPreferences.getBoolean("show_update_notifications", true)
+        settingsToPreserve["change_notification_enabled"] = sharedPreferences.getBoolean("change_notification_enabled", false)
+        settingsToPreserve["change_notification_interval"] = sharedPreferences.getInt("change_notification_interval", 15)
+        settingsToPreserve["change_notification_type"] = sharedPreferences.getString("change_notification_type", "all_class_subjects")
+        settingsToPreserve["due_date_reminder_enabled"] = sharedPreferences.getBoolean("due_date_reminder_enabled", false)
+        settingsToPreserve["due_date_reminder_hours"] = sharedPreferences.getInt("due_date_reminder_hours", 16)
+        settingsToPreserve["daily_homework_reminder_enabled"] = sharedPreferences.getBoolean("daily_homework_reminder_enabled", false)
+        settingsToPreserve["daily_homework_reminder_time"] = sharedPreferences.getString("daily_homework_reminder_time", "19:00")
+        settingsToPreserve["exam_due_date_reminder_enabled"] = sharedPreferences.getBoolean("exam_due_date_reminder_enabled", false)
+        settingsToPreserve["exam_due_date_reminder_days"] = sharedPreferences.getInt("exam_due_date_reminder_days", 7)
+        settingsToPreserve["remove_update_cooldown"] = sharedPreferences.getBoolean("remove_update_cooldown", false)
+        settingsToPreserve["calendar_real_time_enabled"] = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
+        settingsToPreserve["calendar_include_weekends_dayview"] = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
+        settingsToPreserve["left_filter_lift"] = sharedPreferences.getBoolean("left_filter_lift", false)
+
+        sharedPreferences.edit { clear() }
+
+        WorkScheduler.cancelAutoUpdate(this)
+        WorkScheduler.cancelChangeNotification(this)
+        WorkScheduler.cancelDueDateReminder(this)
+        WorkScheduler.cancelDailyHomeworkReminder(this)
+        WorkScheduler.cancelExamReminder(this)
+
+        val editor = sharedPreferences.edit()
+        for ((key, value) in settingsToPreserve) {
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is String -> editor.putString(key, value)
+                is Int -> editor.putInt(key, value)
+            }
+        }
+
+        val newBildungsgang = extractBildungsgangFromClass(newClass)
+        editor.putBoolean("setup_completed", true)
+        editor.putString("selected_bildungsgang", newBildungsgang)
+        editor.putString("selected_klasse", newClass)
+        editor.apply()
+
+        if (preserveGrades && !gradeDataToPreserve.isNullOrEmpty()) {
+            try {
+                when (advancementType) {
+                    AdvancementType.ASCENDING -> {
+                        backupManager.importGradeData(gradeDataToPreserve)
+                    }
+                    AdvancementType.DESCENDING, AdvancementType.SAME_YEAR_DIFFERENT_COURSE -> {
+                        val currentYear = extractYearFromClass(currentClass)
+                        val newYear = extractYearFromClass(newClass)
+                        val yearsToRemove = maxOf(1, currentYear - newYear)
+
+                        backupManager.importGradeData(gradeDataToPreserve)
+                        removeLastYearsGradeData(yearsToRemove)
+                    }
+                }
+            } catch (e: Exception) {
+                L.e(TAG, "Error restoring grades after class advancement", e)
+            }
+        }
+
+        loadCurrentSelection()
+        updateTimetableButton()
+        setupFilterSwitch()
+
+        val message = when (advancementType) {
+            AdvancementType.ASCENDING -> getString(R.string.act_set_class_advanced_successfully, newClass)
+            AdvancementType.DESCENDING -> getString(R.string.act_set_class_descended_successfully, newClass)
+            AdvancementType.SAME_YEAR_DIFFERENT_COURSE -> getString(R.string.act_set_class_changed_successfully, newClass)
+        }
+
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun extractBildungsgangFromClass(className: String): String {
+        return className.replace(Regex("\\d"), "")
+    }
+
+    private fun removeLastYearsGradeData(yearsToRemove: Int) {
+        try {
+            val currentHalfyear = sharedPreferences.getInt("current_halfyear", 1)
+
+            val halfyearsToRemove = mutableSetOf<Int>()
+            for (year in 1..yearsToRemove) {
+                for (halfyear in 1..4) {
+                    val targetHalfyear = currentHalfyear - ((year - 1) * 4) - (4 - halfyear + 1)
+                    if (targetHalfyear > 0) {
+                        halfyearsToRemove.add(targetHalfyear)
+                    }
+                }
+            }
+
+            val oralGradesHistoryJson = sharedPreferences.getString("oral_grades_history", "{}")
+            val oralGradesHistoryType = object : com.google.gson.reflect.TypeToken<Map<String, MutableMap<Int, Double>>>() {}.type
+            val oralGradesHistory: MutableMap<String, MutableMap<Int, Double>> = try {
+                com.google.gson.Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: mutableMapOf()
+            } catch (e: Exception) {
+                mutableMapOf()
+            }
+
+            for (subjectGrades in oralGradesHistory.values) {
+                halfyearsToRemove.forEach { halfyear ->
+                    subjectGrades.remove(halfyear)
+                }
+            }
+
+            sharedPreferences.edit {
+                putString("oral_grades_history", com.google.gson.Gson().toJson(oralGradesHistory))
+            }
+
+            L.d(TAG, "Removed grade data for halfyears: $halfyearsToRemove")
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error removing last year's grade data", e)
+        }
+    }
 }
 
 data class ImportResult(
