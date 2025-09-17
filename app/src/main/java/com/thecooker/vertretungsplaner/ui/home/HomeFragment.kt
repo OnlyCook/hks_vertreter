@@ -625,7 +625,6 @@ class HomeFragment : Fragment() {
         L.d("HomeFragment", "onDetach called")
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun setupUI() {
         val constraintLayout = binding.root
         constraintLayout.removeAllViews()
@@ -938,13 +937,15 @@ class HomeFragment : Fragment() {
             val cachedData = cacheFile.readText()
             val lastUpdate = lastUpdateFile.readText()
 
-            val jsonData = JSONObject(cachedData)
+            val rawJsonData = JSONObject(cachedData)
+            val filteredJsonData = filterPastDates(rawJsonData)
+
             if (::lastUpdateText.isInitialized) {
                 lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
             }
-            displaySubstitutePlan(jsonData)
+            displaySubstitutePlan(filteredJsonData)
 
-            L.d("HomeFragment", "Loaded cached substitute plan")
+            L.d("HomeFragment", "Loaded cached substitute plan with past dates filtered")
         } else {
             showNoInternetMessage()
         }
@@ -2000,6 +2001,7 @@ class HomeFragment : Fragment() {
     private fun findSubstituteEntry(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String): Pair<View, JSONObject>? {
         try {
             val dates = currentJsonData?.optJSONArray("dates") ?: return null
+            var visibleDateIndex = -1
 
             for (i in 0 until dates.length()) {
                 val dateObj = dates.getJSONObject(i)
@@ -2008,13 +2010,26 @@ class HomeFragment : Fragment() {
                 if (entryDateString == dateString) {
                     val entries = dateObj.getJSONArray("entries")
 
-                    for (j in 0 until entries.length()) {
-                        val entry = entries.getJSONObject(j)
+                    val hasVisibleEntries = (0 until entries.length()).any { j ->
+                        shouldShowEntry(entries.getJSONObject(j))
+                    }
 
-                        if (matchesSubstituteEntry(entry, subject, lesson, lessonEnd, type, room)) {
-                            val tableView = findTableViewForEntry(i, j)
-                            if (tableView != null) {
-                                return Pair(tableView, entry)
+                    if (hasVisibleEntries) {
+                        visibleDateIndex++
+
+                        var visibleEntryIndex = -1
+                        for (j in 0 until entries.length()) {
+                            val entry = entries.getJSONObject(j)
+
+                            if (shouldShowEntry(entry)) {
+                                visibleEntryIndex++
+
+                                if (matchesSubstituteEntry(entry, subject, lesson, lessonEnd, type, room)) {
+                                    val tableView = findTableViewForEntry(visibleDateIndex, visibleEntryIndex)
+                                    if (tableView != null) {
+                                        return Pair(tableView, entry)
+                                    }
+                                }
                             }
                         }
                     }
@@ -2205,5 +2220,55 @@ class HomeFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         cleanupRefreshIndicator()
+    }
+
+    private fun filterPastDates(jsonData: JSONObject): JSONObject {
+        try {
+            val filteredJson = JSONObject(jsonData.toString())
+            val dates = filteredJson.optJSONArray("dates") ?: return filteredJson
+
+            val today = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val filteredDates = org.json.JSONArray()
+
+            for (i in 0 until dates.length()) {
+                val dateObj = dates.getJSONObject(i)
+                val dateString = dateObj.getString("date")
+
+                try {
+                    val date = inputFormat.parse(dateString)
+                    if (date != null) {
+                        val entryDate = Calendar.getInstance().apply {
+                            time = date
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+
+                        // only keep dates that are today or in the future
+                        if (entryDate.timeInMillis >= today.timeInMillis) {
+                            filteredDates.put(dateObj)
+                        }
+                    }
+                } catch (e: Exception) {
+                    filteredDates.put(dateObj)
+                }
+            }
+
+            filteredJson.put("dates", filteredDates)
+            L.d("HomeFragment", "Filtered past dates: ${dates.length()} -> ${filteredDates.length()}")
+            return filteredJson
+
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error filtering past dates", e)
+            return jsonData
+        }
     }
 }

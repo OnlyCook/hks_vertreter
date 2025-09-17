@@ -12,7 +12,7 @@
         <!-- Status bar color. -->
         <item name="android:statusBarColor">@color/primary_blue_dark</item>
         <!-- Dark theme surface colors -->
-        <item name="colorSurface">@color/dark_gray</item>
+        <item name="colorSurface">@color/dark_gray</item> <!-- main background color -->
         <item name="colorOnSurface">@color/white</item>
         <item name="android:colorBackground">@color/black</item>
         <!-- Remove elevation/shadows for flat design -->
