@@ -30,6 +30,9 @@ import java.util.*
 import android.provider.Settings
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Color
+import android.util.TypedValue
+import androidx.annotation.AttrRes
+import androidx.core.content.ContextCompat
 
 class TouchScrollView @JvmOverloads constructor(
     context: Context,
@@ -625,6 +628,12 @@ class HomeFragment : Fragment() {
         L.d("HomeFragment", "onDetach called")
     }
 
+    private fun getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(requireContext(), typedValue.resourceId)
+    }
+
     private fun setupUI() {
         val constraintLayout = binding.root
         constraintLayout.removeAllViews()
@@ -655,10 +664,10 @@ class HomeFragment : Fragment() {
             text = getString(R.string.home_refresh)
             textSize = 16f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setBackgroundColor(resources.getColor(android.R.color.white, null))
+            setBackgroundColor(getThemeColor(R.attr.filterButtonBackgroundColor))
             setTextColor(resources.getColor(android.R.color.holo_blue_dark, null))
             setPadding(64, 32, 64, 32)
-            background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setOnClickListener {
                 L.d("HomeFragment", "Refresh button clicked - forcing reload")
                 isFirstLoad = true
@@ -686,7 +695,7 @@ class HomeFragment : Fragment() {
         // invisible left button (spacer  for temp filter btn)
         invisibleLeftButton = ImageButton(requireContext()).apply {
             setImageResource(android.R.drawable.ic_menu_view)
-            background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))  // Changed
             setPadding(16, 16, 16, 16)
             isEnabled = false
             layoutParams = LinearLayout.LayoutParams(
@@ -699,7 +708,7 @@ class HomeFragment : Fragment() {
 
         temporaryFilterButton = ImageButton(requireContext()).apply {
             setImageResource(R.drawable.ic_eye_closed)
-            background = createRoundedDrawable(resources.getColor(android.R.color.white, null))
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))  // Changed
             setPadding(16, 16, 16, 16)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1100,7 +1109,7 @@ class HomeFragment : Fragment() {
                         )
                         gravity = android.view.Gravity.CENTER
                         setPadding(16, 8, 16, 8)
-                        setBackgroundColor(resources.getColor(android.R.color.background_light, null))
+                        setBackgroundColor(getThemeColor(R.attr.tableBackgroundColor))
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1177,7 +1186,7 @@ class HomeFragment : Fragment() {
                     )
                     setPadding(16, 12, 16, 12)
                     setTypeface(null, android.graphics.Typeface.ITALIC)
-                    setBackgroundColor(resources.getColor(android.R.color.background_light, null))
+                    setBackgroundColor(getThemeColor(R.attr.tableBackgroundColor))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1264,7 +1273,6 @@ class HomeFragment : Fragment() {
 
     private fun createSubstituteTable(entries: List<JSONObject>): TableLayout {
         val table = TableLayout(requireContext()).apply {
-            // setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
             setPadding(0, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1282,7 +1290,7 @@ class HomeFragment : Fragment() {
                 TableLayout.LayoutParams.MATCH_PARENT,
                 TableLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 0, 0, 8) // rng ah
+                setMargins(0, 0, 0, 8)
             }
         }
 
@@ -1306,7 +1314,7 @@ class HomeFragment : Fragment() {
         // content rows
         entries.forEachIndexed { i, entry ->
             val row = TableRow(requireContext()).apply {
-                setBackgroundColor(resources.getColor(android.R.color.background_light, null))
+                setBackgroundColor(getThemeColor(R.attr.tableBackgroundColor))
                 setPadding(0, 4, 0, 4)
                 minimumHeight = 80
             }
@@ -1325,7 +1333,7 @@ class HomeFragment : Fragment() {
                 text = stundeText
                 setPadding(8, 12, 8, 12)
                 textSize = 13f
-                setTextColor(resources.getColor(android.R.color.black, null))
+                setTextColor(getThemeColor(R.attr.tableTextColor))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[0])
             }
@@ -1341,6 +1349,7 @@ class HomeFragment : Fragment() {
 
             val fachCell = TextView(requireContext()).apply {
                 textSize = 14f
+                setTextColor(getThemeColor(R.attr.tableTextColor))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[1])
 
@@ -1374,7 +1383,7 @@ class HomeFragment : Fragment() {
                                 setPadding(12, 12, 12, 12)
                             } else {
                                 setPadding(8, 12, 12, 12)
-                                setTextColor(resources.getColor(android.R.color.black, null))
+                                setTextColor(getThemeColor(R.attr.tableTextColor))
                             }
                         } else {
                             handleOriginalSubjectLogic(fachText, isCancelled) // fallback
@@ -1409,7 +1418,7 @@ class HomeFragment : Fragment() {
                                 setPadding(12, 12, 12, 12)
                             } else {
                                 setPadding(8, 12, 12, 12)
-                                setTextColor(resources.getColor(android.R.color.black, null))
+                                setTextColor(getThemeColor(R.attr.tableTextColor))
                             }
                         } else {
                             handleOriginalSubjectLogic(fachText, isCancelled) // fallback
@@ -1433,6 +1442,7 @@ class HomeFragment : Fragment() {
             val raumCell = TextView(requireContext()).apply {
                 setPadding(8, 12, 8, 12)
                 textSize = 13f
+                setTextColor(getThemeColor(R.attr.tableTextColor))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[2])
 
@@ -1456,10 +1466,10 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             text = spannableString
-                            setTextColor(resources.getColor(android.R.color.black, null))
+                            setTextColor(getThemeColor(R.attr.tableTextColor))
                         } else {
                             text = originalRoom
-                            setTextColor(resources.getColor(android.R.color.black, null))
+                            setTextColor(getThemeColor(R.attr.tableTextColor))
                         }
                     }
                     isRoomChanged -> {
@@ -1482,15 +1492,15 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             text = spannableString
-                            setTextColor(resources.getColor(android.R.color.black, null))
+                            setTextColor(getThemeColor(R.attr.tableTextColor))
                         } else {
                             text = displayRoom
-                            setTextColor(resources.getColor(android.R.color.black, null))
+                            setTextColor(getThemeColor(R.attr.tableTextColor))
                         }
                     }
                     else -> {
                         text = displayRoom
-                        setTextColor(resources.getColor(android.R.color.black, null))
+                        setTextColor(getThemeColor(R.attr.tableTextColor))
                     }
                 }
             }
@@ -1502,7 +1512,7 @@ class HomeFragment : Fragment() {
             val artCell = TextView(requireContext()).apply {
                 text = displayText
                 textSize = 12f
-                setTextColor(resources.getColor(android.R.color.black, null))
+                setTextColor(getThemeColor(R.attr.tableTextColor))
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.MATCH_PARENT, headerWeights[3])
 
@@ -1543,7 +1553,7 @@ class HomeFragment : Fragment() {
             }
         } else {
             setPadding(8, 12, 12, 12)
-            setTextColor(resources.getColor(android.R.color.black, null))
+            setTextColor(getThemeColor(R.attr.tableTextColor))
 
             if (isCancelled) {
                 val spannableString = android.text.SpannableString(fachText)
@@ -2257,7 +2267,7 @@ class HomeFragment : Fragment() {
                             filteredDates.put(dateObj)
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     filteredDates.put(dateObj)
                 }
             }

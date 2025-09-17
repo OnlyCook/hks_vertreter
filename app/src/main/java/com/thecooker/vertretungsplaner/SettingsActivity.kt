@@ -49,9 +49,12 @@ import com.thecooker.vertretungsplaner.utils.SectionSelectionCallback
 import com.thecooker.vertretungsplaner.utils.SectionSelectionDialog
 import android.text.TextWatcher
 import android.text.Editable
+import android.util.TypedValue
 import android.widget.ScrollView
 import androidx.core.graphics.toColorInt
 import android.widget.CheckBox
+import androidx.annotation.AttrRes
+import androidx.core.content.ContextCompat
 
 class SettingsActivity : BaseActivity() {
 

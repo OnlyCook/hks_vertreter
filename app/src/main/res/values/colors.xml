@@ -22,4 +22,32 @@
     <item name="light_gray" type="color">#F5F5F5</item>
     <item name="medium_gray" type="color">#9E9E9E</item>
     <item name="dark_gray" type="color">#424242</item>
+
+    <!-- drawables -->
+    <color name="dark_component_background">#202020</color>
+    <color name="light_border">#D0D0D0</color>
+    <color name="dark_border">#404040</color>
+    <color name="light_search_background">#F8F8F8</color>
+    <color name="arrow_light">#757575</color>
+    <color name="arrow_dark">#B3B3B3</color>
+
+    <!-- homefragment.kt -->
+    <color name="home_bg_light">#F5F4F5</color>
+    <color name="home_bg_dark">#222222</color>
+    <color name="header_bg_dark">#1B1A1B</color>
+    <color name="table_bg_dark">#1B1A1B</color>
+
+    <!-- settingsactivity.kt -->
+    <color name="search_bar_dark">#1B1A1B</color>
+    <color name="settings_background_dark">#222222</color>
+    <color name="card_background_dark">#1B1A1B</color>
+    <color name="text_primary_dark">#FFFFFF</color>
+    <color name="text_secondary_dark">#B3B3B3</color>
+    <color name="primary_blue_light">#92BDF8</color>
+    <color name="settings_hint_background_light">#fff2df</color>
+    <color name="settings_hint_background_dark">#282015</color>
+    <color name="filter_lift_button_hint_light">#F5F5F5</color>
+    <color name="filter_lift_button_hint_dark">#222222</color>
+    <color name="timetable_manager_drop_down_bg_light">#F8F9FA</color>
+    <color name="timetable_manager_drop_down_bg_dark">#1f1e1e</color>
 </resources>

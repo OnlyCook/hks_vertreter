@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- drawables -->
+    <attr name="searchBackgroundColor" format="color" />
+    <attr name="spinnerBackgroundColor" format="color" />
+    <attr name="borderColor" format="color" />
+    <attr name="arrowColor" format="color" />
+    <attr name="editTextBackgroundColor" format="color" />
+    <attr name="timeIndicatorBackgroundColor" format="color" />
+
+    <!-- homefragment.kt -->
+    <attr name="homeBackgroundColor" format="color" />
+    <attr name="headerBackgroundColor" format="color" />
+    <attr name="tableBackgroundColor" format="color" />
+    <attr name="tableTextColor" format="color" />
+    <attr name="filterButtonBackgroundColor" format="color" />
+
+    <!-- settingsactivity.kt -->
+    <attr name="settingsBackgroundColor" format="color" />
+    <attr name="searchBarBackgroundColor" format="color" />
+    <attr name="cardBackgroundColor" format="color" />
+    <attr name="textPrimaryColor" format="color" />
+    <attr name="textSecondaryColor" format="color" />
+    <attr name="sectionHeaderTextColor" format="color" />
+    <attr name="settingsColorPrimary" format="color"/>
+    <attr name="settingsHintBackgroundColor" format="color" />
+    <attr name="filterLiftButtonHintColor" format="color" />
+    <attr name="timetableManagerDropDownBG" format="color"/>
+</resources>

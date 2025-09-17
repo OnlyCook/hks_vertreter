@@ -3,24 +3,24 @@
     <!-- Background -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FFFFFF" />
+            <solid android:color="?attr/spinnerBackgroundColor" />
             <corners android:radius="4dp" />
             <stroke
                 android:width="1dp"
-                android:color="#D0D0D0" />
+                android:color="?attr/borderColor" />
         </shape>
     </item>
     <!-- Custom arrow -->
     <item android:gravity="center_vertical|end" android:right="16dp">
         <shape android:shape="oval">
-            <solid android:color="#757575" />
+            <solid android:color="?attr/arrowColor" />
             <size android:width="0dp" android:height="0dp" />
         </shape>
     </item>
     <!-- Triangle arrow using vector -->
     <item android:gravity="center_vertical|end" android:right="12dp">
         <vector android:width="12dp" android:height="8dp" android:viewportWidth="12" android:viewportHeight="8">
-            <path android:fillColor="#757575" android:pathData="M1,2 L6,7 L11,2 Z"/>
+            <path android:fillColor="?attr/arrowColor" android:pathData="M1,2 L6,7 L11,2 Z"/>
         </vector>
     </item>
 </layer-list>

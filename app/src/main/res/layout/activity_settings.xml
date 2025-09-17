@@ -5,6 +5,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:fitsSystemWindows="true"
+    android:background="?attr/settingsBackgroundColor"
     tools:context=".SettingsActivity">
 
     <androidx.appcompat.widget.Toolbar
@@ -20,7 +21,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@android:color/background_light">
+        android:background="?attr/settingsBackgroundColor">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -46,7 +47,8 @@
                     android:drawableStart="@android:drawable/ic_menu_search"
                     android:drawablePadding="8dp"
                     android:textSize="16sp"
-                    android:textColorHint="#757575"
+                    android:textColor="?attr/textPrimaryColor"
+                    android:textColorHint="?attr/textSecondaryColor"
                     android:maxLines="1"
                     android:imeOptions="actionSearch" />
 
@@ -108,7 +110,7 @@
                 android:text="@string/act_set_general_settings"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -125,7 +127,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:padding="20dp"
-                    android:background="@android:color/white">
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -133,7 +135,7 @@
                         android:text="@string/act_set_current_selection"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -153,7 +155,7 @@
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:textStyle="italic"
-                        android:background="#FFF3E0"
+                        android:background="?attr/settingsHintBackgroundColor"
                         android:padding="8dp"
                         android:radius="6dp" />
 
@@ -172,7 +174,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -180,7 +183,7 @@
                         android:text="@string/language_settings"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -206,7 +209,7 @@
                             android:layout_weight="1"
                             android:text="@string/auto_detect_language"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchAutoDetectLanguage"
@@ -228,7 +231,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/german"
-                            android:textColor="@android:color/black"
+                            android:textColor="?attr/textPrimaryColor"
                             android:background="?android:attr/selectableItemBackground"
                             android:gravity="start|center_vertical"
                             android:paddingStart="16dp"
@@ -264,7 +267,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -272,7 +276,7 @@
                         android:text="@string/act_set_timetable_management"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -331,7 +335,7 @@
                         android:orientation="vertical"
                         android:layout_marginTop="16dp"
                         android:visibility="gone"
-                        android:background="#F8F9FA"
+                        android:background="?attr/timetableManagerDropDownBG"
                         android:padding="12dp"
                         android:radius="8dp">
 
@@ -340,7 +344,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/act_set_edit_timetable"
-                            android:textColor="@android:color/black"
+                            android:textColor="?attr/textPrimaryColor"
                             android:background="?android:attr/selectableItemBackground"
                             android:layout_marginBottom="4dp"
                             android:gravity="start|center_vertical"
@@ -353,7 +357,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/act_set_export_timetable"
-                            android:textColor="@android:color/black"
+                            android:textColor="?attr/textPrimaryColor"
                             android:background="?android:attr/selectableItemBackground"
                             android:layout_marginBottom="4dp"
                             android:gravity="start|center_vertical"
@@ -366,7 +370,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/act_set_import_timetable"
-                            android:textColor="@android:color/black"
+                            android:textColor="?attr/textPrimaryColor"
                             android:background="?android:attr/selectableItemBackground"
                             android:gravity="start|center_vertical"
                             android:paddingStart="16dp"
@@ -390,7 +394,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -398,7 +403,7 @@
                         android:text="@string/act_set_startup_page"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -415,7 +420,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_startup_current"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -439,7 +444,7 @@
                 android:text="@string/act_set_substitution_plan"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -455,14 +460,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="@string/act_set_filter_subjects"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -504,7 +510,7 @@
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:textStyle="italic"
-                        android:background="#FFF3E0"
+                        android:background="?attr/settingsHintBackgroundColor"
                         android:padding="8dp"
                         android:radius="6dp" />
 
@@ -523,14 +529,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="@string/act_set_filter_button_position"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -570,7 +577,7 @@
                         android:textSize="12sp"
                         android:textColor="@android:color/darker_gray"
                         android:textStyle="italic"
-                        android:background="#F5F5F5"
+                        android:background="?attr/filterLiftButtonHintColor"
                         android:padding="8dp"
                         android:radius="6dp" />
 
@@ -589,7 +596,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -605,7 +613,7 @@
                             android:text="@string/act_set_auto_updates"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textColor="?attr/settingsColorPrimary" />
 
                         <ImageView
                             android:id="@+id/ivChangeNotificationInfo2"
@@ -643,7 +651,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_enable_auto_updates"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchAutoUpdate"
@@ -658,7 +666,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_update_time"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -679,7 +687,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_show_update_notifications"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchShowUpdateNotifications"
@@ -703,7 +711,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <!-- header with title and info icon -->
                     <LinearLayout
@@ -720,7 +729,7 @@
                             android:text="@string/act_set_change_notifications"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textColor="?attr/settingsColorPrimary" />
 
                         <ImageView
                             android:id="@+id/ivChangeNotificationInfo"
@@ -758,7 +767,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_enable_change_notifications"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchChangeNotification"
@@ -773,7 +782,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_check_interval"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -787,7 +796,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_notify_for_changes"
                         android:textSize="14sp"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="8dp" />
 
                     <Spinner
@@ -816,7 +825,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -824,7 +834,7 @@
                         android:text="@string/act_set_network_settings"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="16dp" />
 
                     <!-- WiFi Only setting -->
@@ -845,7 +855,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/act_set_wifi_only"
                                 android:textSize="14sp"
-                                android:textColor="@android:color/black" />
+                                android:textColor="?attr/textPrimaryColor" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -883,7 +893,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/act_set_update_cooldown"
                                 android:textSize="14sp"
-                                android:textColor="@android:color/black"
+                                android:textColor="?attr/textPrimaryColor"
                                 android:layout_marginTop="8dp"/>
 
                             <TextView
@@ -920,14 +930,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="@string/act_set_colorblind_settings"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -984,7 +995,7 @@
                 android:text="@string/act_set_calendar"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1000,7 +1011,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1008,7 +1020,7 @@
                         android:text="@string/act_set_real_time_display"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1037,7 +1049,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/act_set_enable_real_time"
                                 android:textSize="14sp"
-                                android:textColor="@android:color/black" />
+                                android:textColor="?attr/textPrimaryColor" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1073,7 +1085,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1081,7 +1094,7 @@
                         android:text="@string/act_set_include_weekend"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1110,7 +1123,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/act_set_include_weekend"
                                 android:textSize="14sp"
-                                android:textColor="@android:color/black" />
+                                android:textColor="?attr/textPrimaryColor" />
 
                         </LinearLayout>
 
@@ -1140,7 +1153,7 @@
                 android:text="@string/act_set_homework"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1156,7 +1169,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1164,7 +1178,7 @@
                         android:text="@string/act_set_due_date_reminders"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1190,7 +1204,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_enable_due_date_reminders"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchDueDateReminder"
@@ -1205,7 +1219,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_reminder_hours"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -1227,7 +1241,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1235,7 +1250,7 @@
                         android:text="@string/act_set_daily_reminder"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1261,7 +1276,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_enable_daily_reminder"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchDailyHomeworkReminder"
@@ -1276,7 +1291,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_reminder_time"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -1298,7 +1313,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1306,7 +1322,7 @@
                         android:text="@string/act_set_auto_delete"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <LinearLayout
@@ -1322,7 +1338,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_auto_delete_desc"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchAutoDeleteHomework"
@@ -1357,7 +1373,7 @@
                 android:text="@string/act_set_exams"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1373,7 +1389,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1381,7 +1398,7 @@
                         android:text="@string/act_set_exam_due_date_reminders"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1407,7 +1424,7 @@
                             android:layout_weight="1"
                             android:text="@string/act_set_enable_exam_reminders"
                             android:textSize="14sp"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <Switch
                             android:id="@+id/switchExamDueDateReminder"
@@ -1422,7 +1439,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_exam_reminder_days"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:background="?android:attr/selectableItemBackground"
                         android:gravity="start|center_vertical"
                         android:paddingStart="16dp"
@@ -1446,7 +1463,7 @@
                 android:text="@string/act_set_app_appearance"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1462,7 +1479,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1470,7 +1488,7 @@
                         android:text="@string/act_set_app_appearance"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="16dp" />
 
                     <!-- Follow System Theme Setting -->
@@ -1600,7 +1618,7 @@
                 android:text="@string/act_set_data"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1616,7 +1634,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1624,7 +1643,7 @@
                         android:text="@string/act_set_class_advancement"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1659,7 +1678,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1667,7 +1687,7 @@
                         android:text="@string/act_set_full_backup"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1722,7 +1742,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1769,7 +1790,7 @@
                 android:text="@string/act_set_app_info"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/textPrimaryColor"
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
@@ -1787,7 +1808,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1795,7 +1817,7 @@
                         android:text="@string/act_set_school"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="8dp" />
 
                     <TextView
@@ -1823,7 +1845,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1831,7 +1854,7 @@
                         android:text="@string/act_set_privacy_terms"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="12dp" />
 
                     <!-- Privacy Information -->
@@ -1841,7 +1864,7 @@
                         android:text="@string/act_set_privacy"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -1860,7 +1883,7 @@
                         android:text="@string/act_set_app_features"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -1879,7 +1902,7 @@
                         android:text="@string/act_set_disclaimer"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -1889,7 +1912,7 @@
                         android:textSize="12sp"
                         android:textColor="@android:color/holo_orange_dark"
                         android:lineSpacingExtra="2dp"
-                        android:background="#FFF3E0"
+                        android:background="?attr/settingsHintBackgroundColor"
                         android:padding="8dp"
                         android:radius="6dp" />
 
@@ -1910,7 +1933,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1918,7 +1942,7 @@
                         android:text="@string/act_set_contact_credits"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="12dp" />
 
                     <!-- Developer -->
@@ -1928,7 +1952,7 @@
                         android:text="@string/act_set_developer"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -1946,7 +1970,7 @@
                         android:text="@string/act_set_contact"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -1963,7 +1987,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/act_set_contact_email"
                         android:textSize="14sp"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:textStyle="bold"
                         android:background="@drawable/button_outlined"
                         android:padding="4dp"
@@ -1988,7 +2012,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -1996,7 +2021,7 @@
                         android:text="@string/act_set_legal_info"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="?attr/colorPrimary"
+                        android:textColor="?attr/settingsColorPrimary"
                         android:layout_marginBottom="12dp" />
 
                     <!-- Impressum -->
@@ -2006,7 +2031,7 @@
                         android:text="@string/act_set_imprint"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -2025,7 +2050,7 @@
                         android:text="@string/act_set_data_processing"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -2044,7 +2069,7 @@
                         android:text="@string/act_set_liability"
                         android:textSize="14sp"
                         android:textStyle="bold"
-                        android:textColor="@android:color/black"
+                        android:textColor="?attr/textPrimaryColor"
                         android:layout_marginBottom="4dp" />
 
                     <TextView
@@ -2071,7 +2096,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:padding="20dp"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:background="?attr/cardBackgroundColor">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -2085,7 +2111,7 @@
                             android:text="@string/act_set_app_version"
                             android:textSize="14sp"
                             android:textStyle="bold"
-                            android:textColor="@android:color/black" />
+                            android:textColor="?attr/textPrimaryColor" />
 
                         <TextView
                             android:id="@+id/tvAppVersion"
