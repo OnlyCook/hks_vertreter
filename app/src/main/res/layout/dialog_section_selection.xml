@@ -30,6 +30,7 @@
             android:layout_weight="1"
             android:text="@string/dialog_sec_select_all"
             android:layout_marginEnd="8dp"
+            android:textColor="?attr/dialogSectionButtonColor"
             style="?android:attr/buttonBarButtonStyle" />
 
         <Button
@@ -39,6 +40,7 @@
             android:layout_weight="1"
             android:text="@string/dialog_sec_deselect_all"
             android:layout_marginStart="8dp"
+            android:textColor="?attr/dialogSectionButtonColor"
             style="?android:attr/buttonBarButtonStyle" />
 
     </LinearLayout>
@@ -70,6 +72,7 @@
             android:layout_height="wrap_content"
             android:text="@string/dialog_sec_cancel"
             android:layout_marginEnd="8dp"
+            android:textColor="?attr/dialogSectionButtonColor"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp" />
 
@@ -78,6 +81,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/dialog_sec_save"
+            android:textColor="?attr/dialogSectionButtonColor"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp" />
 

@@ -10,7 +10,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/dia_mark_vac_txt_weeks_label"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/gradesMainFontColor"
         android:textSize="14sp"
         android:layout_marginBottom="8dp" />
 

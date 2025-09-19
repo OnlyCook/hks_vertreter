@@ -3,7 +3,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="24dp">
+    android:padding="24dp"
+    android:background="?attr/dialogBackgroundColor">
 
     <!-- title -->
     <TextView
@@ -12,7 +13,7 @@
         android:text="@string/dlg_not_info_title"
         android:textSize="20sp"
         android:textStyle="bold"
-        android:textColor="?attr/colorPrimary"
+        android:textColor="?attr/dialogTitleColor"
         android:layout_marginBottom="16dp"
         android:gravity="center" />
 
@@ -23,7 +24,7 @@
         android:src="@drawable/ic_info"
         android:layout_gravity="center"
         android:layout_marginBottom="16dp"
-        android:tint="?attr/colorPrimary" />
+        android:tint="?attr/dialogTitleColor" />
 
     <!-- main text -->
     <TextView
@@ -31,7 +32,7 @@
         android:layout_height="wrap_content"
         android:text="@string/dlg_not_info_main_text"
         android:textSize="16sp"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/dialogTextColor"
         android:layout_marginBottom="16dp"
         android:gravity="center" />
 
@@ -54,7 +55,7 @@
                 android:layout_height="wrap_content"
                 android:text="•"
                 android:textSize="16sp"
-                android:textColor="?attr/colorPrimary"
+                android:textColor="?attr/dialogTitleColor"
                 android:layout_marginEnd="8dp" />
 
             <TextView
@@ -63,7 +64,7 @@
                 android:layout_weight="1"
                 android:text="@string/dlg_not_info_permission"
                 android:textSize="14sp"
-                android:textColor="@android:color/black" />
+                android:textColor="?attr/dialogTextColor" />
 
         </LinearLayout>
 
@@ -79,7 +80,7 @@
                 android:layout_height="wrap_content"
                 android:text="•"
                 android:textSize="16sp"
-                android:textColor="?attr/colorPrimary"
+                android:textColor="?attr/dialogTitleColor"
                 android:layout_marginEnd="8dp" />
 
             <TextView
@@ -88,7 +89,7 @@
                 android:layout_weight="1"
                 android:text="@string/dlg_not_info_battery_opt"
                 android:textSize="14sp"
-                android:textColor="@android:color/black" />
+                android:textColor="?attr/dialogTextColor" />
 
         </LinearLayout>
 
@@ -103,7 +104,7 @@
                 android:layout_height="wrap_content"
                 android:text="•"
                 android:textSize="16sp"
-                android:textColor="?attr/colorPrimary"
+                android:textColor="?attr/dialogTitleColor"
                 android:layout_marginEnd="8dp" />
 
             <TextView
@@ -112,7 +113,7 @@
                 android:layout_weight="1"
                 android:text="@string/dlg_not_info_background"
                 android:textSize="14sp"
-                android:textColor="@android:color/black" />
+                android:textColor="?attr/dialogTextColor" />
 
         </LinearLayout>
 
@@ -124,14 +125,13 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- this real cooked ngl -->
         <Button
             android:id="@+id/btnNotificationSettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/dlg_not_info_btn_notifications"
             android:textColor="@android:color/white"
-            android:background="?attr/colorPrimary"
+            android:background="?attr/dialogTitleColor"
             android:layout_marginBottom="8dp"
             android:padding="12dp" />
 
@@ -140,7 +140,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/dlg_not_info_btn_battery"
-            android:textColor="?attr/colorPrimary"
+            android:textColor="?attr/dialogTitleColor"
             android:background="?android:attr/selectableItemBackground"
             android:layout_marginBottom="8dp"
             android:padding="12dp" />
@@ -150,7 +150,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/dlg_not_info_btn_close"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?attr/dialogSecondaryTextColor"
             android:background="?android:attr/selectableItemBackground"
             android:padding="12dp" />
 

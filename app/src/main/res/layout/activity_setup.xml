@@ -5,13 +5,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    tools:context=".SetupActivity">
+    tools:context=".SetupActivity"
+    android:background="?attr/homeworkFragmentBackgroundColor">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="24dp"
+        android:background="?attr/homeworkFragmentBackgroundColor">
 
         <!-- lang globe -->
         <ImageButton
@@ -70,7 +72,7 @@
                 android:layout_height="wrap_content"
                 android:text="@string/act_set_welcome_text"
                 android:textSize="16sp"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/gradesMainFontColor"
                 android:gravity="center"
                 android:lineSpacingExtra="4dp"
                 android:layout_marginBottom="16dp" />
@@ -94,7 +96,8 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:background="?attr/homeworkFragmentBackgroundColor">
 
             <!-- Bildungsgang Selection -->
             <androidx.cardview.widget.CardView

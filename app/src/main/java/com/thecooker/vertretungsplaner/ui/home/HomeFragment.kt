@@ -1,6 +1,5 @@
 package com.thecooker.vertretungsplaner.ui.home
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -269,16 +268,12 @@ class HomeFragment : Fragment() {
             val type = arguments?.getString("highlight_substitute_type", "") ?: ""
             val room = arguments?.getString("highlight_substitute_room", "") ?: ""
 
-            L.d("HomeFragment", "Processing substitute highlight: $subject, lesson $lesson, date $dateString")
+            L.d("HomeFragment", "ARGUMENTS RECEIVED: subject='$subject', lesson=$lesson-$lessonEnd, date='$dateString', type='$type', room='$room'")
 
             if (lesson != -1 && dateString.isNotEmpty()) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    highlightAndShowSubstitute(subject, lesson, lessonEnd, dateString, type, room)
-                }, 800)
+                highlightWithRetry(subject, lesson, lessonEnd, dateString, type, room, 0)
             }
-        }
 
-        Handler(Looper.getMainLooper()).post {
             arguments?.remove("highlight_substitute_subject")
             arguments?.remove("highlight_substitute_lesson")
             arguments?.remove("highlight_substitute_lesson_end")
@@ -1752,20 +1747,24 @@ class HomeFragment : Fragment() {
         }
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun setupPullToRefresh() {
         var initialY = 0f
         var isPulling = false
         var hasTriggeredRefresh = false
+        var initialScrollY = 0
+        var hasScrolledUp = false
         val maxPullDistance = 400f
         val triggerDistance = 300f
+        val minPullThreshold = 80f
 
         contentScrollView.setOnTouchListener { view, event ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     initialY = event.rawY
+                    initialScrollY = contentScrollView.scrollY
                     isPulling = false
                     hasTriggeredRefresh = false
+                    hasScrolledUp = false
 
                     if (contentScrollView.scrollY == 0) {
                         cleanupRefreshIndicator()
@@ -1775,19 +1774,31 @@ class HomeFragment : Fragment() {
                 }
 
                 android.view.MotionEvent.ACTION_MOVE -> {
-                    if (contentScrollView.scrollY == 0 && refreshContainer != null && !hasTriggeredRefresh) {
-                        val currentY = event.rawY
-                        val deltaY = currentY - initialY
+                    val currentY = event.rawY
+                    val deltaY = currentY - initialY
+                    val currentScrollY = contentScrollView.scrollY
 
-                        if (deltaY > 0) {
-                            isPulling = true
-                            val constrainedDeltaY = deltaY.coerceAtMost(maxPullDistance)
-                            updateRefreshIndicator(constrainedDeltaY, maxPullDistance, triggerDistance)
-                            true
-                        } else {
-                            false
-                        }
+                    if (currentScrollY > initialScrollY) {
+                        hasScrolledUp = true
+                    }
+
+                    // pull to refresh requirements:
+                    // at the top of the page, not scrolled downward (safety), pull distance fulfilled
+                    if (contentScrollView.scrollY == 0 &&
+                        !hasScrolledUp &&
+                        refreshContainer != null &&
+                        !hasTriggeredRefresh &&
+                        deltaY > minPullThreshold) {
+
+                        isPulling = true
+                        val constrainedDeltaY = deltaY.coerceAtMost(maxPullDistance)
+                        updateRefreshIndicator(constrainedDeltaY, maxPullDistance, triggerDistance)
+                        true
                     } else {
+                        if (isPulling && (hasScrolledUp || deltaY <= minPullThreshold)) {
+                            isPulling = false
+                            animateRefreshContainerAway()
+                        }
                         false
                     }
                 }
@@ -1806,6 +1817,7 @@ class HomeFragment : Fragment() {
                         view.performClick()
                     }
                     isPulling = false
+                    hasScrolledUp = false
                     false
                 }
 
@@ -1977,9 +1989,41 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun debugHighlightData(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String) {
+        L.d("HomeFragment", "=== HIGHLIGHT DEBUG ===")
+        L.d("HomeFragment", "Target: subject='$subject', lesson=$lesson-$lessonEnd, date='$dateString', type='$type', room='$room'")
+
+        currentJsonData?.let { jsonData ->
+            val dates = jsonData.optJSONArray("dates")
+            if (dates != null) {
+                L.d("HomeFragment", "Available dates: ${dates.length()}")
+                for (i in 0 until dates.length()) {
+                    val dateObj = dates.getJSONObject(i)
+                    val availableDate = dateObj.getString("date")
+                    val entries = dateObj.getJSONArray("entries")
+                    L.d("HomeFragment", "Date '$availableDate' has ${entries.length()} entries:")
+
+                    for (j in 0 until entries.length()) {
+                        val entry = entries.getJSONObject(j)
+                        val entrySubject = entry.optString("fach", "")
+                        val entryLesson = entry.getInt("stunde")
+                        val entryLessonEnd = entry.optInt("stundebis", entryLesson)
+                        val entryType = entry.optString("text", "")
+                        val entryRoom = entry.optString("raum", "")
+
+                        val willShow = shouldShowEntry(entry)
+
+                        L.d("HomeFragment", "  [$j] subject='$entrySubject', lesson=$entryLesson-$entryLessonEnd, type='$entryType', room='$entryRoom', willShow=$willShow")
+                    }
+                }
+            }
+        }
+        L.d("HomeFragment", "=== END DEBUG ===")
+    }
+
     private fun highlightAndShowSubstitute(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String) {
         try {
-            L.d("HomeFragment", "Starting substitute highlight: subject=$subject, lesson=$lesson, date=$dateString")
+            L.d("HomeFragment", "Starting substitute highlight: subject=$subject, lesson=$lesson-$lessonEnd, date=$dateString, type=$type, room=$room")
 
             if (currentJsonData == null) {
                 L.d("HomeFragment", "No JSON data yet, retrying in 500ms")
@@ -1989,18 +2033,19 @@ class HomeFragment : Fragment() {
                 return
             }
 
-            L.d("HomeFragment", "JSON data available, searching for substitute entry")
+            debugHighlightData(subject, lesson, lessonEnd, dateString, type, room)
 
-            val targetEntry = findSubstituteEntry(subject, lesson, lessonEnd, dateString, type, room)
-            if (targetEntry == null) {
-                L.w("HomeFragment", "Substitute entry not found")
-                Toast.makeText(requireContext(), getString(R.string.home_substitute_not_found), Toast.LENGTH_SHORT).show()
-                return
-            }
+            Handler(Looper.getMainLooper()).postDelayed({
+                val targetEntry = findSubstituteEntry(subject, lesson, lessonEnd, dateString, type, room)
+                if (targetEntry == null) {
+                    L.w("HomeFragment", "Substitute entry not found - check debug output above")
+                    Toast.makeText(requireContext(), "Entry not found: $subject $lesson-$lessonEnd on $dateString", Toast.LENGTH_LONG).show()
+                    return@postDelayed
+                }
 
-            L.d("HomeFragment", "Found substitute entry, proceeding to highlight")
-
-            scrollToAndHighlightSubstitute(targetEntry)
+                L.d("HomeFragment", "Found substitute entry, proceeding to highlight")
+                scrollToAndHighlightSubstitute(targetEntry)
+            }, 100)
 
         } catch (e: Exception) {
             L.e("HomeFragment", "Error highlighting substitute", e)
@@ -2013,38 +2058,50 @@ class HomeFragment : Fragment() {
             val dates = currentJsonData?.optJSONArray("dates") ?: return null
             var visibleDateIndex = -1
 
+            L.d("HomeFragment", "Searching through ${dates.length()} dates")
+
             for (i in 0 until dates.length()) {
                 val dateObj = dates.getJSONObject(i)
                 val entryDateString = dateObj.getString("date")
+                val entries = dateObj.getJSONArray("entries")
 
-                if (entryDateString == dateString) {
-                    val entries = dateObj.getJSONArray("entries")
-
-                    val hasVisibleEntries = (0 until entries.length()).any { j ->
-                        shouldShowEntry(entries.getJSONObject(j))
+                val visibleEntries = mutableListOf<Pair<Int, JSONObject>>()
+                for (j in 0 until entries.length()) {
+                    val entry = entries.getJSONObject(j)
+                    if (shouldShowEntry(entry)) {
+                        visibleEntries.add(Pair(j, entry))
                     }
+                }
 
-                    if (hasVisibleEntries) {
-                        visibleDateIndex++
+                if (visibleEntries.isNotEmpty()) {
+                    visibleDateIndex++
+                    L.d("HomeFragment", "Date '$entryDateString' is visible date section $visibleDateIndex with ${visibleEntries.size} visible entries")
 
-                        var visibleEntryIndex = -1
-                        for (j in 0 until entries.length()) {
-                            val entry = entries.getJSONObject(j)
+                    if (entryDateString == dateString) {
+                        L.d("HomeFragment", "Found target date '$entryDateString' at visible section index $visibleDateIndex")
 
-                            if (shouldShowEntry(entry)) {
-                                visibleEntryIndex++
+                        visibleEntries.forEachIndexed { visibleIndex, (originalIndex, entry) ->
+                            L.d("HomeFragment", "Checking visible entry $visibleIndex (original $originalIndex): ${entry.optString("fach")} ${entry.getInt("stunde")}-${entry.optInt("stundebis", entry.getInt("stunde"))}")
 
-                                if (matchesSubstituteEntry(entry, subject, lesson, lessonEnd, type, room)) {
-                                    val tableView = findTableViewForEntry(visibleDateIndex, visibleEntryIndex)
-                                    if (tableView != null) {
-                                        return Pair(tableView, entry)
-                                    }
+                            if (matchesSubstituteEntry(entry, subject, lesson, lessonEnd, type, room)) {
+                                L.d("HomeFragment", "MATCH FOUND at visible index $visibleIndex in visible date section $visibleDateIndex")
+                                val tableView = findTableViewForEntry(visibleDateIndex, visibleIndex)
+                                if (tableView != null) {
+                                    L.d("HomeFragment", "Successfully found table view for entry")
+                                    return Pair(tableView, entry)
+                                } else {
+                                    L.w("HomeFragment", "Table view not found for entry")
                                 }
                             }
                         }
+                        break
                     }
+                } else {
+                    L.d("HomeFragment", "Date '$entryDateString' has no visible entries, skipping")
                 }
             }
+
+            L.w("HomeFragment", "No matching substitute entry found")
         } catch (e: Exception) {
             L.e("HomeFragment", "Error finding substitute entry", e)
         }
@@ -2056,44 +2113,67 @@ class HomeFragment : Fragment() {
         val entryLesson = entry.getInt("stunde")
         val entryLessonEnd = entry.optInt("stundebis", entryLesson)
         val entryType = entry.optString("text", "")
-        val entryRoom = entry.optString("raum", "")
 
-        return entrySubject.equals(subject, ignoreCase = true) &&
-                entryLesson == lesson &&
-                entryLessonEnd == lessonEnd &&
-                entryType.equals(type, ignoreCase = true) &&
-                entryRoom.equals(room, ignoreCase = true)
+        val subjectMatches = entrySubject == subject
+        val lessonMatches = entryLesson == lesson && entryLessonEnd == lessonEnd
+        val typeMatches = entryType == type
+
+        L.d("HomeFragment", "Detailed match check:")
+        L.d("HomeFragment", "  Subject: '$entrySubject' == '$subject' -> $subjectMatches")
+        L.d("HomeFragment", "  Lesson: $entryLesson-$entryLessonEnd == $lesson-$lessonEnd -> $lessonMatches")
+        L.d("HomeFragment", "  Type: '$entryType' == '$type' -> $typeMatches")
+        L.d("HomeFragment", "  Overall match: ${subjectMatches && lessonMatches && typeMatches}")
+
+        return subjectMatches && lessonMatches && typeMatches
     }
 
     private fun findTableViewForEntry(dateIndex: Int, entryIndex: Int): View? {
         try {
-            val horizontallyCenteredWrapper = contentLayout.getChildAt(0) as? LinearLayout
-            val contentContainer = horizontallyCenteredWrapper?.getChildAt(0) as? LinearLayout ?: return null
+            if (!::contentLayout.isInitialized || contentLayout.childCount == 0) {
+                L.w("HomeFragment", "Content layout not initialized or empty")
+                return null
+            }
 
-            var currentDateIndex = -1
+            val horizontallyCenteredWrapper = contentLayout.getChildAt(0) as? LinearLayout
+            if (horizontallyCenteredWrapper == null) {
+                L.w("HomeFragment", "Horizontal wrapper not found")
+                return null
+            }
+
+            val contentContainer = horizontallyCenteredWrapper.getChildAt(0) as? LinearLayout
+            if (contentContainer == null) {
+                L.w("HomeFragment", "Content container not found")
+                return null
+            }
+
+            var currentVisibleDateIndex = -1
             var foundTable: TableLayout? = null
+
+            L.d("HomeFragment", "Searching through ${contentContainer.childCount} children for VISIBLE date index $dateIndex")
 
             for (i in 0 until contentContainer.childCount) {
                 val child = contentContainer.getChildAt(i)
 
-                // look for date headers (bold textview)
-                if (child is TextView && child.typeface?.isBold == true) {
-                    currentDateIndex++
-                    L.d("HomeFragment", "Found date header at index $i, currentDateIndex = $currentDateIndex")
+                if (child is TextView &&
+                    child.typeface?.isBold == true &&
+                    (child.gravity and android.view.Gravity.CENTER_HORIZONTAL) != 0) {
 
-                    if (currentDateIndex == dateIndex) {
-                        // Look for the table after this header
-                        for (j in i + 1 until contentContainer.childCount) {
-                            val nextChild = contentContainer.getChildAt(j)
+                    currentVisibleDateIndex++
+                    L.d("HomeFragment", "Found date header at child index $i, currentVisibleDateIndex = $currentVisibleDateIndex, text = '${child.text}'")
+
+                    if (currentVisibleDateIndex == dateIndex) {
+                        L.d("HomeFragment", "This is our target date section!")
+                        if (i + 1 < contentContainer.childCount) {
+                            val nextChild = contentContainer.getChildAt(i + 1)
                             if (nextChild is TableLayout) {
                                 foundTable = nextChild
-                                L.d("HomeFragment", "Found table with ${foundTable.childCount} rows")
+                                L.d("HomeFragment", "Found table with ${foundTable.childCount} rows (including header)")
                                 break
+                            } else {
+                                L.w("HomeFragment", "Next child after date header is not a TableLayout: ${nextChild.javaClass.simpleName}")
                             }
-                            // Stop if we hit another date header
-                            if (nextChild is TextView && nextChild.typeface?.isBold == true) {
-                                break
-                            }
+                        } else {
+                            L.w("HomeFragment", "No child found after date header")
                         }
                         break
                     }
@@ -2101,17 +2181,22 @@ class HomeFragment : Fragment() {
             }
 
             if (foundTable != null) {
-                // +1 to skip header row -> ensure we dont go oob
+                // +1 to skip header row, ensure we don't go out of bounds
                 val targetRowIndex = entryIndex + 1
+                L.d("HomeFragment", "Looking for row at index $targetRowIndex in table with ${foundTable.childCount} rows")
                 if (targetRowIndex < foundTable.childCount) {
                     val targetRow = foundTable.getChildAt(targetRowIndex)
                     L.d("HomeFragment", "Found target row at index $targetRowIndex")
                     return targetRow
                 } else {
                     L.w("HomeFragment", "Target row index $targetRowIndex >= table child count ${foundTable.childCount}")
+                    for (j in 0 until foundTable.childCount) {
+                        val row = foundTable.getChildAt(j)
+                        L.d("HomeFragment", "  Row $j: ${row.javaClass.simpleName}")
+                    }
                 }
             } else {
-                L.w("HomeFragment", "No table found for date index $dateIndex")
+                L.w("HomeFragment", "No table found for visible date index $dateIndex")
             }
 
         } catch (e: Exception) {
@@ -2279,6 +2364,24 @@ class HomeFragment : Fragment() {
         } catch (e: Exception) {
             L.e("HomeFragment", "Error filtering past dates", e)
             return jsonData
+        }
+    }
+
+    private fun highlightWithRetry(subject: String, lesson: Int, lessonEnd: Int, dateString: String, type: String, room: String, attempt: Int) {
+        if (attempt >= 10) {
+            L.w("HomeFragment", "Max highlight attempts reached")
+            Toast.makeText(requireContext(), "Could not find entry after multiple attempts", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (currentJsonData != null && ::contentLayout.isInitialized) {
+            L.d("HomeFragment", "Data ready, attempting highlight (attempt ${attempt + 1})")
+            highlightAndShowSubstitute(subject, lesson, lessonEnd, dateString, type, room)
+        } else {
+            L.d("HomeFragment", "Data not ready yet, retry in 500ms (attempt ${attempt + 1})")
+            Handler(Looper.getMainLooper()).postDelayed({
+                highlightWithRetry(subject, lesson, lessonEnd, dateString, type, room, attempt + 1)
+            }, 500)
         }
     }
 }

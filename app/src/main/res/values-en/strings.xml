@@ -299,7 +299,7 @@
     <string name="dialog_sec_select_all">Select all</string>
     <string name="dialog_sec_deselect_all">Deselect all</string>
     <string name="dialog_sec_cancel">Cancel</string>
-    <string name="dialog_sec_save">Continue</string>
+    <string name="dialog_sec_save">Save</string>
 
     <!-- DIALOG_SUBJECT_DETAILS.XML -->
     <string name="dia_sub_det_subject_name">Mathematics</string>
@@ -756,7 +756,7 @@
     <string name="home_last_update">Last update: %s</string>
     <string name="home_last_update_offline">Last update: %s (Offline)</string>
     <string name="home_refresh">Refresh</string>
-    <string name="home_no_entries_all">Unfortunately nothing is cancelled. 😭</string>
+    <string name="home_no_entries_all">Nothing is cancelled. 😭</string>
     <string name="home_no_entries_filtered">Your subjects are not affected! 😭</string>
     <string name="home_today_suffix">(today)</string>
     <string name="home_tomorrow_suffix">(tomorrow)</string>

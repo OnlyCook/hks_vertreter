@@ -32,11 +32,16 @@ class MainActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
         val darkModeEnabled = sharedPreferences.getBoolean("dark_mode_enabled", false)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             AppCompatDelegate.setDefaultNightMode(
-                if (darkModeEnabled) AppCompatDelegate.MODE_NIGHT_YES
-                else AppCompatDelegate.MODE_NIGHT_NO
+                when {
+                    followSystemTheme -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                    darkModeEnabled -> AppCompatDelegate.MODE_NIGHT_YES
+                    else -> AppCompatDelegate.MODE_NIGHT_NO
+                }
             )
         }
 

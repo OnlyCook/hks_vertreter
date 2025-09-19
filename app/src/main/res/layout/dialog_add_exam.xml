@@ -103,7 +103,7 @@
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:padding="8dp"
-                    android:background="@android:color/background_light"
+                    android:background="?attr/colorSurface"
                     android:minWidth="60dp"
                     android:gravity="center" />
 

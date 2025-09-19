@@ -17,7 +17,7 @@
             android:text="@string/dlg_edit_sub_subject_info"
             android:textSize="12sp"
             android:textStyle="italic"
-            android:background="@android:color/background_light"
+            android:background="?attr/homeworkDialogNotesBackgroundColor"
             android:padding="8dp"
             android:layout_marginBottom="16dp" />
 
@@ -167,7 +167,7 @@
                     android:text="@string/dlg_edit_sub_half_years_count"
                     android:textSize="12sp"
                     android:gravity="center"
-                    android:background="@android:color/background_light"
+                    android:background="?attr/homeworkDialogNotesBackgroundColor"
                     android:padding="8dp"
                     android:layout_marginBottom="8dp" />
 
@@ -311,7 +311,7 @@
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:gravity="center"
-                    android:background="@android:color/background_light"
+                    android:background="?attr/homeworkDialogNotesBackgroundColor"
                     android:padding="8dp"
                     android:layout_marginBottom="8dp" />
 

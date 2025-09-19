@@ -63,6 +63,8 @@ import androidx.core.content.edit
 import androidx.core.view.isVisible
 import android.widget.ImageButton
 import android.graphics.Typeface
+import android.util.TypedValue
+import androidx.annotation.AttrRes
 import androidx.navigation.fragment.findNavController
 import com.thecooker.vertretungsplaner.ui.exams.ExamFragment
 
@@ -293,7 +295,8 @@ class GalleryFragment : Fragment() {
         listOf(getString(R.string.monday_short), getString(R.string.tuesday_short), getString(R.string.wednesday_short), getString(R.string.thursday_short), getString(R.string.friday_short))
     }
 
-    private val colorPriorities = mapOf( // color priorities (largest)
+    private val colorPriorities = mapOf( // color priorities (lowest to largest)
+        "room_change" to 0,
         "homework" to 1,
         "exam" to 2,
         "holiday" to 3,
@@ -402,7 +405,7 @@ class GalleryFragment : Fragment() {
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setTypeface(null, Typeface.BOLD)
 
             layoutParams = TableRow.LayoutParams(
@@ -1038,7 +1041,7 @@ class GalleryFragment : Fragment() {
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_select_school_year)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(yearSpinner)
         container.addView(clearExistingCheckbox)
@@ -1341,13 +1344,13 @@ class GalleryFragment : Fragment() {
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_year)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_calendar_week)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(weekSpinner)
 
@@ -1413,19 +1416,19 @@ class GalleryFragment : Fragment() {
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_year)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(yearSpinner)
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_month)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(monthSpinner)
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_day)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         })
         container.addView(daySpinner)
 
@@ -1668,8 +1671,8 @@ class GalleryFragment : Fragment() {
             textSize = fontSize
             gravity = Gravity.CENTER
             setPadding(8, 8, 8, 8)
-            setTextColor(Color.BLACK)
-            background = createRoundedDrawable(Color.LTGRAY)
+            setTextColor(getThemeColor(R.attr.tableTextColor))
+            background = createRoundedDrawable(getThemeColor(R.attr.calendarBreakBackgroundColor))
 
             layoutParams = TableRow.LayoutParams(0, if (isRealTimeEnabled) breakHeight else TableRow.LayoutParams.WRAP_CONTENT).apply {
                 span = 2
@@ -1679,6 +1682,21 @@ class GalleryFragment : Fragment() {
 
         breakRow.addView(breakView)
         calendarGrid.addView(breakRow)
+    }
+
+    private fun hasRoomChangeForLesson(date: Date, lesson: Int, subject: String): Boolean {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+
+        return substituteEntries.any { substitute ->
+            val startLesson = substitute.stunde
+            val endLesson = substitute.stundeBis ?: substitute.stunde
+
+            lesson >= startLesson && lesson <= endLesson &&
+                    substitute.fach == subject &&
+                    (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
+                            substitute.art.matches(Regex("Takes place in room .*")))
+        }
     }
 
     private fun createDayLessonCell(
@@ -1788,18 +1806,13 @@ class GalleryFragment : Fragment() {
             val teacherToShow = timetableEntry.teacher.takeIf { it.isNotBlank() }
                 ?: getTeacherAndRoomForSubject(timetableEntry.subject).first
 
-            val roomToShow = timetableEntry.room.takeIf { it.isNotBlank() }
+            val roomToUse = timetableEntry.room.takeIf { it.isNotBlank() }
                 ?: getTeacherAndRoomForSubject(timetableEntry.subject).second
 
-            val teacherRoomDisplay = formatTeacherRoomDisplay(teacherToShow, roomToShow)
-
+            val teacherRoomDisplay = formatTeacherRoomDisplay(teacherToShow, roomToUse)
             val displaySubject = translateSubjectForDisplay(timetableEntry.subject)
 
-            if (teacherRoomDisplay.isNotBlank()) {
-                "$displaySubject | $teacherRoomDisplay"
-            } else {
-                displaySubject
-            }
+            var hasRoomChange = hasRoomChangeForLesson(currentWeekDay.time, lesson, timetableEntry.subject)
 
             calendarEntries.addAll(
                 getCalendarEntriesForDayAndLesson(
@@ -1814,12 +1827,12 @@ class GalleryFragment : Fragment() {
             var substituteText = ""
             var isCancelled = false
             var hasTeacherSubstitute = false
-            var hasRoomChange = false
             var newRoom = ""
 
             val substituteDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
             val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), substituteDateStr)
 
+            // process substitute entries
             substituteEntries.forEach { substitute ->
                 val startLesson = substitute.stunde
                 val endLesson = substitute.stundeBis ?: substitute.stunde
@@ -1850,6 +1863,7 @@ class GalleryFragment : Fragment() {
                 }
             }
 
+            // process calendar entries for additional info
             calendarEntries.forEach { entry ->
                 when (entry.type) {
                     EntryType.HOMEWORK -> additionalInfo.add(getString(R.string.gall_homework_single))
@@ -1880,11 +1894,13 @@ class GalleryFragment : Fragment() {
                 }
             }
 
+            // build display text ordered
             if (hasSubstitute) {
                 val originalSubject = translateSubjectForDisplay(timetableEntry.subject)
                 val newSubjectInfo = formatSubstituteText(substituteText)
+                val subjectWithAsterisk = if (hasRoomChange) "${originalSubject}*" else originalSubject
 
-                val htmlText = "<small><s>$originalSubject</s></small><br><b>$newSubjectInfo</b>"
+                val htmlText = "<small><s>$subjectWithAsterisk</s></small><br><b>$newSubjectInfo</b>"
 
                 if (additionalInfo.isNotEmpty()) {
                     val finalHtml = htmlText + "<br><small>" + additionalInfo.joinToString(" | ") + "</small>"
@@ -1893,18 +1909,25 @@ class GalleryFragment : Fragment() {
                     cell.text = Html.fromHtml(htmlText, Html.FROM_HTML_MODE_COMPACT)
                 }
             } else {
-                var finalDisplayText = displaySubject
-
-                if (hasTeacherSubstitute && teacherToShow.isNotBlank()) {
-                    finalDisplayText += " | <s>$teacherToShow</s>"
-                } else if (teacherToShow.isNotBlank()) {
-                    finalDisplayText += " | $teacherToShow"
+                var finalDisplayText = if (teacherRoomDisplay.isNotBlank()) {
+                    "$displaySubject | $teacherRoomDisplay"
+                } else {
+                    displaySubject
                 }
 
-                if (hasRoomChange && roomToShow.isNotBlank()) {
-                    finalDisplayText += " | <s>$roomToShow</s> ➞ $newRoom"
-                } else if (roomToShow.isNotBlank()) {
-                    finalDisplayText += " | $roomToShow"
+                if (hasRoomChange) {
+                    finalDisplayText = finalDisplayText.replace(displaySubject, "${displaySubject}*")
+                }
+
+                if (hasTeacherSubstitute && teacherToShow.isNotBlank()) {
+                    finalDisplayText = finalDisplayText.replace(" | $teacherToShow", " | <s>$teacherToShow</s>")
+                }
+
+                if (hasRoomChange) {
+                    if (roomToUse.isNotBlank()) {
+                        finalDisplayText = finalDisplayText.replace(" | $roomToUse", " | <s>$roomToUse</s> ➞ $newRoom")
+                    }
+                    finalDisplayText = finalDisplayText.replace(displaySubject, "${displaySubject}*")
                 }
 
                 if (additionalInfo.isNotEmpty()) {
@@ -1912,7 +1935,15 @@ class GalleryFragment : Fragment() {
                 }
 
                 finalDisplayText = if (isCancelled) {
-                    "<s><b>$finalDisplayText</b></s>"
+                    val parts = finalDisplayText.split("<br>", limit = 2)
+                    val mainContent = parts[0].replace(displaySubject, "<b>$displaySubject</b>")
+                    val strikethroughMain = "<s>$mainContent</s>"
+
+                    if (parts.size > 1) {
+                        "$strikethroughMain<br>${parts[1]}"
+                    } else {
+                        strikethroughMain
+                    }
                 } else {
                     finalDisplayText.replace(displaySubject, "<b>$displaySubject</b>")
                 }
@@ -2146,7 +2177,7 @@ class GalleryFragment : Fragment() {
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         }
 
         val row = TableRow(requireContext())
@@ -2218,7 +2249,7 @@ class GalleryFragment : Fragment() {
         val notesLabel = TextView(requireContext()).apply {
             text = getString(R.string.gall_notes)
             textSize = 16f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setTypeface(null, Typeface.BOLD)
         }
 
@@ -2232,7 +2263,7 @@ class GalleryFragment : Fragment() {
         val occasionsLabel = TextView(requireContext()).apply {
             text = getString(R.string.gall_special_events)
             textSize = 16f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 24, 0, 8)
         }
@@ -2412,6 +2443,10 @@ class GalleryFragment : Fragment() {
             .show()
     }
 
+    fun Int.toHexString(): String {
+        return String.format("#%08X", this)
+    }
+
     private fun createLessonRows() {
         val maxLessons = getMaxLessonsForWeek()
         val currentTime = Calendar.getInstance()
@@ -2434,8 +2469,10 @@ class GalleryFragment : Fragment() {
                 setTypeface(null, Typeface.BOLD)
 
                 // set default background without highlighting
-                background = createFlatRoundedDrawable("#ECEFF1")
-                setTextColor("#37474F".toColorInt())
+                val colorInt = getThemeColor(R.attr.calendarLessonTimeBackgroundColor)
+                val hexColor = colorInt.toHexString()
+                background = createFlatRoundedDrawable(hexColor)
+                setTextColor(getThemeColor(R.attr.tableTextColor))
 
                 setOnClickListener { showLessonTimeDetails(lesson) }
             }
@@ -2556,10 +2593,6 @@ class GalleryFragment : Fragment() {
         if (timetableEntry != null && !timetableEntry.isBreak) {
             cellText = translateSubjectForDisplay(timetableEntry.subject)
 
-            if (hasRoomChange) {
-                cellText += "*"
-            }
-
             calendarEntries.addAll(
                 getCalendarEntriesForDayAndLesson(
                     currentWeekDay.time,
@@ -2575,6 +2608,10 @@ class GalleryFragment : Fragment() {
                     entry.backgroundColor == getColorBlindFriendlyColor("red")) {
                     isCancelled = true
                 }
+            }
+
+            if (hasRoomChange) {
+                cellText += "*"
             }
         } else if (isEditMode) {
             cellText = "＋"
@@ -2695,8 +2732,8 @@ class GalleryFragment : Fragment() {
             textSize = fontSize
             gravity = Gravity.CENTER
             setPadding(4, 4, 4, 4)
-            setTextColor(Color.BLACK)
-            background = createRoundedDrawable(Color.LTGRAY)
+            setTextColor(getThemeColor(R.attr.tableTextColor))
+            background = createRoundedDrawable(getThemeColor(R.attr.calendarBreakBackgroundColor))
 
             layoutParams = TableRow.LayoutParams(0, if (isRealTimeEnabled) breakHeight else TableRow.LayoutParams.WRAP_CONTENT).apply {
                 span = 6
@@ -2803,7 +2840,7 @@ class GalleryFragment : Fragment() {
             val labelText = TextView(requireContext()).apply {
                 text = label
                 textSize = 14f
-                setTextColor(Color.BLACK)
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
             }
 
             addView(colorBox)
@@ -2967,7 +3004,7 @@ class GalleryFragment : Fragment() {
             L.w("GalleryFragment", "Error loading exams", e)
         }
 
-        // add substitute entries
+        // add substitute entries (but handle room changes differently)
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
         val substituteEntries =
             SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
@@ -2976,17 +3013,30 @@ class GalleryFragment : Fragment() {
             val endLesson = substitute.stundeBis ?: substitute.stunde
 
             if (lesson >= startLesson && lesson <= endLesson && substitute.fach == subject) {
-                val backgroundColor = getSubstituteBackgroundColor(substitute.art)
-                val formattedText = formatSubstituteText(substitute.art)
-                entries.add(
-                    CalendarEntry(
-                        EntryType.SUBSTITUTE,
-                        formattedText.take(15),
-                        substitute.fach,
-                        backgroundColor,
-                        colorPriorities["exam"] ?: 0
+                if (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
+                    substitute.art.matches(Regex("Takes place in room .*"))) {
+                    entries.add(
+                        CalendarEntry(
+                            EntryType.SUBSTITUTE,
+                            "Room change",
+                            substitute.fach,
+                            Color.TRANSPARENT,
+                            colorPriorities["room_change"] ?: 0
+                        )
                     )
-                )
+                } else {
+                    val backgroundColor = getSubstituteBackgroundColor(substitute.art)
+                    val formattedText = formatSubstituteText(substitute.art)
+                    entries.add(
+                        CalendarEntry(
+                            EntryType.SUBSTITUTE,
+                            formattedText.take(15),
+                            substitute.fach,
+                            backgroundColor,
+                            colorPriorities["exam"] ?: 0
+                        )
+                    )
+                }
             }
         }
 
@@ -3081,11 +3131,11 @@ class GalleryFragment : Fragment() {
                 background = createRoundedDrawable("#0f5293".toColorInt())
                 setTextColor(Color.WHITE)
             } else if (isLessonColumn) {
-                background = createRoundedDrawable("#ECEFF1".toColorInt())
-                setTextColor("#37474F".toColorInt())
+                background = createRoundedDrawable(getThemeColor(R.attr.calendarLessonTimeBackgroundColor))
+                setTextColor(getThemeColor(R.attr.textSecondaryColor))
             } else {
-                background = createRoundedDrawable(Color.WHITE)
-                setTextColor("#212121".toColorInt())
+                background = createRoundedDrawable(getThemeColor(R.attr.cardBackgroundColor))
+                setTextColor(getThemeColor(R.attr.tableTextColor))
             }
         }
     }
@@ -3136,7 +3186,7 @@ class GalleryFragment : Fragment() {
         val roomLabel = TextView(requireContext()).apply {
             text = getString(R.string.gall_this_room)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
             visibility = View.GONE
         }
 
@@ -3216,13 +3266,13 @@ class GalleryFragment : Fragment() {
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_this_subject)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
         })
         container.addView(subjectSpinner)
         container.addView(TextView(requireContext()).apply {
             text = getString(R.string.gall_this_duration)
             textSize = 14f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
         })
         container.addView(durationSpinner)
         container.addView(roomLabel)
@@ -3461,7 +3511,7 @@ class GalleryFragment : Fragment() {
         val titleText = TextView(requireContext()).apply {
             text = getString(R.string.gall_details_for, dateStr)
             textSize = 18f
-            setTextColor(Color.BLACK)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setPadding(0, 0, 0, 12)
         }
         container.addView(titleText)
@@ -3493,7 +3543,7 @@ class GalleryFragment : Fragment() {
                 else -> getString(R.string.gall_days_ago, abs(daysDifference))
             }
             textSize = 14f
-            setTextColor(Color.GRAY)
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
             setPadding(0, 0, 0, 24)
         }
         container.addView(distanceText)
@@ -3504,7 +3554,7 @@ class GalleryFragment : Fragment() {
             val vacationText = TextView(requireContext()).apply {
                 text = vacationType
                 textSize = 16f
-                setTextColor(Color.BLACK)
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
                 setPadding(0, 0, 0, 16)
             }
             container.addView(vacationText)
@@ -3515,7 +3565,7 @@ class GalleryFragment : Fragment() {
         if (userNotes.isNotBlank()) {
             val notesContainer = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
-                background = createRoundedDrawable("#E3F2FD".toColorInt())
+                background = createRoundedDrawable(getThemeColor(R.attr.calendarNotesInner))
                 setPadding(24, 20, 24, 20)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -3536,8 +3586,8 @@ class GalleryFragment : Fragment() {
             val notesContent = TextView(requireContext()).apply {
                 text = userNotes
                 textSize = 14f
-                setTextColor("#424242".toColorInt())
-                background = createRoundedDrawable(Color.WHITE)
+                setTextColor(getThemeColor(R.attr.calendarNotesFont))
+                background = createRoundedDrawable(getThemeColor(R.attr.calendarNotes))
                 setPadding(16, 12, 16, 12)
             }
 
@@ -3552,7 +3602,7 @@ class GalleryFragment : Fragment() {
             val occasionsText = TextView(requireContext()).apply {
                 text = getString(R.string.gall_special_occasiions_manual)
                 textSize = 16f
-                setTextColor(Color.BLACK)
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 0, 0, 8)
             }
@@ -3562,7 +3612,7 @@ class GalleryFragment : Fragment() {
                 val occasionItem = TextView(requireContext()).apply {
                     "➞ $occasion".also { text = it }
                     textSize = 14f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setPadding(16, 4, 0, 4)
                 }
                 container.addView(occasionItem)
@@ -3583,7 +3633,7 @@ class GalleryFragment : Fragment() {
                 val calendarNotesText = TextView(requireContext()).apply {
                     text = getString(R.string.gall_spcieal_occasions_exam_schedule)
                     textSize = 16f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setTypeface(null, Typeface.BOLD)
                     setPadding(0, 0, 0, 8)
                 }
@@ -3592,7 +3642,7 @@ class GalleryFragment : Fragment() {
                 val noteItem = TextView(requireContext()).apply {
                     "- $note".also { text = it }
                     textSize = 14f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setPadding(16, 4, 0, 16)
                 }
                 container.addView(noteItem)
@@ -3607,7 +3657,7 @@ class GalleryFragment : Fragment() {
                 val homeworkText = TextView(requireContext()).apply {
                     text = getString(R.string.gall_homework)
                     textSize = 16f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setTypeface(null, Typeface.BOLD)
                     setPadding(0, 0, 0, 8)
                 }
@@ -3637,7 +3687,7 @@ class GalleryFragment : Fragment() {
                     val homeworkItem = TextView(requireContext()).apply {
                         "➞ ${homework.subject} $lessonText".also { text = it }
                         textSize = 14f
-                        setTextColor(Color.BLACK)
+                        setTextColor(getThemeColor(R.attr.textPrimaryColor))
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     }
 
@@ -3676,7 +3726,7 @@ class GalleryFragment : Fragment() {
                 val examsText = TextView(requireContext()).apply {
                     text = getString(R.string.gall_exams)
                     textSize = 16f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setTypeface(null, Typeface.BOLD)
                     setPadding(0, 0, 0, 8)
                 }
@@ -3692,7 +3742,7 @@ class GalleryFragment : Fragment() {
                     val examItem = TextView(requireContext()).apply {
                         "➞ ${exam.subject}".also { text = it }
                         textSize = 14f
-                        setTextColor(Color.BLACK)
+                        setTextColor(getThemeColor(R.attr.textPrimaryColor))
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     }
 
@@ -3728,7 +3778,7 @@ class GalleryFragment : Fragment() {
             val examsText = TextView(requireContext()).apply {
                 text = getString(R.string.gall_exams)
                 textSize = 16f
-                setTextColor(Color.BLACK)
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 0, 0, 8)
             }
@@ -3744,7 +3794,7 @@ class GalleryFragment : Fragment() {
                 val examItem = TextView(requireContext()).apply {
                     "➞ ${exam.subject}".also { text = it }
                     textSize = 14f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
 
@@ -3780,7 +3830,7 @@ class GalleryFragment : Fragment() {
             val substitutesText = TextView(requireContext()).apply {
                 text = getString(R.string.gall_substitutions)
                 textSize = 16f
-                setTextColor(Color.BLACK)
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 0, 0, 8)
             }
@@ -3803,7 +3853,7 @@ class GalleryFragment : Fragment() {
                 val substituteItem = TextView(requireContext()).apply {
                     "➞ $lessonRange ${substitute.fach}: $formattedSubstitute".also { text = it }
                     textSize = 14f
-                    setTextColor(Color.BLACK)
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
 
@@ -4143,7 +4193,7 @@ class GalleryFragment : Fragment() {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
             cornerRadius = 16f
-            setStroke(1, "#E0E0E0".toColorInt())
+            setStroke(1, getThemeColor(R.attr.calendarCellBorderColor))
         }
     }
 
@@ -4464,7 +4514,7 @@ class GalleryFragment : Fragment() {
                         val breakPosition = getBreakPositionForDayView(i)
                         if (breakPosition == afterLesson) {
                             currentHighlightedCell = cell
-                            setStaticHighlight(cell, Color.LTGRAY)
+                            setStaticHighlight(cell, getThemeColor(R.attr.calendarBreakBackgroundColor))
                             return
                         }
                     }
@@ -4480,7 +4530,7 @@ class GalleryFragment : Fragment() {
                         val breakPosition = getBreakPositionFromGrid(i)
                         if (breakPosition == afterLesson) {
                             currentHighlightedCell = cell
-                            setStaticHighlight(cell, Color.LTGRAY)
+                            setStaticHighlight(cell, getThemeColor(R.attr.calendarBreakBackgroundColor))
                             return
                         }
                     }
@@ -4638,8 +4688,14 @@ class GalleryFragment : Fragment() {
                 } ?: false
 
                 if (!isLessonTimeCell) {
+                    val actualBackgroundColor = if (backgroundColor == Color.WHITE || backgroundColor == getThemeColor(R.attr.cardBackgroundColor)) {
+                        getCurrentCellBackgroundColor(cell)
+                    } else {
+                        backgroundColor
+                    }
+
                     cell.background = createRoundedDrawableWithBorder(
-                        backgroundColor,
+                        actualBackgroundColor,
                         Color.YELLOW,
                         8
                     )
@@ -4660,11 +4716,11 @@ class GalleryFragment : Fragment() {
                 val parent = cell.parent as? TableRow
                 if (parent != null && parent.getChildAt(0) == cell) {
                     if (isDayView) {
-                        cell.background = createRoundedDrawable("#ECEFF1".toColorInt())
-                        cell.setTextColor("#37474F".toColorInt())
+                        cell.background = createRoundedDrawable(getThemeColor(R.attr.calendarLessonTimeBackgroundColor))
+                        cell.setTextColor(getThemeColor(R.attr.textSecondaryColor))
                     } else {
-                        cell.background = createFlatRoundedDrawable("#ECEFF1")
-                        cell.setTextColor("#37474F".toColorInt())
+                        cell.background = createFlatRoundedDrawable(getThemeColor(R.attr.calendarLessonTimeBackgroundColor))
+                        cell.setTextColor(getThemeColor(R.attr.textSecondaryColor))
                     }
                 } else {
                     val calendarEntries = getCalendarEntriesForCurrentHighlightedCell()
@@ -4672,7 +4728,7 @@ class GalleryFragment : Fragment() {
                     cell.background = if (backgroundColor != Color.TRANSPARENT) {
                         createRoundedDrawable(backgroundColor)
                     } else {
-                        createRoundedDrawable(Color.WHITE)
+                        createRoundedDrawable(getThemeColor(R.attr.cardBackgroundColor))
                     }
                 }
             } catch (e: Exception) {
@@ -4680,6 +4736,13 @@ class GalleryFragment : Fragment() {
             }
         }
         currentHighlightedCell = null
+    }
+
+    private fun createFlatRoundedDrawable(color: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = 8f
+        }
     }
 
     private fun checkAndRestoreCurrentHighlight() {
@@ -4721,7 +4784,9 @@ class GalleryFragment : Fragment() {
     private fun startCurrentBreakHighlight(breakView: TextView) {
         stopCurrentHighlight()
         currentHighlightedCell = breakView
-        val pulseAnimation = createOptimizedPulseAnimation(breakView, Color.LTGRAY)
+
+        val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
+        val pulseAnimation = createOptimizedPulseAnimation(breakView, breakBackgroundColor)
         pulseAnimation.start()
     }
 
@@ -4783,7 +4848,7 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        return Color.WHITE // fallback
+        return getThemeColor(R.attr.cardBackgroundColor)
     }
 
     private fun getLessonFromRowIndex(rowIndex: Int): Int {
@@ -4877,10 +4942,14 @@ class GalleryFragment : Fragment() {
                     val cell = row.getChildAt(0) as? TextView ?: continue
                     val cellText = cell.text.toString()
 
-                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) { // be cautious
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) {
                         val breakPosition = getBreakPositionForDayView(i)
                         if (breakPosition == afterLesson) {
-                            startCurrentBreakHighlight(cell)
+                            stopCurrentHighlight()
+                            currentHighlightedCell = cell
+                            val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
+                            val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
+                            pulseAnimation.start()
                             return
                         }
                     }
@@ -4895,10 +4964,14 @@ class GalleryFragment : Fragment() {
                     val cell = row.getChildAt(j) as? TextView ?: continue
                     val cellText = cell.text.toString()
 
-                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) { // be cautious
+                    if (cellText.contains(getString(R.string.gall_break), ignoreCase = true)) {
                         val breakPosition = getBreakPositionFromGrid(i)
                         if (breakPosition == afterLesson) {
-                            startCurrentBreakHighlight(cell)
+                            stopCurrentHighlight()
+                            currentHighlightedCell = cell
+                            val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
+                            val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
+                            pulseAnimation.start()
                             return
                         }
                     }
@@ -5013,6 +5086,7 @@ class GalleryFragment : Fragment() {
 
         try {
             cell.background = createRoundedDrawable(Color.YELLOW)
+            cell.setTextColor(Color.BLACK)
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error highlighting lesson time cell", e)
         }
@@ -5423,7 +5497,7 @@ class GalleryFragment : Fragment() {
                 ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_forward)
             }
 
-            arrowIcon?.setTint("#0f5293".toColorInt())
+            arrowIcon?.setTint(getThemeColor(R.attr.settingsColorPrimary))
 
             if (isRightSwipe) {
                 textView.setCompoundDrawablesWithIntrinsicBounds(arrowIcon, null, null, null)
@@ -5486,7 +5560,7 @@ class GalleryFragment : Fragment() {
 
         val indicator = TextView(requireContext()).apply {
             textSize = 18f
-            setTextColor("#0f5293".toColorInt())
+            setTextColor(getThemeColor(R.attr.settingsColorPrimary))
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(40, 20, 40, 20)
@@ -5498,9 +5572,9 @@ class GalleryFragment : Fragment() {
 
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                setColor("#F0FFFFFF".toColorInt())
+                setColor(getThemeColor(R.attr.cardBackgroundColor))
                 cornerRadius = 35f
-                setStroke(4, "#0f5293".toColorInt())
+                setStroke(4, getThemeColor(R.attr.settingsColorPrimary))
                 elevation = 15f
             }
 
@@ -6041,5 +6115,11 @@ class GalleryFragment : Fragment() {
         _binding = null
         currentDialog?.dismiss()
         currentDialog = null
+    }
+
+    private fun getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(requireContext(), typedValue.resourceId)
     }
 }

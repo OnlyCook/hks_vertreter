@@ -43,6 +43,9 @@ import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.utils.ExamShareHelper
 import android.provider.Settings
 import android.graphics.Color
+import android.util.TypedValue
+import androidx.annotation.AttrRes
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 
 class ExamFragment : Fragment() {
@@ -1985,11 +1988,11 @@ class ExamFragment : Fragment() {
                         }
                     } catch (_: NumberFormatException) {
                         textGradeDisplay.text = ""
-                        textGradeDisplay.setBackgroundColor(resources.getColor(android.R.color.background_light))
+                        textGradeDisplay.setBackgroundColor(getThemeColor(R.attr.examAddColorSurface))
                     }
                 } else {
                     textGradeDisplay.text = ""
-                    textGradeDisplay.setBackgroundColor(resources.getColor(android.R.color.background_light))
+                    textGradeDisplay.setBackgroundColor(getThemeColor(R.attr.examAddColorSurface))
                 }
             }
         })
@@ -2328,37 +2331,6 @@ class ExamFragment : Fragment() {
 
         sortExams()
         filterExams("")
-    }
-
-    private fun addImportedExamToCalendarDataManager(exam: ExamEntry) {
-        val calendarManager = CalendarDataManager.getInstance(requireContext())
-        val existingInfo = calendarManager.getCalendarInfoForDate(exam.date)
-
-        if (existingInfo != null) {
-            val updatedExams = existingInfo.exams.toMutableList()
-            if (!updatedExams.any { it.id == exam.id }) {
-                updatedExams.add(exam)
-                val updatedInfo = existingInfo.copy(exams = updatedExams)
-                calendarManager.updateCalendarDay(updatedInfo)
-                L.d(TAG, "Added imported exam to existing calendar day: ${exam.subject}")
-            }
-        } else {
-            val cal = Calendar.getInstance().apply { time = exam.date }
-            val dayOfWeek = getGermanWeekday(exam.date)
-
-            val newInfo = CalendarDataManager.CalendarDayInfo(
-                date = exam.date,
-                dayOfWeek = dayOfWeek,
-                month = cal.get(Calendar.MONTH) + 1,
-                year = cal.get(Calendar.YEAR),
-                content = exam.subject,
-                exams = listOf(exam),
-                isSpecialDay = false,
-                specialNote = ""
-            )
-            calendarManager.addCalendarDay(newInfo)
-            L.d(TAG, "Created new calendar day with imported exam: ${exam.subject}")
-        }
     }
 
     private fun syncManualExamsToCalendarManager() {
@@ -2987,5 +2959,11 @@ class ExamFragment : Fragment() {
         if (arguments?.containsKey("highlight_exam_id") == true) {
             arguments = Bundle()
         }
+    }
+
+    private fun getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(requireContext(), typedValue.resourceId)
     }
 }

@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@android:color/white"
+    android:background="?attr/galleryBackgroundColor"
     tools:context=".ui.gallery.GalleryFragment">
 
     <LinearLayout
@@ -12,7 +12,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="@android:color/background_light">
+        android:background="?attr/galleryBackgroundColor">
 
         <!-- search bar -->
         <EditText
@@ -27,7 +27,8 @@
             android:background="@drawable/subtle_search_background"
             android:drawableStart="@android:drawable/ic_menu_search"
             android:textSize="16sp"
-            android:textColorHint="#757575"
+            android:textColor="?attr/textPrimaryColor"
+            android:textColorHint="?attr/textSecondaryColor"
             android:drawablePadding="8dp"
             android:paddingStart="20dp"/>
 
@@ -63,7 +64,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="8dp"
-        android:background="@android:color/background_light">
+        android:background="?attr/galleryBackgroundColor">
 
         <Button
             android:id="@+id/btnPreviousWeek"
@@ -72,7 +73,7 @@
             android:text="◄"
             android:textSize="18sp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:textColor="@android:color/holo_blue_dark" />
+            android:textColor="?attr/settingsColorPrimary" />
 
         <TextView
             android:id="@+id/currentWeekTextView"
@@ -83,7 +84,7 @@
             android:textSize="16sp"
             android:textStyle="bold"
             android:gravity="center"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/textPrimaryColor"
             android:clickable="true"
             android:focusable="true"
             android:background="?attr/selectableItemBackground"
@@ -96,7 +97,7 @@
             android:text="►"
             android:textSize="18sp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:textColor="@android:color/holo_blue_dark" />
+            android:textColor="?attr/settingsColorPrimary" />
 
     </LinearLayout>
 
@@ -116,7 +117,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:fillViewport="true"
-                android:background="@android:color/background_light">
+                android:background="?attr/galleryBackgroundColor">
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
@@ -184,7 +185,7 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:padding="8dp"
-        android:background="@android:color/background_light" />
+        android:background="?attr/galleryBackgroundColor" />
 
     <!-- edit mode controls -->
     <LinearLayout
@@ -194,7 +195,7 @@
         android:orientation="vertical"
         android:padding="12dp"
         android:gravity="center"
-        android:background="@android:color/background_light"
+        android:background="?attr/galleryBackgroundColor"
         android:visibility="gone">
 
         <!-- top: Undo and Redo buttons -->

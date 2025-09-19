@@ -4,7 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:background="?attr/subjectSelectionBackgroundColor">
 
     <!-- Toolbar -->
     <androidx.appcompat.widget.Toolbar
@@ -12,8 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
-        app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar" />
 
     <!-- Search section -->
     <LinearLayout
@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="@android:color/background_light">
+        android:background="?attr/subjectSelectionBackgroundColor">
 
         <EditText
             android:id="@+id/searchEditText"
@@ -70,7 +70,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="16dp"
-        android:background="@android:color/background_light"
+        android:background="?attr/subjectSelectionBackgroundColor"
         android:gravity="center_vertical">
 
         <TextView
@@ -170,7 +170,7 @@
         android:orientation="horizontal"
         android:padding="16dp"
         android:paddingBottom="32dp"
-        android:background="@android:color/background_light"
+        android:background="?attr/subjectSelectionBackgroundColor"
         android:elevation="4dp">
 
         <Button

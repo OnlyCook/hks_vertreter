@@ -1,10 +1,12 @@
 package com.thecooker.vertretungsplaner.ui.grades
 
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.thecooker.vertretungsplaner.R
@@ -68,7 +70,7 @@ class GradesAdapter(
             }
             holder.textFinalGrade.setTextColor(color)
         } else {
-            holder.textFinalGrade.setTextColor(ContextCompat.getColor(context, android.R.color.black))
+            holder.textFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor, holder))
         }
 
         holder.itemView.setOnClickListener {
@@ -81,6 +83,12 @@ class GradesAdapter(
     }
 
     override fun getItemCount(): Int = gradeList.size
+
+    private fun getThemeColor(@AttrRes attrRes: Int, holder: GradeViewHolder): Int {
+        val typedValue = TypedValue()
+        holder.itemView.context.theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(holder.itemView.context, typedValue.resourceId)
+    }
 }
 
 class ExamGradesAdapter(

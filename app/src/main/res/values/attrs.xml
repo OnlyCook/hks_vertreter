@@ -26,4 +26,54 @@
     <attr name="settingsHintBackgroundColor" format="color" />
     <attr name="filterLiftButtonHintColor" format="color" />
     <attr name="timetableManagerDropDownBG" format="color"/>
+
+    <!-- dialog_info_notification.xml -->
+    <attr name="dialogBackgroundColor" format="color" />
+    <attr name="dialogTitleColor" format="color" />
+    <attr name="dialogTextColor" format="color" />
+    <attr name="dialogSecondaryTextColor" format="color" />
+
+    <!-- subject_selection_activity.xml -->
+    <attr name="subjectSelectionBackgroundColor" format="color" />
+    <attr name="subjectSelectionItemBackgroundColor" format="color" />
+    <attr name="subjectSelectionItemTextColor" format="color" />
+    <attr name="subjectSelectionEditButtonColor" format="color" />
+    <attr name="subjectSelectionDeleteButtonColor" format="color" />
+    <attr name="subjectSelectionIconColor" format="color" />
+
+    <!-- dialog_add_subject_manual.xml -->
+    <attr name="dialogAddSubjectBackgroundColor" format="color" />
+    <attr name="dialogAddSubjectTextColor" format="color" />
+    <attr name="dialogAddSubjectHintColor" format="color" />
+    <attr name="dialogAddSubjectSecondaryTextColor" format="color" />
+    <attr name="dialogAddSubjectButtonColor" format="color" />
+
+    <!-- dialog_section_selection.xml -->
+    <attr name="dialogSectionButtonColor" format="color" />
+
+    <!-- fragment_exam.xml -->
+    <!-- fragment_grades.xml -->
+    <!-- fragment_slideshow.xml -->
+    <attr name="homeworkFragmentBackgroundColor" format="color" />
+    <attr name="homeworkFragmentTextColor" format="color" />
+    <attr name="homeworkItemEditButtonColor" format="color" />
+    <attr name="homeworkItemIconColor" format="color" />
+    <attr name="examAddColorSurface" format="color" />
+    <attr name="examItemFontColor" format="color" />
+    <attr name="gradesMainFontColor" format="color" />
+
+    <!-- dialog_homework_detail.xml -->
+    <attr name="homeworkDialogNotesBackgroundColor" format="color" />
+
+    <!-- nav_divider.xml -->
+    <attr name="navDividerColor" format="color" />
+
+    <!-- galleryfragment.kt -->
+    <attr name="galleryBackgroundColor" format="color" />
+    <attr name="calendarBreakBackgroundColor" format="color" />
+    <attr name="calendarCellBorderColor" format="color" />
+    <attr name="calendarLessonTimeBackgroundColor" format="color" />
+    <attr name="calendarNotes" format="color" />
+    <attr name="calendarNotesFont" format="color" />
+    <attr name="calendarNotesInner" format="color" />
 </resources>

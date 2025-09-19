@@ -65,7 +65,7 @@
             android:layout_weight="1"
             android:text="@string/dia_add_sub_manual_alt_rooms"
             android:textSize="14sp"
-            android:textColor="@android:color/black" />
+            android:textColor="?attr/dialogAddSubjectTextColor" />
 
         <Switch
             android:id="@+id/switchAlternativeRooms"

@@ -4,7 +4,7 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:padding="12dp"
-    android:background="?android:attr/selectableItemBackground"
+    android:background="?attr/subjectSelectionItemBackgroundColor"
     android:gravity="center_vertical"
     android:minHeight="48dp">
 
@@ -23,28 +23,26 @@
         android:layout_weight="1"
         android:text="Subject Name"
         android:textSize="16sp"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/subjectSelectionItemTextColor"
         android:paddingVertical="8dp" />
 
-    <!-- buttons -->
     <ImageButton
         android:id="@+id/btnEdit"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:src="@drawable/ic_pencil"
-        android:backgroundTint="@android:color/holo_orange_light"
+        android:backgroundTint="?attr/subjectSelectionEditButtonColor"
         android:layout_marginEnd="4dp"
         android:scaleType="centerInside"
         android:contentDescription="@string/item_sub_content_description_edit"
         style="@style/Widget.AppCompat.Button" />
-
 
     <ImageButton
         android:id="@+id/btnDelete"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:src="@drawable/ic_trash_can"
-        android:backgroundTint="@android:color/holo_red_dark"
+        android:backgroundTint="?attr/subjectSelectionDeleteButtonColor"
         android:scaleType="centerInside"
         android:contentDescription="@string/item_sub_content_description_delete"
         style="@style/Widget.AppCompat.Button" />

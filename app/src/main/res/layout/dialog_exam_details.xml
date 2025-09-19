@@ -80,7 +80,7 @@
             android:layout_height="wrap_content"
             android:textSize="14sp"
             android:minHeight="100dp"
-            android:background="#F5F5F5"
+            android:background="?attr/homeworkDialogNotesBackgroundColor"
             android:padding="12dp"
             android:scrollbars="vertical" />
 

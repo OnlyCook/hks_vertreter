@@ -15,10 +15,12 @@ import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
 import android.text.TextWatcher
+import android.util.TypedValue
 import android.view.*
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.AttrRes
 import androidx.appcompat.widget.PopupMenu
 import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
@@ -255,7 +257,7 @@ class GradesFragment : Fragment() {
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(resources.getColor(android.R.color.black))
+            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
             setTypeface(null, Typeface.BOLD)
         }
 
@@ -322,7 +324,7 @@ class GradesFragment : Fragment() {
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(resources.getColor(android.R.color.black))
+            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
         }
 
         val rootLayout = view.findViewById<LinearLayout>(R.id.gradesRootLayout)
@@ -706,12 +708,12 @@ class GradesFragment : Fragment() {
                     totalCourseCount > 44 -> android.R.color.holo_red_dark
                     goalGrade > 0 && average <= goalGrade -> android.R.color.holo_green_dark
                     goalGrade > 0 && average > goalGrade -> android.R.color.holo_red_dark
-                    else -> android.R.color.black
+                    else -> -1
                 }
-                tvFinalGrade.setTextColor(resources.getColor(color))
+                tvFinalGrade.setTextColor(if (color == -1) getThemeColor(R.attr.gradesMainFontColor) else resources.getColor(color))
             } else {
                 tvFinalGrade.text = getString(R.string.grades_total_grade_none)
-                tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
+                tvFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor))
             }
         } else { // simple grading logic
             val currentGrades = mutableListOf<Double>()
@@ -744,12 +746,12 @@ class GradesFragment : Fragment() {
                 val color = when {
                     goalGrade > 0 && average <= goalGrade -> android.R.color.holo_green_dark
                     goalGrade > 0 && average > goalGrade -> android.R.color.holo_red_dark
-                    else -> android.R.color.black
+                    else -> -1
                 }
-                tvFinalGrade.setTextColor(resources.getColor(color))
+                tvFinalGrade.setTextColor(if (color == -1) getThemeColor(R.attr.gradesMainFontColor) else resources.getColor(color))
             } else {
                 tvFinalGrade.text = getString(R.string.grades_total_grade_none)
-                tvFinalGrade.setTextColor(resources.getColor(android.R.color.black))
+                tvFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor))
             }
         }
     }
@@ -1608,7 +1610,7 @@ class GradesFragment : Fragment() {
 
     private fun showResetGraphDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Graph zurücksetzen")
+            .setTitle(getString(R.string.grades_reset_graph_title))
             .setIcon(android.R.drawable.ic_dialog_alert)
             .setMessage(getString(R.string.grades_reset_graph_message))
             .setPositiveButton(getString(R.string.grades_reset_graph_confirm)) { _, _ ->
@@ -2034,7 +2036,7 @@ class GradesFragment : Fragment() {
                         val first = (value["first"] as? Number)?.toInt() ?: 50
                         val second = (value["second"] as? Number)?.toInt() ?: 50
                         ratios[key] = Pair(first, second)
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         ratios[key] = Pair(50, 50)
                     }
                 }
@@ -2108,5 +2110,11 @@ class GradesFragment : Fragment() {
                 .putString(PREFS_PRUEFUNGSERGEBNISSE, Gson().toJson(newPruefungsergebnisse))
                 .putString(PREFS_SELECTED_HALF_YEARS, Gson().toJson(newSelectedHalfYears))
         }
+    }
+
+    private fun getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(requireContext(), typedValue.resourceId)
     }
 }

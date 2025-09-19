@@ -39,6 +39,7 @@ import androidx.core.net.toUri
 import android.provider.Settings
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Color
+import com.thecooker.vertretungsplaner.ui.gallery.GalleryFragment.InternalConstants
 
 class SlideshowFragment : Fragment() {
 
@@ -661,15 +662,16 @@ class SlideshowFragment : Fragment() {
 
     private fun setupSubjectSpinner(spinner: Spinner, selectedSubject: String?) {
         val allSubjects = getAvailableSubjects()
-        val subjects = allSubjects.filterNot { it.equals(getString(R.string.slide_free_lesson), ignoreCase = true) } // ignore "Freistunde"
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, subjects)
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, allSubjects)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
 
         selectedSubject?.let { subject ->
-            val position = subjects.indexOf(subject)
-            if (position >= 0) {
-                spinner.setSelection(position)
+            if (!isInternalConstant(subject)) {
+                val position = allSubjects.indexOf(subject)
+                if (position >= 0) {
+                    spinner.setSelection(position)
+                }
             }
         }
     }
@@ -758,7 +760,13 @@ class SlideshowFragment : Fragment() {
         val timetableSubjects = getTimetableSubjects()
         allSubjects.addAll(timetableSubjects)
 
-        return allSubjects.toList().sorted()
+        val filteredSubjects = allSubjects.filter { subject ->
+            !isInternalConstant(subject) &&
+                    !subject.equals(getString(R.string.slide_free_lesson), ignoreCase = true) &&
+                    subject.trim().isNotEmpty()
+        }
+
+        return filteredSubjects.toList().sorted()
     }
 
     private fun getTimetableSubjects(): List<String> {
@@ -777,7 +785,7 @@ class SlideshowFragment : Fragment() {
                 for ((_, entryData) in daySchedule) {
                     val entry = entryData as? Map<*, *> ?: continue
                     val subject = entry["subject"] as? String
-                    if (!subject.isNullOrEmpty() && subject.trim().isNotEmpty()) {
+                    if (!subject.isNullOrEmpty() && subject.trim().isNotEmpty() && !isInternalConstant(subject)) {
                         subjects.add(subject.trim())
                     }
                 }
@@ -787,6 +795,22 @@ class SlideshowFragment : Fragment() {
         }
 
         return subjects.toList().sorted()
+    }
+
+    private fun isInternalConstant(subject: String): Boolean {
+        return when (subject) {
+            InternalConstants.FREE_LESSON,
+            InternalConstants.NO_SCHOOL,
+            InternalConstants.HOLIDAY_TYPE_AUTUMN,
+            InternalConstants.HOLIDAY_TYPE_WINTER,
+            InternalConstants.HOLIDAY_TYPE_EASTER,
+            InternalConstants.HOLIDAY_TYPE_SUMMER,
+            InternalConstants.HOLIDAY_TYPE_WHITSUN,
+            InternalConstants.HOLIDAY_TYPE_SPRING,
+            InternalConstants.HOLIDAY_TYPE_GENERIC,
+            InternalConstants.HOLIDAY_GENERAL -> true
+            else -> false
+        }
     }
 
     private fun setupLessonSpinner(spinner: Spinner, selectedLessonNumber: Int?) {
@@ -1545,7 +1569,7 @@ class SlideshowFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         L.d("SlideshowFragment", "onViewCreated called")
-        L.d("SlideshowFragment", "Arguments: ${arguments}")
+        L.d("SlideshowFragment", "Arguments: $arguments")
 
         arguments?.getString("shared_homework_uri")?.let { uriString ->
             handleSharedHomework(uriString.toUri())

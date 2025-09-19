@@ -3521,20 +3521,20 @@ class SettingsActivity : BaseActivity() {
         WorkScheduler.cancelDailyHomeworkReminder(this)
         WorkScheduler.cancelExamReminder(this)
 
-        val editor = sharedPreferences.edit()
-        for ((key, value) in settingsToPreserve) {
-            when (value) {
-                is Boolean -> editor.putBoolean(key, value)
-                is String -> editor.putString(key, value)
-                is Int -> editor.putInt(key, value)
+        sharedPreferences.edit {
+            for ((key, value) in settingsToPreserve) {
+                when (value) {
+                    is Boolean -> putBoolean(key, value)
+                    is String -> putString(key, value)
+                    is Int -> putInt(key, value)
+                }
             }
-        }
 
-        val newBildungsgang = extractBildungsgangFromClass(newClass)
-        editor.putBoolean("setup_completed", true)
-        editor.putString("selected_bildungsgang", newBildungsgang)
-        editor.putString("selected_klasse", newClass)
-        editor.apply()
+            val newBildungsgang = extractBildungsgangFromClass(newClass)
+            putBoolean("setup_completed", true)
+            putString("selected_bildungsgang", newBildungsgang)
+            putString("selected_klasse", newClass)
+        }
 
         if (preserveGrades && !gradeDataToPreserve.isNullOrEmpty()) {
             try {

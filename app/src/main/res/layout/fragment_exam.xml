@@ -4,14 +4,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@android:color/background_light">
+    android:background="?attr/homeworkFragmentBackgroundColor">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="@android:color/background_light">
+        android:background="?attr/homeworkFragmentBackgroundColor">
 
         <!-- search -->
         <EditText
@@ -60,7 +60,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="16dp"
-        android:background="@android:color/background_light"
+        android:background="?attr/homeworkFragmentBackgroundColor"
         android:gravity="center_vertical">
 
         <TextView
@@ -69,7 +69,8 @@
             android:layout_weight="1"
             android:text="@string/frag_exam_your_exams"
             android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:textColor="?attr/homeworkFragmentTextColor"/>
 
         <TextView
             android:id="@+id/tvExamCount"
@@ -77,7 +78,7 @@
             android:layout_height="wrap_content"
             android:text="@string/frag_exam_count_format"
             android:textSize="14sp"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?attr/homeworkFragmentTextColor" />
 
     </LinearLayout>
 

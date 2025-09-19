@@ -34,8 +34,8 @@
     <!-- homefragment.kt -->
     <color name="home_bg_light">#F5F4F5</color>
     <color name="home_bg_dark">#222222</color>
-    <color name="header_bg_dark">#1B1A1B</color>
-    <color name="table_bg_dark">#1B1A1B</color>
+    <color name="header_bg_dark">#222222</color>
+    <color name="table_bg_dark">#222222</color>
 
     <!-- settingsactivity.kt -->
     <color name="search_bar_dark">#1B1A1B</color>
@@ -50,4 +50,81 @@
     <color name="filter_lift_button_hint_dark">#222222</color>
     <color name="timetable_manager_drop_down_bg_light">#F8F9FA</color>
     <color name="timetable_manager_drop_down_bg_dark">#1f1e1e</color>
+
+    <!-- dialog_info_notification.xml -->
+    <color name="dialog_title_light">#11518f</color>
+    <color name="dialog_title_dark">#99bdfe</color>
+    <color name="dialog_background_dark">#1b1a1b</color>
+    <color name="dialog_secondary_text_light">#666666</color>
+    <color name="dialog_secondary_text_dark">#999999</color>
+
+    <!-- subject_selection_activity.xml -->
+    <color name="subject_selection_bg_light">#FFFFFF</color>
+    <color name="subject_selection_bg_dark">#1B1A1B</color>
+    <color name="subject_selection_item_bg_light">#F5F4F5</color>
+    <color name="subject_selection_item_bg_dark">#222222</color>
+    <color name="subject_selection_item_text_light">#000000</color>
+    <color name="subject_selection_item_text_dark">#FFFFFF</color>
+    <color name="subject_selection_edit_btn_light">#FEBA36</color>
+    <color name="subject_selection_edit_btn_dark">#683902</color>
+    <color name="subject_selection_delete_btn_light">#CC0101</color>
+    <color name="subject_selection_delete_btn_dark">#CE0000</color>
+    <color name="subject_selection_icon_light">#695019</color>
+    <color name="subject_selection_icon_dark">#C6B59C</color>
+
+    <!-- dialog_add_subject_manual.xml -->
+    <color name="dialog_add_subject_bg_light">#FFFFFF</color>
+    <color name="dialog_add_subject_bg_dark">#1B1A1B</color>
+    <color name="dialog_add_subject_text_light">#000000</color>
+    <color name="dialog_add_subject_text_dark">#FFFFFF</color>
+    <color name="dialog_add_subject_hint_light">#757575</color>
+    <color name="dialog_add_subject_hint_dark">#B3B3B3</color>
+    <color name="dialog_add_subject_secondary_light">#666666</color>
+    <color name="dialog_add_subject_secondary_dark">#999999</color>
+    <color name="dialog_add_subject_button_light">#1B4A78</color>
+    <color name="dialog_add_subject_button_dark">#9EBCE9</color>
+
+    <!-- dialog_section_selection.xml -->
+    <color name="dialog_section_button_light">#0E5292</color>
+    <color name="dialog_section_button_dark">#9EBCE9</color>
+
+    <!-- fragment_exam.xml -->
+    <!-- fragment_slideshow.xml -->
+    <color name="homework_fragment_bg_light">#FFFFFF</color>
+    <color name="homework_fragment_bg_dark">#1B1A1B</color>
+    <color name="homework_fragment_text_light">#777777</color>
+    <color name="homework_fragment_text_dark">#939292</color>
+    <color name="homework_item_edit_btn_light">#FFBB34</color>
+    <color name="homework_item_edit_btn_dark">#693901</color>
+    <color name="homework_item_icon_light">#644908</color>
+    <color name="homework_item_icon_dark">#BEB199</color>
+    <color name="exam_item_text_light">#AAAAAA</color>
+    <color name="exam_item_text_dark">#AAAAAA</color> <!-- needs adjustment -->
+    <color name="grades_main_font_color_light">#000000</color>
+    <color name="grades_main_font_color_dark">#FFFFFF</color>
+
+    <!-- dialog_homework_detail.xml -->
+    <color name="homework_dialog_notes_bg_light">#F5F4F5</color>
+    <color name="homework_dialog_notes_bg_dark">#222222</color>
+
+    <!-- nav_divider.xml -->
+    <color name="nav_divider_color_light">#FED75E</color>
+    <color name="nav_divider_color_dark">#E6B94C</color>
+
+    <!-- splash screen -->
+    <color name="splash_background_light">#FFFFFF</color>
+    <color name="splash_background_dark">#424242</color>
+
+    <!-- galleryfragment.kt -->
+    <color name="calendar_background_light">#ffffff</color>
+    <color name="calendar_background_dark">#222222</color>
+    <color name="calendar_break_bg_dark">#363636</color>
+    <color name="calendar_cell_border_dark">#404040</color>
+    <color name="calendar_lesson_time_bg_dark">#2a2a2a</color>
+    <color name="calendar_notes_light">#ffffff</color>
+    <color name="calendar_notes_dark">#e0e0e0</color>
+    <color name="calendar_notes_text_light">#545454</color>
+    <color name="calendar_notes_text_dark">#363636</color>
+    <color name="calendar_notes_inner_dark">#bac6cf</color>
+    <color name="calendar_notes_inner_light">#E3F2FD</color>
 </resources>

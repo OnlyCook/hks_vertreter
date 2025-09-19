@@ -60,7 +60,7 @@
                 android:text="Endgültig: 2.0"
                 android:textSize="14sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black" />
+                android:textColor="?attr/gradesMainFontColor" />
 
         </LinearLayout>
 
@@ -72,7 +72,7 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:src="@drawable/ic_pencil"
-        android:backgroundTint="@android:color/holo_orange_light"
+        android:backgroundTint="?attr/homeworkItemEditButtonColor"
         android:layout_marginEnd="4dp"
         android:scaleType="centerInside"
         android:contentDescription="@string/item_grade_edit"

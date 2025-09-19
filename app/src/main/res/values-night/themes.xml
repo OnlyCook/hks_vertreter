@@ -39,5 +39,59 @@
         <item name="settingsHintBackgroundColor">@color/settings_hint_background_dark</item>
         <item name="filterLiftButtonHintColor">@color/filter_lift_button_hint_dark</item>
         <item name="timetableManagerDropDownBG">@color/timetable_manager_drop_down_bg_dark</item>
+
+        <!-- dialog_info_notification.xml -->
+        <item name="dialogBackgroundColor">@color/dialog_background_dark</item>
+        <item name="dialogTitleColor">@color/dialog_title_dark</item>
+        <item name="dialogTextColor">@color/white</item>
+        <item name="dialogSecondaryTextColor">@color/dialog_secondary_text_dark</item>
+
+        <!-- subject_selection_activity.xml -->
+        <item name="subjectSelectionBackgroundColor">@color/subject_selection_bg_dark</item>
+        <item name="subjectSelectionItemBackgroundColor">@color/subject_selection_item_bg_dark</item>
+        <item name="subjectSelectionItemTextColor">@color/subject_selection_item_text_dark</item>
+        <item name="subjectSelectionEditButtonColor">@color/subject_selection_edit_btn_dark</item>
+        <item name="subjectSelectionDeleteButtonColor">@color/subject_selection_delete_btn_dark</item>
+        <item name="subjectSelectionIconColor">@color/subject_selection_icon_dark</item>
+
+        <!-- dialog_add_subject_manual.xml -->
+        <item name="dialogAddSubjectBackgroundColor">@color/dialog_add_subject_bg_dark</item>
+        <item name="dialogAddSubjectTextColor">@color/dialog_add_subject_text_dark</item>
+        <item name="dialogAddSubjectHintColor">@color/dialog_add_subject_hint_dark</item>
+        <item name="dialogAddSubjectSecondaryTextColor">@color/dialog_add_subject_secondary_dark</item>
+        <item name="dialogAddSubjectButtonColor">@color/dialog_add_subject_button_dark</item>
+
+        <!-- dialog_section_selection.xml -->
+        <item name="dialogSectionButtonColor">@color/dialog_section_button_dark</item>
+
+        <!-- fragment_exam.xml -->
+        <!-- fragment_slideshow.xml -->
+        <item name="homeworkFragmentBackgroundColor">@color/homework_fragment_bg_dark</item>
+        <item name="homeworkFragmentTextColor">@color/homework_fragment_text_dark</item>
+        <item name="homeworkItemEditButtonColor">@color/homework_item_edit_btn_dark</item>
+        <item name="homeworkItemIconColor">@color/homework_item_icon_dark</item>
+        <item name="examAddColorSurface">@color/dark_gray</item>
+        <item name="examItemFontColor">@color/exam_item_text_dark</item>
+        <item name="gradesMainFontColor">@color/grades_main_font_color_dark</item>
+
+        <!-- dialog_homework_detail.xml -->
+        <item name="homeworkDialogNotesBackgroundColor">@color/homework_dialog_notes_bg_dark</item>
+
+        <!-- nav_divider.xml -->
+        <item name="navDividerColor">@color/nav_divider_color_dark</item>
+
+        <!-- galleryfragment.kt -->
+        <item name="galleryBackgroundColor">@color/calendar_background_dark</item>
+        <item name="calendarBreakBackgroundColor">@color/calendar_break_bg_dark</item>
+        <item name="calendarCellBorderColor">@color/calendar_cell_border_dark</item>
+        <item name="calendarLessonTimeBackgroundColor">@color/calendar_lesson_time_bg_dark</item>
+        <item name="calendarNotes">@color/calendar_notes_dark</item>
+        <item name="calendarNotesFont">@color/calendar_notes_text_dark</item>
+        <item name="calendarNotesInner">@color/calendar_notes_inner_dark</item>
+    </style>
+
+    <style name="Theme.MyApp" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Splash screen background -->
+        <item name="android:windowBackground">@color/splash_background_dark</item>
     </style>
 </resources>

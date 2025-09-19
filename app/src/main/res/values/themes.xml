@@ -23,10 +23,10 @@
 
         <!-- homefragment.kt -->
         <item name="homeBackgroundColor">@color/home_bg_light</item>
-        <item name="headerBackgroundColor">@color/white</item>
-        <item name="tableBackgroundColor">@color/white</item>
+        <item name="headerBackgroundColor">@color/home_bg_light</item>
+        <item name="tableBackgroundColor">@color/home_bg_light</item>
         <item name="tableTextColor">@color/black</item>
-        <item name="filterButtonBackgroundColor">@color/white</item>
+        <item name="filterButtonBackgroundColor">@color/home_bg_light</item>
 
         <!-- settingsactivity.kt -->
         <item name="settingsBackgroundColor">@color/home_bg_light</item>
@@ -39,6 +39,55 @@
         <item name="settingsHintBackgroundColor">@color/settings_hint_background_light</item>
         <item name="filterLiftButtonHintColor">@color/filter_lift_button_hint_light</item>
         <item name="timetableManagerDropDownBG">@color/timetable_manager_drop_down_bg_light</item>
+
+        <!-- dialog_info_notification.xml -->
+        <item name="dialogBackgroundColor">@color/white</item>
+        <item name="dialogTitleColor">@color/dialog_title_light</item>
+        <item name="dialogTextColor">@color/black</item>
+        <item name="dialogSecondaryTextColor">@color/dialog_secondary_text_light</item>
+
+        <!-- subject_selection_activity.xml -->
+        <item name="subjectSelectionBackgroundColor">@color/subject_selection_bg_light</item>
+        <item name="subjectSelectionItemBackgroundColor">@color/subject_selection_item_bg_light</item>
+        <item name="subjectSelectionItemTextColor">@color/subject_selection_item_text_light</item>
+        <item name="subjectSelectionEditButtonColor">@color/subject_selection_edit_btn_light</item>
+        <item name="subjectSelectionDeleteButtonColor">@color/subject_selection_delete_btn_light</item>
+        <item name="subjectSelectionIconColor">@color/subject_selection_icon_light</item>
+
+        <!-- dialog_add_subject_manual.xml -->
+        <item name="dialogAddSubjectBackgroundColor">@color/dialog_add_subject_bg_light</item>
+        <item name="dialogAddSubjectTextColor">@color/dialog_add_subject_text_light</item>
+        <item name="dialogAddSubjectHintColor">@color/dialog_add_subject_hint_light</item>
+        <item name="dialogAddSubjectSecondaryTextColor">@color/dialog_add_subject_secondary_light</item>
+        <item name="dialogAddSubjectButtonColor">@color/dialog_add_subject_button_light</item>
+
+        <!-- dialog_section_selection.xml -->
+        <item name="dialogSectionButtonColor">@color/dialog_section_button_light</item>
+
+        <!-- fragment_exam.xml -->
+        <!-- fragment_slideshow.xml -->
+        <item name="homeworkFragmentBackgroundColor">@color/homework_fragment_bg_light</item>
+        <item name="homeworkFragmentTextColor">@color/homework_fragment_text_light</item>
+        <item name="homeworkItemEditButtonColor">@color/homework_item_edit_btn_light</item>
+        <item name="homeworkItemIconColor">@color/homework_item_icon_light</item>
+        <item name="examAddColorSurface">@color/white</item>
+        <item name="examItemFontColor">@color/exam_item_text_light</item>
+        <item name="gradesMainFontColor">@color/grades_main_font_color_light</item>
+
+        <!-- dialog_homework_detail.xml -->
+        <item name="homeworkDialogNotesBackgroundColor">@color/homework_dialog_notes_bg_light</item>
+
+        <!-- nav_divider.xml -->
+        <item name="navDividerColor">@color/nav_divider_color_light</item>
+
+        <!-- galleryfragment.kt -->
+        <item name="galleryBackgroundColor">@color/calendar_background_light</item>
+        <item name="calendarBreakBackgroundColor">@color/light_gray</item>
+        <item name="calendarCellBorderColor">@color/light_border</item>
+        <item name="calendarLessonTimeBackgroundColor">@color/lighter_gray</item>
+        <item name="calendarNotes">@color/calendar_notes_light</item>
+        <item name="calendarNotesFont">@color/calendar_notes_text_light</item>
+        <item name="calendarNotesInner">@color/calendar_notes_inner_light</item>
     </style>
 
     <style name="Theme.VertretungsPlaner.NoActionBar">
@@ -53,5 +102,10 @@
 
     <style name="Theme.VertretungsPlaner.PopupOverlay" parent="ThemeOverlay.AppCompat.Light">
         <item name="elevation">2dp</item>
+    </style>
+
+    <style name="Theme.MyApp" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Splash screen background -->
+        <item name="android:windowBackground">@color/splash_background_light</item>
     </style>
 </resources>
