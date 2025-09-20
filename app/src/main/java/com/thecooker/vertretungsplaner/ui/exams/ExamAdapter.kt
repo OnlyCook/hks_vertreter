@@ -1,5 +1,6 @@
 package com.thecooker.vertretungsplaner.ui.exams
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,6 +11,7 @@ import com.thecooker.vertretungsplaner.R
 import android.text.SpannableString
 import android.text.style.StyleSpan
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.widget.ImageButton
 
 class ExamAdapter(
@@ -39,7 +41,6 @@ class ExamAdapter(
         val spannableString = SpannableString(fullText)
         val subjectLength = exam.subject.length
 
-        // make subject bold
         spannableString.setSpan(
             StyleSpan(Typeface.BOLD),
             0,
@@ -50,7 +51,7 @@ class ExamAdapter(
         holder.textExamInfo.text = spannableString
 
         if (exam.note.isNotBlank()) {
-            val lines = exam.note.split("\n") // 5 line limit
+            val lines = exam.note.split("\n")
             val displayText = if (lines.size > 5) {
                 lines.take(5).joinToString("\n") + "\n... (Zum Anzeigen tippen)"
             } else {
@@ -67,11 +68,12 @@ class ExamAdapter(
             showExamDetails(exam)
         }
 
-        // bg color based on exam state
-        val backgroundColor = exam.getBackgroundColor()
-        if (backgroundColor != android.R.color.transparent) {
+        val backgroundColorAttr = exam.getBackgroundColorAttribute()
+        if (backgroundColorAttr != 0) {
+            val typedValue = TypedValue()
+            holder.itemView.context.theme.resolveAttribute(backgroundColorAttr, typedValue, true)
             holder.itemView.setBackgroundColor(
-                ContextCompat.getColor(holder.itemView.context, backgroundColor)
+                ContextCompat.getColor(holder.itemView.context, typedValue.resourceId)
             )
         } else {
             holder.itemView.setBackgroundColor(
@@ -79,7 +81,12 @@ class ExamAdapter(
             )
         }
 
-        // text appearance for completed/overdue exams
+        val primaryTextColor = getThemeColor(holder.itemView.context, R.attr.examTextPrimary)
+        val secondaryTextColor = getThemeColor(holder.itemView.context, R.attr.examTextSecondary)
+
+        holder.textExamInfo.setTextColor(primaryTextColor)
+        holder.textExamNote.setTextColor(secondaryTextColor)
+
         if (exam.isCompleted) {
             holder.textExamInfo.alpha = 0.6f
             holder.textExamNote.alpha = 0.6f
@@ -90,6 +97,12 @@ class ExamAdapter(
 
         holder.btnEdit.setOnClickListener { onExamEdited(exam) }
         holder.btnDelete.setOnClickListener { onExamDeleted(exam) }
+    }
+
+    private fun getThemeColor(context: Context, attrRes: Int): Int {
+        val typedValue = TypedValue()
+        context.theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(context, typedValue.resourceId)
     }
 
     private fun showExamDetails(exam: ExamFragment.ExamEntry) {

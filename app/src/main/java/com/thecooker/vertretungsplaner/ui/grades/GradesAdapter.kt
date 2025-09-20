@@ -64,13 +64,13 @@ class GradesAdapter(
 
         if (goalGrade > 0 && actualFinalGrade != null) {
             val color = if (actualFinalGrade <= goalGrade) {
-                ContextCompat.getColor(context, android.R.color.holo_green_dark)
+                ContextCompat.getColor(context, android.R.color.holo_green_light)
             } else {
-                ContextCompat.getColor(context, android.R.color.holo_red_dark)
+                ContextCompat.getColor(context, android.R.color.holo_red_light)
             }
             holder.textFinalGrade.setTextColor(color)
         } else {
-            holder.textFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor, holder))
+            holder.textFinalGrade.setTextColor(getThemeColor(R.attr.textPrimaryColor, holder))
         }
 
         holder.itemView.setOnClickListener {

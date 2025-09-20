@@ -596,6 +596,8 @@
     <string name="act_set_class_advanced_successfully">Successfully advanced to class %s</string>
     <string name="act_set_class_descended_successfully">Successfully changed to class %s</string>
     <string name="act_set_class_changed_successfully">Successfully switched to class %s</string>
+    <string name="act_set_show_app_info">Show App Information</string>
+    <string name="act_set_hide_app_info">Hide App Information</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>

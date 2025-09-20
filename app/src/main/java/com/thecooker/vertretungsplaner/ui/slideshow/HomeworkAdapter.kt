@@ -1,5 +1,6 @@
 package com.thecooker.vertretungsplaner.ui.slideshow
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,9 +11,11 @@ import com.thecooker.vertretungsplaner.R
 import android.text.SpannableString
 import android.text.style.StyleSpan
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.annotation.AttrRes
 
 class HomeworkAdapter(
     private val homeworkList: MutableList<SlideshowFragment.HomeworkEntry>,
@@ -75,6 +78,9 @@ class HomeworkAdapter(
             SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
         )
         holder.textHomeworkDetails.text = spannableString
+        holder.textHomeworkDetails.setTextColor(
+            holder.itemView.context.getThemeColor(R.attr.homeworkTextPrimaryColor)
+        )
 
         val isOverdueAndCompleted = homework.isCompleted && homework.isOverdueForUI()
 
@@ -85,7 +91,7 @@ class HomeworkAdapter(
             holder.checkBox.isChecked = false
 
             holder.itemView.setBackgroundColor(
-                ContextCompat.getColor(holder.itemView.context, android.R.color.darker_gray)
+                holder.itemView.context.getThemeColor(R.attr.homeworkOverdueBackgroundColor)
             )
 
             holder.textHomeworkDetails.setOnClickListener {
@@ -99,7 +105,7 @@ class HomeworkAdapter(
             holder.checkBox.isChecked = true
 
             holder.itemView.setBackgroundColor(
-                ContextCompat.getColor(holder.itemView.context, android.R.color.holo_green_light)
+                holder.itemView.context.getThemeColor(R.attr.homeworkCompletedBackgroundColor)
             )
 
             holder.textHomeworkDetails.setOnClickListener {
@@ -112,16 +118,8 @@ class HomeworkAdapter(
             holder.checkBox.alpha = 1.0f
             holder.checkBox.isChecked = homework.isCompleted
 
-            val backgroundColor = homework.getBackgroundColor()
-            if (backgroundColor != android.R.color.transparent) {
-                holder.itemView.setBackgroundColor(
-                    ContextCompat.getColor(holder.itemView.context, backgroundColor)
-                )
-            } else {
-                holder.itemView.setBackgroundColor(
-                    ContextCompat.getColor(holder.itemView.context, android.R.color.transparent)
-                )
-            }
+            val backgroundColor = homework.getBackgroundColor(holder.itemView.context)
+            holder.itemView.setBackgroundColor(backgroundColor)
 
             // checkbox area (left side) for checking/unchecking
             holder.checkboxArea.setOnClickListener {
@@ -162,4 +160,15 @@ class HomeworkAdapter(
     }
 
     override fun getItemCount(): Int = filteredHomeworkList.size
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
+    }
 }

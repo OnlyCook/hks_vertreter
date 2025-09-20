@@ -225,6 +225,9 @@ class GalleryFragment : Fragment() {
     private lateinit var calendarContainer: FrameLayout
     private var realTimeIndicatorView: View? = null
     private var realTimeIndicatorText: TextView? = null
+    private var cachedSubstituteData = mutableMapOf<String, List<SubstituteRepository.SubstituteEntry>>()
+    private var isInitialDataLoaded = false
+    private var isRealTimeUpdate = false
 
     private lateinit var backupManager: BackupManager
 
@@ -325,8 +328,6 @@ class GalleryFragment : Fragment() {
         HOMEWORK, EXAM, SUBSTITUTE, SPECIAL_DAY, VACATION
     }
 
-    private val examColor = "#9C27B0".toColorInt()
-
     // search bar
     private lateinit var searchBar: EditText
     private var currentSearchQuery = ""
@@ -359,9 +360,19 @@ class GalleryFragment : Fragment() {
         lifecycleScope.launch {
             try {
                 // load big data in background thread
-                withContext(Dispatchers.IO) {
-                    loadTimetableData()
-                    loadVacationData()
+                withContext(Dispatchers.Main) {
+                    showLoadingState()
+                }
+
+                val loadTimetableJob = async(Dispatchers.IO) { loadTimetableData() }
+                val loadVacationJob = async(Dispatchers.IO) { loadVacationData() }
+                val loadSubstituteJob = async(Dispatchers.IO) { preloadSubstituteData() }
+
+                loadTimetableJob.await()
+                loadVacationJob.await()
+                loadSubstituteJob.await()
+
+                withContext(Dispatchers.Default) {
                     identifyFreePeriods()
                 }
 
@@ -372,6 +383,7 @@ class GalleryFragment : Fragment() {
                     }
 
                     isLoading = false
+                    isInitialDataLoaded = true
                     updateCalendar()
 
                     Handler(Looper.getMainLooper()).postDelayed({
@@ -445,6 +457,50 @@ class GalleryFragment : Fragment() {
 
         row.addView(errorMessage)
         calendarGrid.addView(row)
+    }
+
+    private fun preloadSubstituteData() {
+        try {
+            val calendar = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+            }
+
+            for (i in -2..9) {
+                val checkDate = Calendar.getInstance().apply {
+                    time = calendar.time
+                    add(Calendar.DAY_OF_YEAR, i)
+                }
+
+                val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(checkDate.time)
+                val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+                cachedSubstituteData[dateStr] = substituteEntries
+            }
+
+            L.d("GalleryFragment", "Preloaded substitute data for ${cachedSubstituteData.size} days")
+        } catch (e: Exception) {
+            L.e("GalleryFragment", "Error preloading substitute data", e)
+        }
+    }
+
+    private fun getCachedSubstituteEntries(date: Date): List<SubstituteRepository.SubstituteEntry> {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+
+        if (isRealTimeUpdate) {
+            return cachedSubstituteData[dateStr] ?: emptyList()
+        }
+
+        if (isInitialDataLoaded) {
+            return cachedSubstituteData[dateStr] ?: emptyList()
+        }
+
+        return try {
+            val entries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+            cachedSubstituteData[dateStr] = entries
+            entries
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error fetching substitute data for $dateStr", e)
+            cachedSubstituteData[dateStr] ?: emptyList()
+        }
     }
 
     private fun initializeCurrentWeek() {
@@ -693,11 +749,27 @@ class GalleryFragment : Fragment() {
             appendLine(getString(R.string.gall_total_vacation_days, stats.totalVacationDays))
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_statistics))
             .setMessage(message)
             .setPositiveButton(getString(R.string.gall_close), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     fun getDaysString(days: Int): String { // helper function
@@ -881,31 +953,41 @@ class GalleryFragment : Fragment() {
             }
             .create()
 
+        mainDialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+
         removeSwitch.setOnCheckedChangeListener { _, isChecked ->
             val positiveButton = mainDialog.getButton(AlertDialog.BUTTON_POSITIVE)
             positiveButton.text = if (isChecked) getString(R.string.gall_remove) else getString(R.string.gall_mark)
         }
 
         clearAllButton.setOnClickListener {
-            AlertDialog.Builder(requireContext())
+            val innerDialog = AlertDialog.Builder(requireContext())
                 .setTitle(getString(R.string.gall_clear_all))
                 .setMessage(getString(R.string.gall_vecation_delete_confirm))
-                .setPositiveButton(getString(R.string.slide_yes)) { innerDialog, _ ->
+                .setPositiveButton(getString(R.string.slide_yes)) { d, _ ->
                     clearAllVacations()
-                    innerDialog.dismiss()
+                    d.dismiss()
                     mainDialog.dismiss()
                 }
-                .setNegativeButton(getString(R.string.slide_no)) { innerDialog, _ ->
-                    innerDialog.dismiss()
+                .setNegativeButton(getString(R.string.slide_no)) { d, _ ->
+                    d.dismiss()
                 }
                 .show()
+
+            val innerButtonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            innerDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(innerButtonColor)
+            innerDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(innerButtonColor)
+            innerDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(innerButtonColor)
         }
 
         autoMarkButton.setOnClickListener {
             showAutoMarkVacationDialog { mainDialog.dismiss() }
         }
-
-        mainDialog.show()
     }
 
     private fun clearAllVacations() {
@@ -928,6 +1010,11 @@ class GalleryFragment : Fragment() {
             .create()
 
         progressDialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        progressDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        progressDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        progressDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -1047,21 +1134,26 @@ class GalleryFragment : Fragment() {
         container.addView(clearExistingCheckbox)
         container.addView(privacyNotice)
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_auto_mark))
             .setMessage(getString(R.string.gall_load_from_kultus))
             .setView(container)
-            .setPositiveButton(getString(R.string.gall_load)) { dialog, _ ->
+            .setPositiveButton(getString(R.string.gall_load)) { dialogInterface, _ ->
                 val selectedSchoolYear = schoolYears[yearSpinner.selectedItemPosition]
                 val clearExisting = clearExistingCheckbox.isChecked
                 fetchAndMarkHessenVacations(selectedSchoolYear, clearExisting)
-                dialog.dismiss()
+                dialogInterface.dismiss()
                 onComplete()
             }
-            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
-                dialog.dismiss()
+            .setNegativeButton(getString(R.string.cancel)) { dialogInterface, _ ->
+                dialogInterface.dismiss()
             }
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun fetchVacationDataFromWebsite(schoolYear: String): List<Pair<String, Pair<Date, Date>>> {
@@ -1354,7 +1446,7 @@ class GalleryFragment : Fragment() {
         })
         container.addView(weekSpinner)
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_select_calendar_week))
             .setView(container)
             .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
@@ -1368,6 +1460,11 @@ class GalleryFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showDayPicker() {
@@ -1432,7 +1529,7 @@ class GalleryFragment : Fragment() {
         })
         container.addView(daySpinner)
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_select_day))
             .setView(container)
             .setPositiveButton(getString(R.string.exam_ok)) { _, _ ->
@@ -1454,13 +1551,18 @@ class GalleryFragment : Fragment() {
                     Calendar.WEDNESDAY -> 2
                     Calendar.THURSDAY -> 3
                     Calendar.FRIDAY -> 4
-                    else -> 0 // weekend -> defaulting to monday
+                    else -> 0
                 }
 
                 updateCalendar()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun updateCalendar() {
@@ -1685,8 +1787,7 @@ class GalleryFragment : Fragment() {
     }
 
     private fun hasRoomChangeForLesson(date: Date, lesson: Int, subject: String): Boolean {
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val substituteEntries = getCachedSubstituteEntries(date)
 
         return substituteEntries.any { substitute ->
             val startLesson = substitute.stunde
@@ -1721,7 +1822,7 @@ class GalleryFragment : Fragment() {
         if (isDateInVacation(currentWeekDay.time)) {
             val vacationType = translateVacationType(getVacationName(currentWeekDay.time))
             cellText = vacationType
-            val drawable = createRoundedDrawable(Color.LTGRAY)
+            val drawable = createRoundedDrawable(getThemeColor(R.attr.holidayVacationCellBackgroundColor))
             cell.background = drawable
             cell.text = cellText
 
@@ -1784,7 +1885,7 @@ class GalleryFragment : Fragment() {
         if (shouldMarkAsHoliday || shouldMarkFromLesson4) {
             cellText = if (shouldMarkAsHoliday) getString(R.string.gall_holiday) else getString(R.string.gall_free_from_4)
             cell.text = cellText
-            val drawable = createRoundedDrawable(Color.LTGRAY)
+            val drawable = createRoundedDrawable(getThemeColor(R.attr.holidayVacationCellBackgroundColor))
             cell.background = drawable
 
             if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
@@ -1829,8 +1930,7 @@ class GalleryFragment : Fragment() {
             var hasTeacherSubstitute = false
             var newRoom = ""
 
-            val substituteDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
-            val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), substituteDateStr)
+            val substituteEntries = getCachedSubstituteEntries(currentWeekDay.time)
 
             // process substitute entries
             substituteEntries.forEach { substitute ->
@@ -2020,11 +2120,16 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_lesson_times))
             .setMessage(message)
             .setPositiveButton(getString(R.string.gall_close), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showLessonDetails(
@@ -2037,8 +2142,7 @@ class GalleryFragment : Fragment() {
         val startTime = lessonTimes[lesson] ?: getString(R.string.unknown)
         val endTime = lessonEndTimes[lesson] ?: getString(R.string.unknown)
 
-        val substituteDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), substituteDateStr)
+        val substituteEntries = getCachedSubstituteEntries(date)
 
         var hasTeacherSubstitute = false
         var hasRoomChange = false
@@ -2144,13 +2248,18 @@ class GalleryFragment : Fragment() {
 
         dialog.show()
 
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+
         dialog.findViewById<TextView>(android.R.id.message)?.let { textView ->
             textView.text = Html.fromHtml(message, Html.FROM_HTML_MODE_COMPACT)
         }
     }
 
     private fun getRelevantSubstitutes(dateStr: String, date: Date): List<SubstituteRepository.SubstituteEntry> {
-        val allSubstituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val allSubstituteEntries = getCachedSubstituteEntries(date)
         val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
         val dayTimetable = timetableData[dayKey] ?: emptyMap()
         val lessonSubjectMap = dayTimetable.mapValues { it.value.subject }
@@ -2320,7 +2429,7 @@ class GalleryFragment : Fragment() {
         container.addView(occasionsContainer)
         container.addView(addOccasionButton)
 
-        AlertDialog.Builder(requireContext())
+        val mainDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_edit_day, dateStr))
             .setView(container)
             .setNegativeButton(getString(R.string.cancel), null)
@@ -2337,7 +2446,7 @@ class GalleryFragment : Fragment() {
                 Toast.makeText(requireContext(), getString(R.string.gall_changes_saved), Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton(getString(R.string.gall_reset)) { _, _ ->
-                AlertDialog.Builder(requireContext())
+                val resetDialog = AlertDialog.Builder(requireContext())
                     .setTitle(getString(R.string.gall_reset_confirm))
                     .setMessage(getString(R.string.gall_reset_hint))
                     .setPositiveButton(getString(R.string.slide_yes)) { _, _ ->
@@ -2347,8 +2456,18 @@ class GalleryFragment : Fragment() {
                     }
                     .setNegativeButton(getString(R.string.slide_no), null)
                     .show()
+
+                val resetButtonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                resetDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(resetButtonColor)
+                resetDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(resetButtonColor)
+                resetDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(resetButtonColor)
             }
             .show()
+
+        val mainButtonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(mainButtonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(mainButtonColor)
+        mainDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(mainButtonColor)
     }
 
     private fun shouldShowAsterisk(date: Date): Boolean {
@@ -2436,11 +2555,16 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_all_lesson_times))
             .setMessage(message)
             .setPositiveButton(getString(R.string.gall_close), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     fun Int.toHexString(): String {
@@ -2501,8 +2625,7 @@ class GalleryFragment : Fragment() {
         var cellText = ""
         var hasRoomChange = false
 
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentWeekDay.time)
-        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val substituteEntries = getCachedSubstituteEntries(currentWeekDay.time)
 
         substituteEntries.forEach { substitute ->
             val startLesson = substitute.stunde
@@ -2519,7 +2642,7 @@ class GalleryFragment : Fragment() {
         if (isDateInVacation(currentWeekDay.time)) {
             val vacationType = translateVacationType(getVacationName(currentWeekDay.time))
             cell.text = vacationType.take(8)
-            val drawable = createRoundedDrawable(Color.LTGRAY)
+            val drawable = createRoundedDrawable(getThemeColor(R.attr.holidayVacationCellBackgroundColor))
             cell.background = drawable
 
             if (currentSearchQuery.isNotBlank() && !vacationType.contains(currentSearchQuery, ignoreCase = true)) {
@@ -2569,7 +2692,7 @@ class GalleryFragment : Fragment() {
         if (shouldMarkAsHoliday || shouldMarkFromLesson4) {
             cellText = if (shouldMarkAsHoliday) getString(R.string.gall_holiday) else getString(R.string.gall_free)
             cell.text = cellText
-            val drawable = createRoundedDrawable(Color.LTGRAY)
+            val drawable = createRoundedDrawable(getThemeColor(R.attr.holidayVacationCellBackgroundColor))
             cell.background = drawable
 
             if (currentSearchQuery.isNotBlank() && !matchesSearchWithSpecialOccasions(
@@ -2674,24 +2797,47 @@ class GalleryFragment : Fragment() {
         val query = currentSearchQuery.lowercase()
 
         if (subject.lowercase().contains(query)) return true
-
         if (teacher.lowercase().contains(query)) return true
-
         if (room.lowercase().contains(query)) return true
 
-        // additional calendar entries
+        val currentLanguage = resources.configuration.locales[0].language
+
         for (entry in calendarEntries) {
             when (entry.type) {
-                EntryType.HOMEWORK -> if ("hausaufgabe".contains(query)) return true
-                EntryType.EXAM -> if ("klausur".contains(query)) return true
-                EntryType.SUBSTITUTE -> if (entry.content.lowercase().contains(query)) return true
-                EntryType.SPECIAL_DAY -> if (entry.content.lowercase().contains(query)) return true
-                EntryType.VACATION -> if ("ferien".contains(query) || "ferientag".contains(query)) return true
+                EntryType.HOMEWORK -> {
+                    val homeworkKeywords = if (currentLanguage == "en") {
+                        listOf("homework", "assignment", "task")
+                    } else {
+                        listOf("hausaufgabe", "hausaufgaben", "aufgabe")
+                    }
+                    if (homeworkKeywords.any { it.contains(query) || query.contains(it) }) return true
+                }
+                EntryType.EXAM -> {
+                    val examKeywords = if (currentLanguage == "en") {
+                        listOf("exam", "test", "quiz", "examination")
+                    } else {
+                        listOf("klausur", "test", "prüfung", "klassenarbeit")
+                    }
+                    if (examKeywords.any { it.contains(query) || query.contains(it) }) return true
+                }
+                EntryType.SUBSTITUTE -> {
+                    if (entry.content.lowercase().contains(query)) return true
+                }
+                EntryType.SPECIAL_DAY -> {
+                    if (entry.content.lowercase().contains(query)) return true
+                }
+                EntryType.VACATION -> {
+                    val vacationKeywords = if (currentLanguage == "en") {
+                        listOf("vacation", "holiday", "break")
+                    } else {
+                        listOf("ferien", "ferientag", "urlaub")
+                    }
+                    if (vacationKeywords.any { it.contains(query) || query.contains(it) }) return true
+                }
             }
         }
 
         if (userOccasions.any { it.lowercase().contains(query) }) return true
-
         if (calendarSpecialNote.lowercase().contains(query)) return true
 
         return false
@@ -2774,9 +2920,9 @@ class GalleryFragment : Fragment() {
         colorLegend.orientation = LinearLayout.VERTICAL
 
         val legendItems = listOf(
-            Pair(getString(R.string.gall_homework_single), Color.CYAN),
-            Pair(getString(R.string.gall_exam_single), examColor),
-            Pair(getString(R.string.gall_holiday_or_free), Color.LTGRAY),
+            Pair(getString(R.string.gall_homework_single), getColorBlindFriendlyColor("homework")),
+            Pair(getString(R.string.gall_exam_single), getColorBlindFriendlyColor("exam")),
+            Pair(getString(R.string.gall_holiday_or_free), getThemeColor(R.attr.holidayVacationCellBackgroundColor)),
             Pair(getString(R.string.home_is_cancelled), getColorBlindFriendlyColor("red")),
             Pair(getString(R.string.gall_is_looked_after), getColorBlindFriendlyColor("orange")),
             Pair(getString(R.string.gall_is_substituted), getColorBlindFriendlyColor("green")),
@@ -2862,7 +3008,7 @@ class GalleryFragment : Fragment() {
                     EntryType.VACATION,
                     "Ferien",
                     "",
-                    Color.LTGRAY,
+                    getThemeColor(R.attr.holidayVacationCellBackgroundColor),
                     colorPriorities["vacation"] ?: 0
                 )
             )
@@ -2883,7 +3029,7 @@ class GalleryFragment : Fragment() {
                                 EntryType.SPECIAL_DAY,
                                 getString(R.string.gall_holiday),
                                 "",
-                                Color.LTGRAY,
+                                getThemeColor(R.attr.holidayVacationCellBackgroundColor),
                                 colorPriorities["holiday"] ?: 0
                             )
                         )
@@ -2897,7 +3043,7 @@ class GalleryFragment : Fragment() {
                                     EntryType.SPECIAL_DAY,
                                     getString(R.string.gall_free_from_4),
                                     "",
-                                    Color.LTGRAY,
+                                    getThemeColor(R.attr.holidayVacationCellBackgroundColor),
                                     colorPriorities["holiday"] ?: 0
                                 )
                             )
@@ -2921,7 +3067,7 @@ class GalleryFragment : Fragment() {
                                     EntryType.HOMEWORK,
                                     "HA",
                                     homework.subject,
-                                    Color.CYAN,
+                                    getThemeColor(R.attr.homeworkCellBackgroundColor),
                                     colorPriorities["homework"] ?: 0
                                 )
                             )
@@ -2941,7 +3087,7 @@ class GalleryFragment : Fragment() {
                                     EntryType.HOMEWORK,
                                     "HA",
                                     homework.subject,
-                                    Color.CYAN,
+                                    getThemeColor(R.attr.homeworkCellBackgroundColor),
                                     colorPriorities["homework"] ?: 0
                                 )
                             )
@@ -2974,7 +3120,7 @@ class GalleryFragment : Fragment() {
                         entries.add(
                             CalendarEntry(
                                 EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
-                                examColor,
+                                getThemeColor(R.attr.examCellBackgroundColor),
                                 colorPriorities["exam"] ?: 0
                             )
                         )
@@ -2993,7 +3139,7 @@ class GalleryFragment : Fragment() {
                         entries.add(
                             CalendarEntry(
                                 EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
-                                examColor,
+                                getThemeColor(R.attr.examCellBackgroundColor),
                                 colorPriorities["exam"] ?: 0
                             )
                         )
@@ -3005,9 +3151,7 @@ class GalleryFragment : Fragment() {
         }
 
         // add substitute entries (but handle room changes differently)
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
-        val substituteEntries =
-            SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val substituteEntries = getCachedSubstituteEntries(date)
         substituteEntries.forEach { substitute ->
             val startLesson = substitute.stunde
             val endLesson = substitute.stundeBis ?: substitute.stunde
@@ -3278,7 +3422,7 @@ class GalleryFragment : Fragment() {
         container.addView(roomLabel)
         container.addView(roomSpinner)
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_edit_timetable, weekdays[dayIndex], lesson))
             .setView(container)
             .setPositiveButton(getString(R.string.gall_save)) { _, _ ->
@@ -3293,6 +3437,11 @@ class GalleryFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun saveTimetableEntryWithRoom(dayIndex: Int, lesson: Int, subject: String, duration: Int, alternativeRoom: String) {
@@ -3898,6 +4047,11 @@ class GalleryFragment : Fragment() {
             .create()
 
         currentDialog?.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        currentDialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        currentDialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        currentDialog?.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun openHomeworkPage(homework: SlideshowFragment.HomeworkEntry) {
@@ -4082,7 +4236,7 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_export_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -4092,6 +4246,11 @@ class GalleryFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showImportOptions() {
@@ -4115,7 +4274,7 @@ class GalleryFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_import_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -4125,6 +4284,11 @@ class GalleryFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun importFromFile() {
@@ -4380,13 +4544,30 @@ class GalleryFragment : Fragment() {
             realTimeUpdateRunnable = object : Runnable {
                 override fun run() {
                     try {
+                        isRealTimeUpdate = true
                         val now = Calendar.getInstance()
 
                         if (now.get(Calendar.SECOND) == 0) {
-                            updateCalendarWithoutAnimation()
+                            updateWeekDisplay()
+
+                            val shouldUpdateHighlight = if (isDayView) {
+                                val currentDay = Calendar.getInstance().apply {
+                                    time = currentWeekStart.time
+                                    add(Calendar.DAY_OF_WEEK, currentDayOffset)
+                                }
+                                isSameDay(currentDay.time, now.time)
+                            } else {
+                                isSameWeek(currentWeekStart.time, now.time)
+                            }
+
+                            if (shouldUpdateHighlight) {
+                                updateCurrentHighlightOnly(now)
+                            }
                         }
 
                         createRealTimeIndicator()
+
+                        isRealTimeUpdate = false
 
                         val secondsUntilNextMinute = 60 - now.get(Calendar.SECOND)
                         val delayMs = secondsUntilNextMinute * 1000L
@@ -4394,6 +4575,7 @@ class GalleryFragment : Fragment() {
                         realTimeUpdateHandler?.postDelayed(this, delayMs)
                     } catch (e: Exception) {
                         L.e("GalleryFragment", "Error in real-time update", e)
+                        isRealTimeUpdate = false
                         realTimeUpdateHandler?.postDelayed(this, 30000L)
                     }
                 }
@@ -4411,95 +4593,43 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun updateCalendarWithoutAnimation() {
-        if (detectLanguageChange()) {
-            refreshLanguageDependentContent()
-        }
-        updateWeekDisplay()
-        buildCalendarGridWithoutAnimation()
-        setupColorLegend()
+    private fun getOnlyCachedSubstituteEntries(date: Date): List<SubstituteRepository.SubstituteEntry> {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+        return cachedSubstituteData[dateStr] ?: emptyList()
     }
 
-    private fun buildCalendarGridWithoutAnimation() {
-        if (isLoading) {
-            return
-        }
+    private fun updateCurrentHighlightOnly(currentTime: Calendar) {
+        val maxLessons = getMaxLessonsForWeek()
 
-        calendarGrid.removeAllViews()
-
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
-
-        if (!hasScannedDocument) {
-            showEmptyCalendar()
-            return
-        }
-
-        if (isDayView && currentDayOffset < 0) {
-            currentDayOffset = getCurrentDayOffset()
-        }
-
-        if (isDayView) {
-            createDayView()
-        } else {
-            createWeekView()
-        }
-
-        startInitialHighlightingWithoutAnimation()
-    }
-
-    private fun startInitialHighlightingWithoutAnimation() {
-        calendarGrid.post {
-            val currentTime = Calendar.getInstance()
-            val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
-
-            if (!isCurrentWeek && !isDayView) return@post
-
-            if (isDayView) {
-                val currentDay = Calendar.getInstance().apply {
-                    time = currentWeekStart.time
-                    add(Calendar.DAY_OF_WEEK, currentDayOffset)
+        for (lesson in 1..maxLessons) {
+            if (isCurrentBreakTime(lesson, currentTime)) {
+                if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
+                    lastHighlightedIsBreak = true
+                    lastHighlightedBreakAfterLesson = lesson
+                    lastHighlightedLessonNumber = -1
+                    highlightCurrentBreakStatic(lesson)
                 }
-                val isCurrentDay = isSameDay(currentDay.time, currentTime.time)
-                if (!isCurrentDay) return@post
+                return
             }
+        }
 
-            val maxLessons = getMaxLessonsForWeek()
-
-            for (lesson in 1..maxLessons) {
-                if (isCurrentBreakTime(lesson, currentTime)) {
-                    if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
-                        lastHighlightedIsBreak = true
-                        lastHighlightedBreakAfterLesson = lesson
-                        lastHighlightedLessonNumber = -1
-                        highlightCurrentBreak(lesson)
-                    } else {
-                        highlightCurrentBreakStatic(lesson)
-                    }
-                    return@post
+        for (lesson in 1..maxLessons) {
+            if (isCurrentLesson(lesson, currentTime)) {
+                if (lastHighlightedIsBreak || lastHighlightedLessonNumber != lesson) {
+                    lastHighlightedIsBreak = false
+                    lastHighlightedBreakAfterLesson = -1
+                    lastHighlightedLessonNumber = lesson
+                    highlightCurrentLessonStatic(lesson, currentTime)
                 }
+                return
             }
+        }
 
-            for (lesson in 1..maxLessons) {
-                if (isCurrentLesson(lesson, currentTime)) {
-                    if (lastHighlightedIsBreak || lastHighlightedLessonNumber != lesson) {
-                        lastHighlightedIsBreak = false
-                        lastHighlightedBreakAfterLesson = -1
-                        lastHighlightedLessonNumber = lesson
-                        highlightCurrentLesson(lesson, currentTime)
-                    } else {
-                        highlightCurrentLessonStatic(lesson, currentTime)
-                    }
-                    return@post
-                }
-            }
-
-            if (lastHighlightedLessonNumber != -1 || lastHighlightedIsBreak) {
-                lastHighlightedLessonNumber = -1
-                lastHighlightedIsBreak = false
-                lastHighlightedBreakAfterLesson = -1
-                stopCurrentHighlight()
-            }
+        if (lastHighlightedLessonNumber != -1 || lastHighlightedIsBreak) {
+            lastHighlightedLessonNumber = -1
+            lastHighlightedIsBreak = false
+            lastHighlightedBreakAfterLesson = -1
+            stopCurrentHighlight()
         }
     }
 
@@ -4779,15 +4909,6 @@ class GalleryFragment : Fragment() {
 
     private fun getCalendarEntriesForCurrentHighlightedCell(): List<CalendarEntry> {
         return emptyList()
-    }
-
-    private fun startCurrentBreakHighlight(breakView: TextView) {
-        stopCurrentHighlight()
-        currentHighlightedCell = breakView
-
-        val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
-        val pulseAnimation = createOptimizedPulseAnimation(breakView, breakBackgroundColor)
-        pulseAnimation.start()
     }
 
     private fun startCurrentLessonHighlight(cell: TextView, backgroundColor: Int = Color.WHITE, shouldAnimate: Boolean = true) {
@@ -5207,28 +5328,28 @@ class GalleryFragment : Fragment() {
 
     private fun getColorBlindFriendlyColor(originalColor: String): Int {
         return when (colorBlindMode) {
-            "protanopia" -> when (originalColor) {
-                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
-                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
-                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
-                else -> Color.TRANSPARENT
-            }
-            "deuteranopia" -> when (originalColor) {
-                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
-                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
-                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
+            "protanopia", "deuteranopia" -> when (originalColor) {
+                "red" -> getThemeColor(R.attr.colorblindCancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.colorblindSubstitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.colorblindSupervisedCellBackgroundColor)
+                "homework" -> getThemeColor(R.attr.homeworkCellBackgroundColor)
+                "exam" -> getThemeColor(R.attr.examCellBackgroundColor)
                 else -> Color.TRANSPARENT
             }
             "tritanopia" -> when (originalColor) {
-                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark)
-                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_dark)
-                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_blue_light)
+                "red" -> getThemeColor(R.attr.colorblindTritanopiaCancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.colorblindTritanopiaSubstitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.colorblindTritanopiaSupervisedCellBackgroundColor)
+                "homework" -> getThemeColor(R.attr.homeworkCellBackgroundColor)
+                "exam" -> getThemeColor(R.attr.examCellBackgroundColor)
                 else -> Color.TRANSPARENT
             }
-            else -> when (originalColor) { // normal
-                "red" -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
-                "green" -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
-                "orange" -> ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark)
+            else -> when (originalColor) { // normal mode
+                "red" -> getThemeColor(R.attr.cancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.substitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.supervisedCellBackgroundColor)
+                "homework" -> getThemeColor(R.attr.homeworkCellBackgroundColor)
+                "exam" -> getThemeColor(R.attr.examCellBackgroundColor)
                 else -> Color.TRANSPARENT
             }
         }
@@ -5999,8 +6120,11 @@ class GalleryFragment : Fragment() {
 
         if (scheduledLessons.isEmpty()) return null
 
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(currentDay.time)
-        val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+        val substituteEntries = if (isRealTimeUpdate) {
+            getOnlyCachedSubstituteEntries(currentDay.time)
+        } else {
+            getCachedSubstituteEntries(currentDay.time)
+        }
 
         val cancelledLessons = mutableSetOf<Int>()
         substituteEntries.forEach { substitute ->
@@ -6097,7 +6221,13 @@ class GalleryFragment : Fragment() {
         }
         loadRealTimePreference()
         loadWeekendPreference()
+        val oldColorBlindMode = colorBlindMode
         loadColorBlindSettings()
+
+        if (oldColorBlindMode != colorBlindMode) {
+            setupColorLegend()
+        }
+
         setupRealTimeUpdates()
         updateCalendar()
     }

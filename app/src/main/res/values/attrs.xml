@@ -14,6 +14,15 @@
     <attr name="tableBackgroundColor" format="color" />
     <attr name="tableTextColor" format="color" />
     <attr name="filterButtonBackgroundColor" format="color" />
+    <attr name="refreshButtonTextColor" format="color" />
+    <attr name="errorTextColor" format="color" />
+    <attr name="warningTextColor" format="color" />
+    <attr name="successTextColor" format="color" />
+    <attr name="highlightTextColor" format="color" />
+    <attr name="highlightBackgroundColor" format="color" />
+    <attr name="highlightAnimationColor" format="color" />
+    <attr name="tableHeaderTextColor" format="color" />
+    <attr name="tableHeaderBackgroundColor" format="color" />
 
     <!-- settingsactivity.kt -->
     <attr name="settingsBackgroundColor" format="color" />
@@ -52,7 +61,14 @@
     <attr name="dialogSectionButtonColor" format="color" />
 
     <!-- fragment_exam.xml -->
-    <!-- fragment_grades.xml -->
+    <attr name="examOverdueBackground" format="color" />
+    <attr name="examUrgentBackground" format="color" />
+    <attr name="examWarningBackground" format="color" />
+    <attr name="examSoonBackground" format="color" />
+    <attr name="examUpcomingBackground" format="color" />
+    <attr name="examTextPrimary" format="color" />
+    <attr name="examTextSecondary" format="color" />
+    <attr name="examDetailsDateHint" format="color" />
     <!-- fragment_slideshow.xml -->
     <attr name="homeworkFragmentBackgroundColor" format="color" />
     <attr name="homeworkFragmentTextColor" format="color" />
@@ -61,6 +77,16 @@
     <attr name="examAddColorSurface" format="color" />
     <attr name="examItemFontColor" format="color" />
     <attr name="gradesMainFontColor" format="color" />
+    <attr name="homeworkOverdueBackgroundColor" format="color" />
+    <attr name="homeworkCompletedBackgroundColor" format="color" />
+    <attr name="homeworkDueTodayBackgroundColor" format="color" />
+    <attr name="homeworkDueTomorrowBackgroundColor" format="color" />
+    <attr name="homeworkTransparentBackgroundColor" format="color" />
+    <attr name="homeworkTextPrimaryColor" format="color" />
+    <attr name="homeworkDetailDueDateTextColor" format="color" />
+
+    <!-- fragment_grades.xml -->
+    <attr name="gradesCardBackgroundColor" format="color" />
 
     <!-- dialog_homework_detail.xml -->
     <attr name="homeworkDialogNotesBackgroundColor" format="color" />
@@ -76,4 +102,21 @@
     <attr name="calendarNotes" format="color" />
     <attr name="calendarNotesFont" format="color" />
     <attr name="calendarNotesInner" format="color" />
+    <attr name="homeworkCellBackgroundColor" format="color" />
+    <attr name="examCellBackgroundColor" format="color" />
+    <attr name="holidayVacationCellBackgroundColor" format="color" />
+    <attr name="cancelledCellBackgroundColor" format="color" />
+    <attr name="supervisedCellBackgroundColor" format="color" />
+    <attr name="substitutedCellBackgroundColor" format="color" />
+    <attr name="colorblindCancelledCellBackgroundColor" format="color" />
+    <attr name="colorblindSupervisedCellBackgroundColor" format="color" />
+    <attr name="colorblindSubstitutedCellBackgroundColor" format="color" />
+    <attr name="colorblindTritanopiaCancelledCellBackgroundColor" format="color" />
+    <attr name="colorblindTritanopiaSupervisedCellBackgroundColor" format="color" />
+    <attr name="colorblindTritanopiaSubstitutedCellBackgroundColor" format="color" />
+
+    <!-- side_nav_bar.xml -->
+    <attr name="navHeaderStartColor" format="color" />
+    <attr name="navHeaderCenterColor" format="color" />
+    <attr name="navHeaderEndColor" format="color" />
 </resources>

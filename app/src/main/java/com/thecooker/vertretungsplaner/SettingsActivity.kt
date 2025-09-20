@@ -26,6 +26,7 @@ import android.view.View
 import com.thecooker.vertretungsplaner.utils.WorkScheduler
 import com.thecooker.vertretungsplaner.utils.TimePickerDialogHelper
 import android.app.TimePickerDialog
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.widget.Spinner
 import android.widget.ArrayAdapter
@@ -72,6 +73,11 @@ class SettingsActivity : BaseActivity() {
     private var extractedTeachers = mutableListOf<String>()
     private var extractedRooms = mutableListOf<String>()
     private val knownSubjectRooms = mutableMapOf<Pair<String, String>, String>()
+
+    // app information expand
+    private lateinit var layoutAppInfoContent: LinearLayout
+    private lateinit var btnAppInfoToggle: Button
+    private var isAppInfoExpanded = false
 
     // search
     data class SearchableView(
@@ -187,6 +193,7 @@ class SettingsActivity : BaseActivity() {
         setupBackUpManager()
         setupFilterLift()
         setupLanguageSettings()
+        setupAppInfoSection()
 
         isInitializing = false
     }
@@ -294,6 +301,10 @@ class SettingsActivity : BaseActivity() {
 
             when (child) {
                 is TextView -> {
+                    if (child.id == R.id.btnAppInfoToggle) {
+                        continue
+                    }
+
                     val text = child.text?.toString()?.trim()
                     if (!text.isNullOrEmpty() && !isHintText(child)) {
                         val priority = when {
@@ -393,6 +404,8 @@ class SettingsActivity : BaseActivity() {
         btnImportFullBackup = findViewById(R.id.btnImportFullBackup)
         switchLeftFilterLift = findViewById(R.id.switchLeftFilterLift)
         btnAdvanceClass = findViewById(R.id.btnAdvanceClass)
+        layoutAppInfoContent = findViewById(R.id.layoutAppInfoContent)
+        btnAppInfoToggle = findViewById(R.id.btnAppInfoToggle)
     }
 
     private fun setupToolbar() {
@@ -405,6 +418,10 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun setupListeners() {
+        btnAppInfoToggle.setOnClickListener {
+            toggleAppInfoSection()
+        }
+
         btnResetData.setOnClickListener {
             showResetConfirmationDialog()
         }
@@ -462,7 +479,7 @@ class SettingsActivity : BaseActivity() {
                 }
 
                 Toast.makeText(this,
-                    if (isChecked) getString(R.string.set_act_update_cooldown_disabled)
+                    if (!isChecked) getString(R.string.set_act_update_cooldown_disabled)
                     else getString(R.string.set_act_update_cooldown_enabled),
                     Toast.LENGTH_SHORT).show()
             } else {
@@ -1441,7 +1458,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun showDeleteTimetableDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_delete_timetable))
             .setMessage(getString(R.string.set_act_delete_confirm))
             .setPositiveButton(getString(R.string.set_act_yes_delete)) { _, _ ->
@@ -1449,23 +1466,41 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.set_act_cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun showResetConfirmationDialog() {
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle(getString(R.string.set_act_reset))
-        builder.setMessage(getString(R.string.set_act_reset_confirm))
-        builder.setIcon(android.R.drawable.ic_dialog_alert)
+        val alertDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.set_act_reset))
+            .setMessage(getString(R.string.set_act_reset_confirm))
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setPositiveButton(getString(R.string.set_act_yes_reset)) { _, _ ->
+                resetAppData()
+            }
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
 
-        builder.setPositiveButton(getString(R.string.set_act_yes_reset)) { _, _ ->
-            resetAppData()
-        }
-
-        builder.setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
-            dialog.dismiss()
-        }
-
-        builder.show()
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun resetAppData() {
@@ -1599,7 +1634,7 @@ class SettingsActivity : BaseActivity() {
                 return view
             }
         }
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.act_set_export_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1609,6 +1644,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun saveToFile(content: String) {
@@ -1658,7 +1698,7 @@ class SettingsActivity : BaseActivity() {
                 return view
             }
         }
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.act_set_import_timetable))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1668,6 +1708,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun importFromFile() {
@@ -1772,7 +1817,7 @@ class SettingsActivity : BaseActivity() {
             importResult.subjects.size
         )
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_confirm_import))
             .setMessage(message)
             .setPositiveButton(getString(R.string.act_set_import)) { _, _ ->
@@ -1780,6 +1825,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun executeImport(importResult: ImportResult) {
@@ -1891,7 +1941,7 @@ class SettingsActivity : BaseActivity() {
         btnStartupPage.text = getString(R.string.set_act_startup_page_format, startupPages[currentSelection])
 
         btnStartupPage.setOnClickListener {
-            AlertDialog.Builder(this)
+            val alertDialog = AlertDialog.Builder(this)
                 .setTitle(getString(R.string.set_act_choose_start_up_page))
                 .setSingleChoiceItems(startupPages, currentSelection) { dialog, which ->
                     sharedPreferences.edit {
@@ -1906,6 +1956,11 @@ class SettingsActivity : BaseActivity() {
                 }
                 .setNegativeButton(getString(R.string.cancel), null)
                 .show()
+
+            val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+            alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
         }
     }
 
@@ -1946,13 +2001,13 @@ class SettingsActivity : BaseActivity() {
                 { _, selectedHour, selectedMinute ->
                     val selectedTime = String.format("%02d:%02d", selectedHour, selectedMinute)
                     sharedPreferences.edit { putString("auto_update_time", selectedTime) }
-
                     btnAutoUpdateTime.text = getString(R.string.set_act_update_time_format, selectedTime)
-
                     if (switchAutoUpdate.isChecked) {
                         WorkScheduler.scheduleAutoUpdate(this, sharedPreferences)
-                        val message = getString(R.string.set_act_update_time_changed_format, selectedTime)
-                        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this,
+                            getString(R.string.set_act_update_time_changed_format, selectedTime),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 hour,
@@ -1961,6 +2016,13 @@ class SettingsActivity : BaseActivity() {
             )
 
             timePickerDialog.setTitle("")
+
+            timePickerDialog.setOnShowListener {
+                val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+                timePickerDialog.getButton(TimePickerDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                timePickerDialog.getButton(TimePickerDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
+
             timePickerDialog.show()
         }
 
@@ -2272,7 +2334,7 @@ class SettingsActivity : BaseActivity() {
 
         val currentIndex = hoursValues.indexOf(currentHours).let { if (it == -1) 5 else it } // default 16
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_due_date_reminder))
             .setSingleChoiceItems(hoursOptions, currentIndex) { dialog, which ->
                 val selectedHours = hoursValues[which]
@@ -2288,6 +2350,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showDailyReminderTimeDialog() {
@@ -2296,7 +2363,7 @@ class SettingsActivity : BaseActivity() {
         val currentHour = timeParts[0].toIntOrNull() ?: 19
         val currentMinute = timeParts[1].toIntOrNull() ?: 0
 
-        TimePickerDialog(
+        val timePickerDialog = TimePickerDialog(
             this,
             { _, hour, minute ->
                 val timeString = String.format("%02d:%02d", hour, minute)
@@ -2313,7 +2380,15 @@ class SettingsActivity : BaseActivity() {
             currentHour,
             currentMinute,
             true
-        ).show()
+        )
+
+        timePickerDialog.setOnShowListener {
+            val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+            timePickerDialog.getButton(TimePickerDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            timePickerDialog.getButton(TimePickerDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        }
+
+        timePickerDialog.show()
     }
 
     private fun setupEmailButton() {
@@ -2425,7 +2500,7 @@ class SettingsActivity : BaseActivity() {
 
         val currentIndex = daysValues.indexOf(currentDays).let { if (it == -1) 6 else it } // default 1 week
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_reminder_before_exam))
             .setSingleChoiceItems(daysOptions, currentIndex) { dialog, which ->
                 val selectedDays = daysValues[which]
@@ -2442,6 +2517,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun setupOrientationSetting() {
@@ -2741,7 +2821,7 @@ class SettingsActivity : BaseActivity() {
                 return view
             }
         }
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_export_full_backup))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -2751,6 +2831,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun saveFullBackupToFile(content: String) {
@@ -2799,7 +2884,7 @@ class SettingsActivity : BaseActivity() {
                 return view
             }
         }
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_import_full_backup))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -2809,6 +2894,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun importFullBackupFromFile() {
@@ -2895,7 +2985,7 @@ class SettingsActivity : BaseActivity() {
             append(getString(R.string.set_act_backup_no_undo))
         }
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_backup_dialog_title))
             .setMessage(message)
             .setPositiveButton(getString(R.string.set_act_backup_restore)) { _, _ ->
@@ -2904,6 +2994,11 @@ class SettingsActivity : BaseActivity() {
             .setNegativeButton(getString(R.string.cancel), null)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun executeImport(content: String, enabledSections: Set<String>) {
@@ -2952,7 +3047,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun showRestartRecommendationDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.set_act_restart_recommended))
             .setMessage(getString(R.string.set_act_restart_message))
             .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
@@ -2960,6 +3055,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.set_act_restart_later), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun restartApp() {
@@ -3071,7 +3171,7 @@ class SettingsActivity : BaseActivity() {
 
         val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.select_language))
             .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
                 val selectedLanguageCode = languages[which]
@@ -3085,10 +3185,15 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showRestartDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.restart_required))
             .setMessage(getString(R.string.restart_required_message))
             .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
@@ -3096,6 +3201,11 @@ class SettingsActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.restart_later), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun storeOriginalBackground(view: View) {
@@ -3126,12 +3236,33 @@ class SettingsActivity : BaseActivity() {
         }
 
         val matches = findMatches(query)
+
+        if (matches.any { isViewInAppInfoSection(it.first.view) } && !isAppInfoExpanded) {
+            expandAppInfoSection()
+        }
+
         highlightMatches(matches, query)
 
         currentMatches = matches
         currentMatchIndex = 0
 
         L.d(TAG, "Search for '$query' found ${matches.size} matches")
+    }
+
+    private fun expandAppInfoSection() {
+        isAppInfoExpanded = true
+        updateAppInfoSectionUI()
+    }
+
+    private fun isViewInAppInfoSection(view: View): Boolean {
+        var parent = view.parent
+        while (parent != null) {
+            if (parent == layoutAppInfoContent) {
+                return true
+            }
+            parent = parent.parent
+        }
+        return false
     }
 
     private fun isGreetingQuery(query: String): Boolean {
@@ -3328,6 +3459,10 @@ class SettingsActivity : BaseActivity() {
             .setCancelable(false)
             .create()
 
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        btnContinue.setTextColor(buttonColor)
+        btnCancel.setTextColor(buttonColor)
+
         spinnerNewClass.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (position == 0) {
@@ -3456,7 +3591,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun showGradePreservationConfirmationDialog(callback: (Boolean) -> Unit) {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.act_set_confirm_grade_deletion))
             .setMessage(getString(R.string.act_set_confirm_grade_deletion_message))
             .setPositiveButton(getString(R.string.act_set_delete_grades)) { _, _ ->
@@ -3466,6 +3601,11 @@ class SettingsActivity : BaseActivity() {
                 callback(false)
             }
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun executeClassAdvancement(currentClass: String, newClass: String, preserveGrades: Boolean) {
@@ -3610,6 +3750,28 @@ class SettingsActivity : BaseActivity() {
         } catch (e: Exception) {
             L.e(TAG, "Error removing last year's grade data", e)
         }
+    }
+
+    private fun toggleAppInfoSection() {
+        isAppInfoExpanded = !isAppInfoExpanded
+        updateAppInfoSectionUI()
+    }
+
+    private fun updateAppInfoSectionUI() {
+        layoutAppInfoContent.visibility = if (isAppInfoExpanded) View.VISIBLE else View.GONE
+
+        if (isAppInfoExpanded) {
+            btnAppInfoToggle.text = getString(R.string.act_set_hide_app_info)
+            btnAppInfoToggle.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_expand_less, 0)
+        } else {
+            btnAppInfoToggle.text = getString(R.string.act_set_show_app_info)
+            btnAppInfoToggle.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_expand_more, 0)
+        }
+    }
+
+    private fun setupAppInfoSection() {
+        isAppInfoExpanded = false
+        updateAppInfoSectionUI()
     }
 }
 

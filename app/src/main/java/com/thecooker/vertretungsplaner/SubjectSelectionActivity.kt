@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -17,8 +18,10 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.annotation.AttrRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -118,14 +121,20 @@ class SubjectSelectionActivity : BaseActivity() {
             finish() // just return and skip confirmation
         } else {
             if (selectedSubjects.isNotEmpty()) {
-                AlertDialog.Builder(this)
+                val dialog = AlertDialog.Builder(this)
                     .setTitle(getString(R.string.sub_sel_discard_selection))
                     .setMessage(getString(R.string.sub_sel_discard_confirm, selectedSubjects.size))
                     .setPositiveButton(getString(R.string.sub_sel_yes_discard)) { _, _ ->
                         finish()
                     }
                     .setNegativeButton(getString(R.string.sub_sel_back_to_selection), null)
-                    .show()
+                    .create()
+
+                dialog.show()
+
+                val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
             } else {
                 finish()
             }
@@ -282,7 +291,7 @@ class SubjectSelectionActivity : BaseActivity() {
     }
 
     private fun deleteSubject(triplet: SubjectTriplet) {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.sub_sel_delete_subject))
             .setMessage(getString(R.string.sub_sel_delete_subject_confirm, triplet.getDisplayText(this)))
             .setPositiveButton(getString(R.string.sub_sel_yes_delete)) { _, _ ->
@@ -303,7 +312,13 @@ class SubjectSelectionActivity : BaseActivity() {
                 L.d(TAG, "Total subjects now: ${allSubjectTriplets.size}")
             }
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create()
+
+        dialog.show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun editSubject(triplet: SubjectTriplet) {
@@ -401,7 +416,7 @@ class SubjectSelectionActivity : BaseActivity() {
 
         updateAlternativeRoomsVisibility()
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(R.string.sub_sel_edit_subject)
             .setView(dialogView)
             .setPositiveButton(R.string.dialog_sec_save) { _, _ ->
@@ -424,6 +439,22 @@ class SubjectSelectionActivity : BaseActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun updateSubject(originalTriplet: SubjectTriplet, newSubject: String, newTeacher: String, newRoom: String, alternativeRooms: List<String>) {
@@ -546,14 +577,20 @@ class SubjectSelectionActivity : BaseActivity() {
 
         btnConfirm.setOnClickListener {
             if (selectedSubjects.isEmpty()) {
-                AlertDialog.Builder(this)
+                val dialog = AlertDialog.Builder(this)
                     .setTitle(getString(R.string.sub_sel_no_subjects))
                     .setMessage(getString(R.string.sub_sel_no_subjects_confirm))
                     .setPositiveButton(getString(R.string.sub_sel_yes_continue)) { _, _ ->
                         confirmSelection()
                     }
                     .setNegativeButton(getString(R.string.sub_sel_return), null)
-                    .show()
+                    .create()
+
+                dialog.show()
+
+                val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
             } else {
                 confirmSelection()
             }
@@ -648,7 +685,7 @@ class SubjectSelectionActivity : BaseActivity() {
             addAlternativeRoomField()
         }
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.sub_sel_add_subject_manual))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.sub_sel_add)) { _, _ ->
@@ -670,7 +707,13 @@ class SubjectSelectionActivity : BaseActivity() {
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create()
+
+        dialog.show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun addManualSubject(subjectText: String, teacherText: String, roomText: String, alternativeRooms: List<String>) {

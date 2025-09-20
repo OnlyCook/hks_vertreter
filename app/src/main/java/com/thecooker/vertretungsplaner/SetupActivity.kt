@@ -1,13 +1,17 @@
 package com.thecooker.vertretungsplaner
 
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.*
+import androidx.annotation.AttrRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.R.string.setup_loading_classes
@@ -158,7 +162,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showUnverifiedBildungsgangDialog(bildungsgang: String) {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.setup_unverified_program_title))
             .setIcon(android.R.drawable.ic_dialog_info)
             .setMessage(getString(R.string.setup_unverified_program_message, bildungsgang))
@@ -166,10 +170,25 @@ class SetupActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun showHelpDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.setup_need_help))
             .setMessage(getString(R.string.setup_missing_program_message))
             .setPositiveButton(getString(R.string.setup_send_email)) { dialog, _ ->
@@ -180,6 +199,11 @@ class SetupActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun openEmailClient() {
@@ -242,7 +266,7 @@ class SetupActivity : AppCompatActivity() {
 
         val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.select_language))
             .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
                 val selectedLanguageCode = languages[which]
@@ -257,10 +281,13 @@ class SetupActivity : AppCompatActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun showRestartDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.restart_required))
             .setMessage(getString(R.string.restart_required_message))
             .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
@@ -268,6 +295,10 @@ class SetupActivity : AppCompatActivity() {
             }
             .setNegativeButton(getString(R.string.restart_later), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun restartApp() {
@@ -366,7 +397,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showFetchErrorDialog() {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.setup_fetch_error_title))
             .setMessage(getString(R.string.setup_fetch_error_message))
             .setNegativeButton(getString(R.string.setup_use_offline_data)) { dialog, _ ->
@@ -379,6 +410,11 @@ class SetupActivity : AppCompatActivity() {
                 fetchClassesFromAPI()
             }
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun getCurrentBildungsgangData(): Map<String, List<String>> {

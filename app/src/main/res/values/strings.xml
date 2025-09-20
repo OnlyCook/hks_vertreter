@@ -183,6 +183,8 @@
     <string name="act_set_loading">Lädt...</string>
     <string name="settings_search_hint">Einstellungen durchsuchen...</string>
     <string name="settings_no_results">Keine passenden Einstellungen gefunden</string>
+    <string name="act_set_show_app_info">App-Informationen anzeigen</string>
+    <string name="act_set_hide_app_info">App-Informationen ausblenden</string>
 
     <!-- ACTIVITY_SETUP.XML -->
     <string name="act_set_school_name">Heinrich-Kleyer-Schule</string>

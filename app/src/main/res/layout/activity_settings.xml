@@ -162,97 +162,6 @@
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <!-- language settings -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:elevation="3dp"
-                android:radius="12dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp"
-                    android:background="?attr/cardBackgroundColor">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/language_settings"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:layout_marginBottom="8dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/language_description"
-                        android:textSize="14sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp"
-                        android:layout_marginBottom="16dp" />
-
-                    <!-- auto detect user phone lang -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="16dp">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/auto_detect_language"
-                            android:textSize="14sp"
-                            android:textColor="?attr/textPrimaryColor" />
-
-                        <Switch
-                            android:id="@+id/switchAutoDetectLanguage"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content" />
-
-                    </LinearLayout>
-
-                    <!-- manual lang selection -->
-                    <LinearLayout
-                        android:id="@+id/layoutManualLanguage"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:visibility="gone">
-
-                        <Button
-                            android:id="@+id/btnSelectLanguage"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/german"
-                            android:textColor="?attr/textPrimaryColor"
-                            android:background="?android:attr/selectableItemBackground"
-                            android:gravity="start|center_vertical"
-                            android:paddingStart="16dp"
-                            android:paddingEnd="16dp"
-                            android:minHeight="48dp"
-                            android:layout_marginBottom="8dp" />
-
-                    </LinearLayout>
-
-                    <!-- cur lang display -->
-                    <TextView
-                        android:id="@+id/tvCurrentLanguage"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/current_language_german"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/holo_blue_dark" />
-
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
             <!-- Timetable Scanner -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
@@ -426,6 +335,97 @@
                         android:paddingStart="16dp"
                         android:paddingEnd="16dp"
                         android:minHeight="48dp" />
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- language settings -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:elevation="3dp"
+                android:radius="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/language_settings"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/settingsColorPrimary"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/language_description"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        android:lineSpacingExtra="2dp"
+                        android:layout_marginBottom="16dp" />
+
+                    <!-- auto detect user phone lang -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/auto_detect_language"
+                            android:textSize="14sp"
+                            android:textColor="?attr/textPrimaryColor" />
+
+                        <Switch
+                            android:id="@+id/switchAutoDetectLanguage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                    </LinearLayout>
+
+                    <!-- manual lang selection -->
+                    <LinearLayout
+                        android:id="@+id/layoutManualLanguage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <Button
+                            android:id="@+id/btnSelectLanguage"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/german"
+                            android:textColor="?attr/textPrimaryColor"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:gravity="start|center_vertical"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp"
+                            android:minHeight="48dp"
+                            android:layout_marginBottom="8dp" />
+
+                    </LinearLayout>
+
+                    <!-- cur lang display -->
+                    <TextView
+                        android:id="@+id/tvCurrentLanguage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/current_language_german"
+                        android:textSize="12sp"
+                        android:textColor="@android:color/holo_blue_dark" />
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -1794,342 +1794,376 @@
                 android:layout_marginBottom="16dp"
                 android:layout_marginTop="8dp" />
 
-            <!-- School Information -->
+            <!-- App Info Toggle Card -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 android:elevation="3dp"
-                android:radius="12dp"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp"
-                    android:background="?attr/cardBackgroundColor">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_school"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:layout_marginBottom="8dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_school_address"
-                        android:textSize="14sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="4dp" />
-
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- Privacy & Terms -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:elevation="3dp"
-                android:radius="12dp"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp"
-                    android:background="?attr/cardBackgroundColor">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_privacy_terms"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Privacy Information -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_privacy"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_privacy_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- App Features -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_app_features"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_features_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Disclaimer -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_disclaimer"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_disclaimer_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/holo_orange_dark"
-                        android:lineSpacingExtra="2dp"
-                        android:background="?attr/settingsHintBackgroundColor"
-                        android:padding="8dp"
-                        android:radius="6dp" />
-
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- Contact & Credits -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:elevation="3dp"
-                android:radius="12dp"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp"
-                    android:background="?attr/cardBackgroundColor">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_contact_credits"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Developer -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_developer"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_developer_name"
-                        android:textSize="14sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Contact -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_contact"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_contact_desc"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:layout_marginBottom="4dp" />
-
-                    <Button
-                        android:id="@+id/btnContactEmail"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_contact_email"
-                        android:textSize="14sp"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:textStyle="bold"
-                        android:background="@drawable/button_outlined"
-                        android:padding="4dp"
-                        android:drawablePadding="-8dp"
-                        android:gravity="center"
-                        android:textAllCaps="false" />
-
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- Legal Information -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:elevation="3dp"
-                android:radius="12dp"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp"
-                    android:background="?attr/cardBackgroundColor">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_legal_info"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/settingsColorPrimary"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Impressum -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_imprint"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_imprint_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Data Processing -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_data_processing"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_data_processing_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp"
-                        android:layout_marginBottom="12dp" />
-
-                    <!-- Liability -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_liability"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/textPrimaryColor"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/act_set_liability_details"
-                        android:textSize="12sp"
-                        android:textColor="@android:color/darker_gray"
-                        android:lineSpacingExtra="2dp" />
-
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- App Version -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="32dp"
-                android:elevation="2dp"
                 android:radius="12dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="20dp"
-                    android:gravity="center_vertical"
+                    android:orientation="vertical"
                     android:background="?attr/cardBackgroundColor">
 
-                    <LinearLayout
-                        android:layout_width="0dp"
+                    <!-- Toggle Button -->
+                    <Button
+                        android:id="@+id/btnAppInfoToggle"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
+                        android:text="@string/act_set_show_app_info"
+                        android:textColor="?attr/textPrimaryColor"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:gravity="center"
+                        android:padding="20dp"
+                        android:minHeight="48dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:drawableEnd="@drawable/ic_expand_more"
+                        android:drawablePadding="8dp" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/act_set_app_version"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:textColor="?attr/textPrimaryColor" />
+                    <!-- Expandable Content (initially hidden) -->
+                    <LinearLayout
+                        android:id="@+id/layoutAppInfoContent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
 
-                        <TextView
-                            android:id="@+id/tvAppVersion"
-                            android:layout_width="wrap_content"
+                        <!-- School Information -->
+                        <androidx.cardview.widget.CardView
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/act_set_loading"
-                            android:textSize="12sp"
-                            android:textColor="@android:color/darker_gray"
-                            android:layout_marginTop="2dp" />
+                            android:layout_margin="8dp"
+                            android:elevation="2dp"
+                            android:radius="8dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="16dp"
+                                android:background="?attr/cardBackgroundColor">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_school"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/settingsColorPrimary"
+                                    android:layout_marginBottom="8dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_school_address"
+                                    android:textSize="14sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="4dp" />
+
+                            </LinearLayout>
+                        </androidx.cardview.widget.CardView>
+
+                        <!-- Privacy & Terms -->
+                        <androidx.cardview.widget.CardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="8dp"
+                            android:elevation="2dp"
+                            android:radius="8dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="16dp"
+                                android:background="?attr/cardBackgroundColor">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_privacy_terms"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/settingsColorPrimary"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Privacy Information -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_privacy"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_privacy_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="2dp"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- App Features -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_app_features"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_features_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="2dp"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Disclaimer -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_disclaimer"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_disclaimer_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/holo_orange_dark"
+                                    android:lineSpacingExtra="2dp"
+                                    android:background="?attr/settingsHintBackgroundColor"
+                                    android:padding="8dp"
+                                    android:radius="6dp" />
+
+                            </LinearLayout>
+                        </androidx.cardview.widget.CardView>
+
+                        <!-- Contact & Credits -->
+                        <androidx.cardview.widget.CardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="8dp"
+                            android:elevation="2dp"
+                            android:radius="8dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="16dp"
+                                android:background="?attr/cardBackgroundColor">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_contact_credits"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/settingsColorPrimary"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Developer -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_developer"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_developer_name"
+                                    android:textSize="14sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Contact -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_contact"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_contact_desc"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:layout_marginBottom="4dp" />
+
+                                <Button
+                                    android:id="@+id/btnContactEmail"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_contact_email"
+                                    android:textSize="14sp"
+                                    android:textColor="?attr/settingsColorPrimary"
+                                    android:textStyle="bold"
+                                    android:background="@drawable/button_outlined"
+                                    android:padding="4dp"
+                                    android:drawablePadding="-8dp"
+                                    android:gravity="center"
+                                    android:textAllCaps="false" />
+
+                            </LinearLayout>
+                        </androidx.cardview.widget.CardView>
+
+                        <!-- Legal Information -->
+                        <androidx.cardview.widget.CardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="8dp"
+                            android:elevation="2dp"
+                            android:radius="8dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="16dp"
+                                android:background="?attr/cardBackgroundColor">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_legal_info"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/settingsColorPrimary"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Impressum -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_imprint"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_imprint_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="2dp"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Data Processing -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_data_processing"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_data_processing_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="2dp"
+                                    android:layout_marginBottom="12dp" />
+
+                                <!-- Liability -->
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_liability"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/textPrimaryColor"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/act_set_liability_details"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:lineSpacingExtra="2dp" />
+
+                            </LinearLayout>
+                        </androidx.cardview.widget.CardView>
+
+                        <!-- App Version -->
+                        <androidx.cardview.widget.CardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_margin="8dp"
+                            android:elevation="2dp"
+                            android:radius="8dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:padding="16dp"
+                                android:gravity="center_vertical"
+                                android:background="?attr/cardBackgroundColor">
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="@string/act_set_app_version"
+                                        android:textSize="14sp"
+                                        android:textStyle="bold"
+                                        android:textColor="?attr/textPrimaryColor" />
+
+                                    <TextView
+                                        android:id="@+id/tvAppVersion"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="@string/act_set_loading"
+                                        android:textSize="12sp"
+                                        android:textColor="@android:color/darker_gray"
+                                        android:layout_marginTop="2dp" />
+
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🗿"
+                                    android:textSize="24sp" />
+
+                            </LinearLayout>
+                        </androidx.cardview.widget.CardView>
 
                     </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="🗿"
-                        android:textSize="24sp" />
-
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 

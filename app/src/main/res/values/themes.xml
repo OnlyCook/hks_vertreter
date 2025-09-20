@@ -13,6 +13,9 @@
         <item name="android:colorBackground">@color/light_gray</item>
         <item name="elevation">0dp</item>
 
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+
         <!-- drawables -->
         <item name="searchBackgroundColor">@color/light_search_background</item>
         <item name="spinnerBackgroundColor">@color/white</item>
@@ -23,10 +26,19 @@
 
         <!-- homefragment.kt -->
         <item name="homeBackgroundColor">@color/home_bg_light</item>
-        <item name="headerBackgroundColor">@color/home_bg_light</item>
         <item name="tableBackgroundColor">@color/home_bg_light</item>
         <item name="tableTextColor">@color/black</item>
         <item name="filterButtonBackgroundColor">@color/home_bg_light</item>
+        <item name="refreshButtonTextColor">@color/refresh_button_text_light</item>
+        <item name="errorTextColor">@color/error_text_light</item>
+        <item name="warningTextColor">@color/warning_text_light</item>
+        <item name="successTextColor">@color/success_text_light</item>
+        <item name="highlightTextColor">@color/highlight_text_light</item>
+        <item name="highlightBackgroundColor">@color/highlight_background_light</item>
+        <item name="highlightAnimationColor">@color/highlight_animation_light</item>
+        <item name="headerBackgroundColor">@color/header_bg_light</item>
+        <item name="tableHeaderBackgroundColor">@color/highlight_background_light</item>
+        <item name="tableHeaderTextColor">@color/table_header_text_light</item>
 
         <!-- settingsactivity.kt -->
         <item name="settingsBackgroundColor">@color/home_bg_light</item>
@@ -65,6 +77,14 @@
         <item name="dialogSectionButtonColor">@color/dialog_section_button_light</item>
 
         <!-- fragment_exam.xml -->
+        <item name="examOverdueBackground">@color/exam_overdue_background</item>
+        <item name="examUrgentBackground">@color/exam_urgent_background</item>
+        <item name="examWarningBackground">@color/exam_warning_background</item>
+        <item name="examSoonBackground">@color/exam_soon_background</item>
+        <item name="examUpcomingBackground">@color/exam_upcoming_background</item>
+        <item name="examTextPrimary">@color/exam_text_primary_light</item>
+        <item name="examTextSecondary">@color/exam_text_secondary_light</item>
+        <item name="examDetailsDateHint">@color/exam_details_date_hint_light</item>
         <!-- fragment_slideshow.xml -->
         <item name="homeworkFragmentBackgroundColor">@color/homework_fragment_bg_light</item>
         <item name="homeworkFragmentTextColor">@color/homework_fragment_text_light</item>
@@ -73,6 +93,13 @@
         <item name="examAddColorSurface">@color/white</item>
         <item name="examItemFontColor">@color/exam_item_text_light</item>
         <item name="gradesMainFontColor">@color/grades_main_font_color_light</item>
+        <item name="homeworkOverdueBackgroundColor">@color/homework_overdue_background_light</item>
+        <item name="homeworkCompletedBackgroundColor">@color/homework_completed_background_light</item>
+        <item name="homeworkDueTodayBackgroundColor">@color/homework_due_today_background_light</item>
+        <item name="homeworkDueTomorrowBackgroundColor">@color/homework_due_tomorrow_background_light</item>
+        <item name="homeworkTransparentBackgroundColor">@color/homework_transparent_background</item>
+        <item name="homeworkTextPrimaryColor">@color/homework_text_primary_light</item>
+        <item name="homeworkDetailDueDateTextColor">@color/homework_detail_due_date_text_light</item>
 
         <!-- dialog_homework_detail.xml -->
         <item name="homeworkDialogNotesBackgroundColor">@color/homework_dialog_notes_bg_light</item>
@@ -88,6 +115,23 @@
         <item name="calendarNotes">@color/calendar_notes_light</item>
         <item name="calendarNotesFont">@color/calendar_notes_text_light</item>
         <item name="calendarNotesInner">@color/calendar_notes_inner_light</item>
+        <item name="cancelledCellBackgroundColor">@color/cancelled_light</item>
+        <item name="supervisedCellBackgroundColor">@color/supervised_light</item>
+        <item name="substitutedCellBackgroundColor">@color/substituted_light</item>
+        <item name="colorblindCancelledCellBackgroundColor">@color/colorblind_cancelled_light</item>
+        <item name="colorblindSupervisedCellBackgroundColor">@color/colorblind_supervised_light</item>
+        <item name="colorblindSubstitutedCellBackgroundColor">@color/colorblind_substituted_light</item>
+        <item name="colorblindTritanopiaCancelledCellBackgroundColor">@color/colorblind_tritanopia_cancelled_light</item>
+        <item name="colorblindTritanopiaSupervisedCellBackgroundColor">@color/colorblind_tritanopia_supervised_light</item>
+        <item name="colorblindTritanopiaSubstitutedCellBackgroundColor">@color/colorblind_tritanopia_substituted_light</item>
+        <item name="homeworkCellBackgroundColor">@color/homework_light</item>
+        <item name="examCellBackgroundColor">@color/exam_light</item>
+        <item name="holidayVacationCellBackgroundColor">@color/holiday_vacation_light</item>
+
+        <!-- side_nav_bar.xml -->
+        <item name="navHeaderStartColor">#0f5293</item>
+        <item name="navHeaderCenterColor">#0c3c74</item>
+        <item name="navHeaderEndColor">#002344</item>
     </style>
 
     <style name="Theme.VertretungsPlaner.NoActionBar">

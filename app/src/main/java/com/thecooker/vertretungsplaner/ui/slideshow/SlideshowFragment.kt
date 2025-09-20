@@ -39,6 +39,9 @@ import androidx.core.net.toUri
 import android.provider.Settings
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Color
+import android.util.TypedValue
+import androidx.annotation.AttrRes
+import androidx.core.content.ContextCompat
 import com.thecooker.vertretungsplaner.ui.gallery.GalleryFragment.InternalConstants
 
 class SlideshowFragment : Fragment() {
@@ -157,12 +160,23 @@ class SlideshowFragment : Fragment() {
             }
         }
 
-        fun getBackgroundColor(): Int = when {
-            isCompleted -> android.R.color.holo_green_light
-            isOverdue() -> android.R.color.darker_gray
-            isDueToday() -> android.R.color.holo_red_light
-            isDueTomorrow() -> android.R.color.holo_orange_light
-            else -> android.R.color.transparent
+        fun getBackgroundColor(context: Context): Int = when {
+            isCompleted -> context.getThemeColor(R.attr.homeworkCompletedBackgroundColor)
+            isOverdue() -> context.getThemeColor(R.attr.homeworkOverdueBackgroundColor)
+            isDueToday() -> context.getThemeColor(R.attr.homeworkDueTodayBackgroundColor)
+            isDueTomorrow() -> context.getThemeColor(R.attr.homeworkDueTomorrowBackgroundColor)
+            else -> context.getThemeColor(R.attr.homeworkTransparentBackgroundColor)
+        }
+
+        private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+            val typedValue = TypedValue()
+            val theme = theme
+            theme.resolveAttribute(attrRes, typedValue, true)
+            return if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(this, typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
         }
 
         fun isOverdue(): Boolean {
@@ -631,6 +645,22 @@ class SlideshowFragment : Fragment() {
             .create()
 
         dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun updateAutoSwitchState(switchAutoHomework: Switch, subject: String?, isEditMode: Boolean = false) {
@@ -676,7 +706,11 @@ class SlideshowFragment : Fragment() {
         }
     }
 
-    private fun showCustomDatePicker(currentDate: Date, selectedSubject: String?, onDateSelected: (Date, Int?) -> Unit) {
+    private fun showCustomDatePicker(
+        currentDate: Date,
+        selectedSubject: String?,
+        onDateSelected: (Date, Int?) -> Unit
+    ) {
         val calendar = Calendar.getInstance().apply { time = currentDate }
 
         val subjectSchedule = if (!selectedSubject.isNullOrEmpty()) {
@@ -719,7 +753,7 @@ class SlideshowFragment : Fragment() {
 
                 if (suggestedLesson != null) {
                     // confirmation for recommended lesson
-                    AlertDialog.Builder(requireContext())
+                    val alertDialog = AlertDialog.Builder(requireContext())
                         .setTitle(getString(R.string.slide_suggest_lesson))
                         .setMessage(getString(R.string.slide_suggest_lesson_message, selectedSubject, suggestedLesson))
                         .setPositiveButton(getString(R.string.slide_yes)) { _, _ ->
@@ -729,6 +763,11 @@ class SlideshowFragment : Fragment() {
                             onDateSelected(newDate, null)
                         }
                         .show()
+
+                    val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                    alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                    alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+                    alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
                 } else {
                     onDateSelected(newDate, null)
                 }
@@ -745,6 +784,12 @@ class SlideshowFragment : Fragment() {
                 if (dayIndex == todayIndex) "[$dayName]" else dayName
             }
             datePickerDialog.setTitle("$selectedSubject: $availableDays")
+        }
+
+        datePickerDialog.setOnShowListener {
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            datePickerDialog.getButton(DatePickerDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            datePickerDialog.getButton(DatePickerDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
         }
 
         datePickerDialog.show()
@@ -930,7 +975,7 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun deleteHomework(homework: HomeworkEntry) {
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.slide_delete_homework))
             .setMessage(getString(R.string.slide_delete_confirm))
             .setPositiveButton(getString(R.string.set_act_yes_delete)) { _, _ ->
@@ -942,6 +987,11 @@ class SlideshowFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showHomeworkDetailDialog(homework: HomeworkEntry) {
@@ -954,6 +1004,7 @@ class SlideshowFragment : Fragment() {
 
         textSubject.text = homework.subject
         textDueDate.text = getDetailedDueDateStringWithWeekday(homework)
+        textDueDate.setTextColor(requireContext().getThemeColor(R.attr.homeworkDetailDueDateTextColor))
 
         layoutContent.removeAllViews()
 
@@ -1016,7 +1067,7 @@ class SlideshowFragment : Fragment() {
             copyHomeworkToClipboard(homework)
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.slide_homework_details))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.slide_close), null)
@@ -1024,6 +1075,11 @@ class SlideshowFragment : Fragment() {
                 showAddHomeworkDialog(homework)
             }
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun getDetailedDueDateStringWithWeekday(homework: HomeworkEntry): String {
@@ -1200,7 +1256,7 @@ class SlideshowFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.slide_export_homework))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1210,6 +1266,11 @@ class SlideshowFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showImportOptions() {
@@ -1233,7 +1294,7 @@ class SlideshowFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.slide_import_homework))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1243,6 +1304,11 @@ class SlideshowFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun exportHomeworkData(): String {

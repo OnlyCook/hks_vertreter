@@ -1,6 +1,5 @@
 package com.thecooker.vertretungsplaner.ui.exams
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.ClipData
@@ -138,19 +137,19 @@ class ExamFragment : Fragment() {
             return TimeUnit.MILLISECONDS.toDays(examDate.timeInMillis - today.timeInMillis)
         }
 
-        fun getBackgroundColor(): Int {
+        fun getBackgroundColorAttribute(): Int {
             if (isOverdue()) {
                 isCompleted = true
-                return android.R.color.darker_gray
+                return R.attr.examOverdueBackground
             }
 
             val daysUntil = getDaysUntilExam()
             return when {
-                daysUntil <= 1 -> android.R.color.holo_red_light
-                daysUntil <= 3 -> android.R.color.holo_orange_light
-                daysUntil <= 7 -> R.color.light_yellow
-                daysUntil <= 14 -> R.color.light_green
-                else -> android.R.color.transparent
+                daysUntil <= 1 -> R.attr.examUrgentBackground
+                daysUntil <= 3 -> R.attr.examWarningBackground
+                daysUntil <= 7 -> R.attr.examSoonBackground
+                daysUntil <= 14 -> R.attr.examUpcomingBackground
+                else -> 0
             }
         }
 
@@ -400,7 +399,6 @@ class ExamFragment : Fragment() {
         return view
     }
 
-    @SuppressLint("InflateParams", "SetTextI18n")
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -548,12 +546,16 @@ class ExamFragment : Fragment() {
         val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
 
         if (!hasScannedDocument) {
-            AlertDialog.Builder(requireContext())
+            val dialog = AlertDialog.Builder(requireContext())
                 .setTitle(getString(R.string.exam_timetable_required))
                 .setMessage(getString(R.string.exam_timetable_required_message))
                 .setPositiveButton(getString(R.string.exam_ok), null)
                 .show()
-            return
+
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
         }
 
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -561,6 +563,17 @@ class ExamFragment : Fragment() {
             addCategory(Intent.CATEGORY_OPENABLE)
         }
         pdfPickerLauncher.launch(Intent.createChooser(intent, getString(R.string.exam_select_pdf)))
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun processPdfExamSchedule(uri: Uri) {
@@ -1885,7 +1898,7 @@ class ExamFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.exam_import_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1895,6 +1908,11 @@ class ExamFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun importFromFilePicker() {
@@ -2118,6 +2136,11 @@ class ExamFragment : Fragment() {
             .create()
 
         dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun isTodayOrOverdue(date: Date): Boolean {
@@ -2202,7 +2225,7 @@ class ExamFragment : Fragment() {
     }
 
     private fun deleteExam(exam: ExamEntry) {
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.exam_delete))
             .setMessage(getString(R.string.exam_delete_confirm))
             .setPositiveButton(getString(R.string.exam_yes_delete)) { _, _ ->
@@ -2210,7 +2233,7 @@ class ExamFragment : Fragment() {
                 sortExams()
                 saveExams()
 
-                removeExamFromCalendarDataManager(exam) // remove from calendarmanager for compatability)
+                removeExamFromCalendarDataManager(exam)
 
                 filterExams(searchBar.text.toString())
                 updateExamCount()
@@ -2218,6 +2241,11 @@ class ExamFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun addExamToCalendarDataManager(exam: ExamEntry) {
@@ -2386,7 +2414,7 @@ class ExamFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.exam_export_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -2396,6 +2424,9 @@ class ExamFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+        negativeButton.setTextColor(getThemeColor(R.attr.dialogSectionButtonColor))
     }
 
     private fun exportExamData(): String {
@@ -2464,17 +2495,19 @@ class ExamFragment : Fragment() {
         }
     }
 
-    private fun showCustomDatePicker(currentDate: Date, selectedSubject: String?, onDateSelected: (Date) -> Unit) {
+    private fun showCustomDatePicker(
+        currentDate: Date,
+        selectedSubject: String?,
+        onDateSelected: (Date) -> Unit
+    ) {
         val calendar = Calendar.getInstance().apply { time = currentDate }
 
-        // get subject schedule if available
         val subjectSchedule = if (!selectedSubject.isNullOrEmpty()) {
             getSubjectSchedule(selectedSubject)
         } else {
             emptyMap()
         }
 
-        // get todays day index
         val today = Calendar.getInstance()
         val todayIndex = when (today.get(Calendar.DAY_OF_WEEK)) {
             Calendar.MONDAY -> 0
@@ -2491,8 +2524,7 @@ class ExamFragment : Fragment() {
                 val newCalendar = Calendar.getInstance().apply {
                     set(year, month, day)
                 }
-                val newDate = newCalendar.time
-                onDateSelected(newDate)
+                onDateSelected(newCalendar.time)
             },
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH),
@@ -2506,6 +2538,12 @@ class ExamFragment : Fragment() {
                 if (dayIndex == todayIndex) "[$dayName]" else dayName
             }
             datePickerDialog.setTitle("$selectedSubject: $availableDays")
+        }
+
+        datePickerDialog.setOnShowListener {
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            datePickerDialog.getButton(DatePickerDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            datePickerDialog.getButton(DatePickerDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
         }
 
         datePickerDialog.show()
@@ -2536,6 +2574,9 @@ class ExamFragment : Fragment() {
         val detailedDateInfo = buildDetailedDateInfo(exam)
         textDetailedDate.text = detailedDateInfo
 
+        val dateHintColor = requireContext().getThemeColor(R.attr.examDetailsDateHint)
+        textDetailedDate.setTextColor(dateHintColor)
+
         if (exam.note.isNotBlank()) {
             textNotes.text = exam.note
             textNotes.visibility = View.VISIBLE
@@ -2552,7 +2593,7 @@ class ExamFragment : Fragment() {
             textMark.visibility = View.GONE
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.exam_details_title))
             .setView(dialogView)
             .setNeutralButton(getString(R.string.exam_details_edit)) { _, _ ->
@@ -2560,6 +2601,11 @@ class ExamFragment : Fragment() {
             }
             .setPositiveButton(getString(R.string.exam_details_close), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun buildDetailedDateInfo(exam: ExamEntry): String {
@@ -2660,7 +2706,7 @@ class ExamFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.share_exam_received_title))
             .setMessage(message)
             .setPositiveButton(if (existingExam != null) getString(R.string.share_overwrite) else getString(R.string.share_add)) { _, _ ->
@@ -2695,6 +2741,11 @@ class ExamFragment : Fragment() {
                 clearSharedContentState()
             }
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun isSameDay(date1: Date, date2: Date): Boolean {

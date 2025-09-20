@@ -174,7 +174,7 @@ class HomeFragment : Fragment() {
             headerLayout = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(24, 24, 24, 24)
-                setBackgroundColor(resources.getColor(android.R.color.holo_blue_dark, null))
+                setBackgroundColor(getThemeColor(R.attr.headerBackgroundColor))
                 elevation = 8f
             }
 
@@ -183,13 +183,14 @@ class HomeFragment : Fragment() {
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 gravity = android.view.Gravity.CENTER
-                setTextColor(resources.getColor(android.R.color.white, null))
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
             }
 
             headerLayout.addView(classText)
 
             contentScrollView = ScrollView(requireContext()).apply {
                 isFillViewport = true
+                setBackgroundColor(getThemeColor(R.attr.homeBackgroundColor))
             }
             contentLayout = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
@@ -236,7 +237,7 @@ class HomeFragment : Fragment() {
                 text = getString(R.string.home_loading_minimal)
                 gravity = android.view.Gravity.CENTER
                 textSize = 16f
-                setTextColor(resources.getColor(android.R.color.darker_gray, null))
+                setTextColor(getThemeColor(R.attr.textSecondaryColor))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.MATCH_PARENT
@@ -420,7 +421,7 @@ class HomeFragment : Fragment() {
                     text = getString(R.string.home_fragment_load_error)
                     gravity = android.view.Gravity.CENTER
                     textSize = 16f
-                    setTextColor(resources.getColor(android.R.color.holo_orange_dark, null))
+                    setTextColor(getThemeColor(R.attr.errorTextColor))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.MATCH_PARENT
@@ -438,6 +439,8 @@ class HomeFragment : Fragment() {
                         gravity = android.view.Gravity.CENTER
                         topMargin = 32
                     }
+                    setBackgroundColor(getThemeColor(R.attr.settingsColorPrimary))
+                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     setOnClickListener {
                         retryInitialization()
                     }
@@ -465,7 +468,7 @@ class HomeFragment : Fragment() {
                 return
             }
 
-            android.app.AlertDialog.Builder(requireContext())
+            val alertDialog = android.app.AlertDialog.Builder(requireContext())
                 .setTitle(getString(R.string.home_restart_dialog_title))
                 .setMessage(getString(R.string.home_restart_dialog_message))
                 .setPositiveButton(getString(R.string.home_restart_button)) { _, _ ->
@@ -480,8 +483,25 @@ class HomeFragment : Fragment() {
                 .setNegativeButton(getString(R.string.home_cancel_button), null)
                 .setCancelable(false)
                 .show()
+
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            alertDialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            alertDialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            alertDialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+
         } catch (e: Exception) {
             L.e("HomeFragment", "Error showing restart dialog", e)
+        }
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
         }
     }
 
@@ -502,8 +522,8 @@ class HomeFragment : Fragment() {
 
     private fun loadCooldownSetting() {
         try {
-            val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
-            cooldownEnabled = !removeCooldown
+            val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", true)
+            cooldownEnabled = removeCooldown // this is cooked
             L.d("HomeFragment", "Cooldown setting loaded: $cooldownEnabled")
         } catch (e: Exception) {
             L.e("HomeFragment", "Error loading cooldown setting", e)
@@ -512,29 +532,23 @@ class HomeFragment : Fragment() {
 
     private fun getColorBlindFriendlyColor(originalColor: String): Int {
         return when (colorBlindMode) {
-            "protanopia" -> when (originalColor) {
-                "red" -> resources.getColor(android.R.color.holo_orange_dark, null)
-                "green" -> resources.getColor(android.R.color.holo_blue_light, null)
-                "orange" -> resources.getColor(android.R.color.darker_gray, null)
-                else -> resources.getColor(android.R.color.transparent, null)
-            }
-            "deuteranopia" -> when (originalColor) {
-                "red" -> resources.getColor(android.R.color.holo_orange_dark, null)
-                "green" -> resources.getColor(android.R.color.holo_blue_light, null)
-                "orange" -> resources.getColor(android.R.color.darker_gray, null)
-                else -> resources.getColor(android.R.color.transparent, null)
+            "protanopia", "deuteranopia" -> when (originalColor) {
+                "red" -> getThemeColor(R.attr.colorblindCancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.colorblindSubstitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.colorblindSupervisedCellBackgroundColor)
+                else -> Color.TRANSPARENT
             }
             "tritanopia" -> when (originalColor) {
-                "red" -> resources.getColor(android.R.color.holo_red_dark, null)
-                "green" -> resources.getColor(android.R.color.holo_blue_dark, null)
-                "orange" -> resources.getColor(android.R.color.holo_blue_light, null)
-                else -> resources.getColor(android.R.color.transparent, null)
+                "red" -> getThemeColor(R.attr.colorblindTritanopiaCancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.colorblindTritanopiaSubstitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.colorblindTritanopiaSupervisedCellBackgroundColor)
+                else -> Color.TRANSPARENT
             }
-            else -> when (originalColor) { // normal
-                "red" -> resources.getColor(android.R.color.holo_red_light, null)
-                "green" -> resources.getColor(android.R.color.holo_green_light, null)
-                "orange" -> resources.getColor(android.R.color.holo_orange_dark, null)
-                else -> resources.getColor(android.R.color.transparent, null)
+            else -> when (originalColor) { // normal mode
+                "red" -> getThemeColor(R.attr.cancelledCellBackgroundColor)
+                "green" -> getThemeColor(R.attr.substitutedCellBackgroundColor)
+                "orange" -> getThemeColor(R.attr.supervisedCellBackgroundColor)
+                else -> Color.TRANSPARENT
             }
         }
     }
@@ -558,15 +572,29 @@ class HomeFragment : Fragment() {
 
             classText.text = getString(R.string.home_class_prefix, klasse)
 
-            if (isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs) {
-                L.d("HomeFragment", "Loading substitute plan")
+            val shouldLoadFromNetwork = isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs
+
+            L.d("HomeFragment", "Cooldown check - shouldLoadFromNetwork: $shouldLoadFromNetwork, cooldownEnabled: $cooldownEnabled, timeSinceLastLoad: ${timeSinceLastLoad}ms")
+
+            if (shouldLoadFromNetwork) {
+                L.d("HomeFragment", "Loading substitute plan from network")
                 loadSubstitutePlan()
                 lastLoadTime = currentTime
                 isFirstLoad = false
             } else {
                 val remainingCooldown = loadCooldownMs - timeSinceLastLoad
-                L.d("HomeFragment", "Substitute plan loading skipped; cooldown remaining: ${remainingCooldown}ms")
-                loadCachedSubstitutePlan(klasse!!)
+                L.d("HomeFragment", "Substitute plan loading skipped due to cooldown; remaining: ${remainingCooldown}ms")
+
+                if (!isNetworkAvailable()) {
+                    L.d("HomeFragment", "Cooldown active and no internet - loading cached data")
+                    loadCachedSubstitutePlan(klasse!!)
+                    view?.let {
+                        Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                    }
+                } else {
+                    L.d("HomeFragment", "Cooldown active but internet available - loading cached data anyway")
+                    loadCachedSubstitutePlan(klasse!!)
+                }
             }
         } catch (e: Exception) {
             L.e("HomeFragment", "Error in loadSubstitutePlanWithCooldown", e)
@@ -636,7 +664,7 @@ class HomeFragment : Fragment() {
         headerLayout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
-            setBackgroundColor(resources.getColor(android.R.color.holo_blue_dark, null))
+            setBackgroundColor(getThemeColor(R.attr.headerBackgroundColor))
             elevation = 8f
         }
 
@@ -644,14 +672,14 @@ class HomeFragment : Fragment() {
             textSize = 20f
             setTypeface(null, android.graphics.Typeface.BOLD)
             gravity = android.view.Gravity.CENTER
-            setTextColor(resources.getColor(android.R.color.white, null))
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setPadding(0, 0, 0, 12)
         }
 
         lastUpdateText = TextView(requireContext()).apply {
             textSize = 14f
             gravity = android.view.Gravity.CENTER
-            setTextColor(resources.getColor(android.R.color.background_light, null))
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
             setPadding(0, 0, 0, 16)
         }
 
@@ -660,7 +688,7 @@ class HomeFragment : Fragment() {
             textSize = 16f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setBackgroundColor(getThemeColor(R.attr.filterButtonBackgroundColor))
-            setTextColor(resources.getColor(android.R.color.holo_blue_dark, null))
+            setTextColor(getThemeColor(R.attr.refreshButtonTextColor))
             setPadding(64, 32, 64, 32)
             background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setOnClickListener {
@@ -690,7 +718,7 @@ class HomeFragment : Fragment() {
         // invisible left button (spacer  for temp filter btn)
         invisibleLeftButton = ImageButton(requireContext()).apply {
             setImageResource(android.R.drawable.ic_menu_view)
-            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))  // Changed
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setPadding(16, 16, 16, 16)
             isEnabled = false
             layoutParams = LinearLayout.LayoutParams(
@@ -703,7 +731,7 @@ class HomeFragment : Fragment() {
 
         temporaryFilterButton = ImageButton(requireContext()).apply {
             setImageResource(R.drawable.ic_eye_closed)
-            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))  // Changed
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setPadding(16, 16, 16, 16)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -773,6 +801,7 @@ class HomeFragment : Fragment() {
 
         contentScrollView = ScrollView(requireContext()).apply {
             isFillViewport = true
+            setBackgroundColor(getThemeColor(R.attr.homeBackgroundColor))
         }
         contentLayout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
@@ -923,11 +952,18 @@ class HomeFragment : Fragment() {
                     return@launch
                 }
 
-                L.d("HomeFragment", "Network error, attempting to load cached data")
-                loadCachedSubstitutePlan(klasse!!)
-
-                view?.let {
-                    Snackbar.make(it, getString(R.string.home_network_error_using_cache), Snackbar.LENGTH_LONG).show()
+                if (!isNetworkAvailable()) {
+                    L.d("HomeFragment", "Network error confirmed - no internet connection, loading cached data")
+                    loadCachedSubstitutePlan(klasse!!)
+                    view?.let {
+                        Snackbar.make(it, getString(R.string.home_no_internet), Snackbar.LENGTH_LONG).show()
+                    }
+                } else {
+                    L.d("HomeFragment", "Network error but internet available - server issue, loading cached data")
+                    loadCachedSubstitutePlan(klasse!!)
+                    view?.let {
+                        Snackbar.make(it, getString(R.string.home_network_error_using_cache), Snackbar.LENGTH_LONG).show()
+                    }
                 }
             }
         }
@@ -951,11 +987,21 @@ class HomeFragment : Fragment() {
 
             L.d("HomeFragment", "Loaded cached substitute plan with past dates filtered")
         } else {
-            showNoInternetMessage()
+            if (!isNetworkAvailable()) {
+                showNoInternetMessage()
+            } else {
+                L.d("HomeFragment", "No cache found but internet available - attempting network load")
+                loadSubstitutePlan()
+            }
         }
     } catch (e: Exception) {
         L.e("HomeFragment", "Error loading cached data", e)
-        showNoInternetMessage()
+        if (!isNetworkAvailable()) {
+            showNoInternetMessage()
+        } else {
+            L.d("HomeFragment", "Cache error but internet available - attempting network load")
+            loadSubstitutePlan()
+        }
     }
 
     private fun saveSubstitutePlanToCache(klasse: String?, jsonData: String, lastUpdate: String) {
@@ -1048,7 +1094,7 @@ class HomeFragment : Fragment() {
                 gravity = android.view.Gravity.CENTER
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(resources.getColor(android.R.color.darker_gray, null))
+                setTextColor(getThemeColor(R.attr.textSecondaryColor))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.MATCH_PARENT
@@ -1099,8 +1145,8 @@ class HomeFragment : Fragment() {
                         textSize = 18f
                         setTypeface(null, android.graphics.Typeface.BOLD)
                         setTextColor(
-                            if (isToday) resources.getColor(android.R.color.holo_blue_dark, null)
-                            else resources.getColor(android.R.color.darker_gray, null)
+                            if (isToday) getThemeColor(R.attr.settingsColorPrimary)
+                            else getThemeColor(R.attr.textSecondaryColor)
                         )
                         gravity = android.view.Gravity.CENTER
                         setPadding(16, 8, 16, 8)
@@ -1132,7 +1178,7 @@ class HomeFragment : Fragment() {
                 gravity = android.view.Gravity.CENTER
                 textSize = 20f
                 setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(resources.getColor(android.R.color.darker_gray, null))
+                setTextColor(getThemeColor(R.attr.textSecondaryColor))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.MATCH_PARENT
@@ -1176,8 +1222,8 @@ class HomeFragment : Fragment() {
                     gravity = android.view.Gravity.CENTER
                     textSize = 12f
                     setTextColor(
-                        if (isTemporaryFilterDisabled) resources.getColor(android.R.color.holo_orange_dark, null)
-                        else resources.getColor(android.R.color.darker_gray, null)
+                        if (isTemporaryFilterDisabled) getThemeColor(R.attr.warningTextColor)
+                        else getThemeColor(R.attr.textSecondaryColor)
                     )
                     setPadding(16, 12, 16, 12)
                     setTypeface(null, android.graphics.Typeface.ITALIC)
@@ -1279,7 +1325,7 @@ class HomeFragment : Fragment() {
 
         // header row
         val headerRow = TableRow(requireContext()).apply {
-            background = createRoundedDrawable(resources.getColor(android.R.color.holo_blue_dark, null))
+            background = createRoundedDrawable(getThemeColor(R.attr.tableHeaderBackgroundColor))
             setPadding(0, 0, 0, 0)
             layoutParams = TableLayout.LayoutParams(
                 TableLayout.LayoutParams.MATCH_PARENT,
@@ -1297,7 +1343,7 @@ class HomeFragment : Fragment() {
                 text = headerText
                 setPadding(12, 12, 12, 12)
                 setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(resources.getColor(android.R.color.white, null))
+                setTextColor(getThemeColor(R.attr.tableHeaderTextColor))
                 textSize = 14f
                 gravity = android.view.Gravity.CENTER
                 layoutParams = TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, headerWeights[index])
@@ -1364,7 +1410,7 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             spannableString.setSpan(
-                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                android.text.style.ForegroundColorSpan(getThemeColor(R.attr.successTextColor)),
                                 originalSubject.length + 1,
                                 spannableString.length,
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1373,15 +1419,15 @@ class HomeFragment : Fragment() {
 
                             if (isStudentSubject(originalSubject) || isStudentSubject(newSubject)) {
                                 setTypeface(null, android.graphics.Typeface.BOLD)
-                                setTextColor(resources.getColor(android.R.color.white, null))
-                                background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+                                setTextColor(getThemeColor(R.attr.highlightTextColor))
+                                background = createReducedHeightBackground(getThemeColor(R.attr.highlightBackgroundColor))
                                 setPadding(12, 12, 12, 12)
                             } else {
                                 setPadding(8, 12, 12, 12)
                                 setTextColor(getThemeColor(R.attr.tableTextColor))
                             }
                         } else {
-                            handleOriginalSubjectLogic(fachText, isCancelled) // fallback
+                            handleOriginalSubjectLogic(fachText, isCancelled)
                         }
                     }
                     isSubjectReplaced -> {
@@ -1399,7 +1445,7 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             spannableString.setSpan(
-                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                android.text.style.ForegroundColorSpan(getThemeColor(R.attr.successTextColor)),
                                 originalSubject.length + 1,
                                 spannableString.length,
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1408,15 +1454,15 @@ class HomeFragment : Fragment() {
 
                             if (isStudentSubject(originalSubject) || isStudentSubject(newSubject)) {
                                 setTypeface(null, android.graphics.Typeface.BOLD)
-                                setTextColor(resources.getColor(android.R.color.white, null))
-                                background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+                                setTextColor(getThemeColor(R.attr.highlightTextColor))
+                                background = createReducedHeightBackground(getThemeColor(R.attr.highlightBackgroundColor))
                                 setPadding(12, 12, 12, 12)
                             } else {
                                 setPadding(8, 12, 12, 12)
                                 setTextColor(getThemeColor(R.attr.tableTextColor))
                             }
                         } else {
-                            handleOriginalSubjectLogic(fachText, isCancelled) // fallback
+                            handleOriginalSubjectLogic(fachText, isCancelled)
                         }
                     }
                     else -> {
@@ -1455,7 +1501,7 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             spannableString.setSpan(
-                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                android.text.style.ForegroundColorSpan(getThemeColor(R.attr.successTextColor)),
                                 originalRoom.length + 1,
                                 spannableString.length,
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1481,7 +1527,7 @@ class HomeFragment : Fragment() {
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
                             spannableString.setSpan(
-                                android.text.style.ForegroundColorSpan(resources.getColor(android.R.color.holo_green_dark, null)),
+                                android.text.style.ForegroundColorSpan(getThemeColor(R.attr.successTextColor)),
                                 originalRoom.length + 1,
                                 spannableString.length,
                                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1530,8 +1576,8 @@ class HomeFragment : Fragment() {
     private fun TextView.handleOriginalSubjectLogic(fachText: String, isCancelled: Boolean) {
         if (isStudentSubject(fachText)) {
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(resources.getColor(android.R.color.white, null))
-            background = createReducedHeightBackground(resources.getColor(android.R.color.holo_blue_dark, null))
+            setTextColor(getThemeColor(R.attr.highlightTextColor))
+            background = createReducedHeightBackground(getThemeColor(R.attr.highlightBackgroundColor))
             setPadding(12, 12, 12, 12)
 
             if (isCancelled) {
@@ -1652,7 +1698,7 @@ class HomeFragment : Fragment() {
                     text = message
                     gravity = android.view.Gravity.CENTER
                     textSize = 16f
-                    setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+                    setTextColor(getThemeColor(R.attr.errorTextColor))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.MATCH_PARENT
@@ -1678,7 +1724,7 @@ class HomeFragment : Fragment() {
             text = getString(R.string.home_no_internet)
             gravity = android.view.Gravity.CENTER
             textSize = 16f
-            setTextColor(resources.getColor(android.R.color.holo_orange_dark, null))
+            setTextColor(getThemeColor(R.attr.warningTextColor))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT
@@ -1877,11 +1923,11 @@ class HomeFragment : Fragment() {
                 icon.scaleY = scale
 
                 if (triggerProgress >= 1f) {
-                    icon.setColorFilter(resources.getColor(android.R.color.holo_blue_dark, null))
+                    icon.setColorFilter(getThemeColor(R.attr.settingsColorPrimary))
                     // val vibrator = context?.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
                     // vibrator?.vibrate(50)
                 } else {
-                    icon.setColorFilter(resources.getColor(android.R.color.darker_gray, null))
+                    icon.setColorFilter(getThemeColor(R.attr.textSecondaryColor))
                 }
             }
         }
@@ -2261,7 +2307,7 @@ class HomeFragment : Fragment() {
             (targetView.background as ColorDrawable).color
         } else null
 
-        val highlightColor = resources.getColor(android.R.color.holo_orange_light, null)
+        val highlightColor = getThemeColor(R.attr.highlightAnimationColor)
         val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
         animator.duration = 2500
 
@@ -2294,11 +2340,11 @@ class HomeFragment : Fragment() {
 
     private fun highlightSubstituteWithoutAnimation(targetView: View) {
         val originalBackground = targetView.background
-        val highlightColor = resources.getColor(android.R.color.holo_orange_light, null)
+        val highlightColor = getThemeColor(R.attr.highlightAnimationColor)
 
         targetView.setBackgroundColor(highlightColor)
 
-        Handler(Looper.getMainLooper()).postDelayed({  // restore after 2 seconds
+        Handler(Looper.getMainLooper()).postDelayed({ // restore after 2 seconds
             targetView.background = originalBackground
         }, 2000)
     }

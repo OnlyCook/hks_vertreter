@@ -247,7 +247,6 @@ class GradesFragment : Fragment() {
         return view
     }
 
-    @SuppressLint("InflateParams")
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -257,7 +256,7 @@ class GradesFragment : Fragment() {
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
             setTypeface(null, Typeface.BOLD)
         }
 
@@ -324,7 +323,7 @@ class GradesFragment : Fragment() {
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(getThemeColor(R.attr.gradesMainFontColor))
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
         }
 
         val rootLayout = view.findViewById<LinearLayout>(R.id.gradesRootLayout)
@@ -474,7 +473,7 @@ class GradesFragment : Fragment() {
             return
         }
 
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialogBuilder = AlertDialog.Builder(requireContext())
         val dialogView = layoutInflater.inflate(R.layout.dialog_grade_graph, null)
 
         val chart = dialogView.findViewById<GradeGraphView>(R.id.gradeChart)
@@ -506,10 +505,27 @@ class GradesFragment : Fragment() {
             }
         }
 
-        dialog.setTitle(getString(R.string.grades_history_title))
+        dialogBuilder.setTitle(getString(R.string.grades_history_title))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.grades_close), null)
-            .show()
+
+        val alertDialog = dialogBuilder.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun getMonthName(month: Int): String {
@@ -705,15 +721,15 @@ class GradesFragment : Fragment() {
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
-                    totalCourseCount > 44 -> android.R.color.holo_red_dark
-                    goalGrade > 0 && average <= goalGrade -> android.R.color.holo_green_dark
-                    goalGrade > 0 && average > goalGrade -> android.R.color.holo_red_dark
-                    else -> -1
+                    totalCourseCount > 44 -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
+                    goalGrade > 0 && average <= goalGrade -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
+                    goalGrade > 0 && average > goalGrade -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
+                    else -> getThemeColor(R.attr.textPrimaryColor)
                 }
-                tvFinalGrade.setTextColor(if (color == -1) getThemeColor(R.attr.gradesMainFontColor) else resources.getColor(color))
+                tvFinalGrade.setTextColor(color)
             } else {
                 tvFinalGrade.text = getString(R.string.grades_total_grade_none)
-                tvFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor))
+                tvFinalGrade.setTextColor(getThemeColor(R.attr.textPrimaryColor))
             }
         } else { // simple grading logic
             val currentGrades = mutableListOf<Double>()
@@ -744,20 +760,20 @@ class GradesFragment : Fragment() {
 
                 val goalGrade = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 0f)
                 val color = when {
-                    goalGrade > 0 && average <= goalGrade -> android.R.color.holo_green_dark
-                    goalGrade > 0 && average > goalGrade -> android.R.color.holo_red_dark
-                    else -> -1
+                    goalGrade > 0 && average <= goalGrade -> ContextCompat.getColor(requireContext(), android.R.color.holo_green_light)
+                    goalGrade > 0 && average > goalGrade -> ContextCompat.getColor(requireContext(), android.R.color.holo_red_light)
+                    else -> getThemeColor(R.attr.textPrimaryColor)
                 }
-                tvFinalGrade.setTextColor(if (color == -1) getThemeColor(R.attr.gradesMainFontColor) else resources.getColor(color))
+                tvFinalGrade.setTextColor(color)
             } else {
                 tvFinalGrade.text = getString(R.string.grades_total_grade_none)
-                tvFinalGrade.setTextColor(getThemeColor(R.attr.gradesMainFontColor))
+                tvFinalGrade.setTextColor(getThemeColor(R.attr.textPrimaryColor))
             }
         }
     }
 
     private fun showSubjectDetails(subject: SubjectGradeInfo) {
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialogBuilder = AlertDialog.Builder(requireContext())
         val dialogView = layoutInflater.inflate(R.layout.dialog_subject_details, null)
         val currentHalfyear = getCurrentHalfyear()
         val requirements = getSubjectRequirements(subject.subject)
@@ -791,10 +807,16 @@ class GradesFragment : Fragment() {
         recyclerExamGrades.layoutManager = LinearLayoutManager(requireContext())
         recyclerExamGrades.adapter = examGradesAdapter
 
-        dialog.setTitle("Details: ${subject.subject}")
+        dialogBuilder.setTitle("Details: ${subject.subject}")
             .setView(dialogView)
             .setPositiveButton(getString(R.string.grades_close), null)
-            .show()
+
+        val alertDialog = dialogBuilder.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showEditSubjectDialog(subject: SubjectGradeInfo) {
@@ -1273,7 +1295,7 @@ class GradesFragment : Fragment() {
             })
         }
 
-        dialog.setTitle(getString(R.string.grades_edit_title, subject.subject))
+        val alertDialog = dialog.setTitle(getString(R.string.grades_edit_title, subject.subject))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.grades_save)) { _, _ ->
                 val oralGradeText = editOralGrade.text.toString().trim()
@@ -1286,13 +1308,12 @@ class GradesFragment : Fragment() {
                     try {
                         if (isPointSystem) {
                             val points = oralGradeText.toInt()
-                            if (points >= 0 && points <= 15) {
+                            if (points in 0..15) {
                                 newOralGrade = convertPointsToGrade(points)
                             }
                         } else {
                             val grade = oralGradeText.replace(",", ".").toDouble()
-                            if (grade >= 1.0 && grade <= 6.0) {
-                                // snap to valid grade
+                            if (grade in 1.0..6.0) {
                                 newOralGrade = snapToValidGrade(grade)
                             }
                         }
@@ -1305,12 +1326,12 @@ class GradesFragment : Fragment() {
                     try {
                         if (isPointSystem) {
                             val points = pruefungsergebnisText.toInt()
-                            if (points >= 0 && points <= 15) {
+                            if (points in 0..15) {
                                 newPruefungsergebnis = convertPointsToGrade(points)
                             }
                         } else {
                             val grade = pruefungsergebnisText.replace(",", ".").toDouble()
-                            if (grade >= 1.0 && grade <= 6.0) {
+                            if (grade in 1.0..6.0) {
                                 newPruefungsergebnis = snapToValidGrade(grade)
                             }
                         }
@@ -1320,8 +1341,7 @@ class GradesFragment : Fragment() {
                 }
 
                 val newRatio = Pair(seekBarOral.progress, seekBarWritten.progress)
-                val isPruefungsfach =
-                    if (useComplexGrading) switchPruefungsfach.isChecked else false
+                val isPruefungsfach = if (useComplexGrading) switchPruefungsfach.isChecked else false
                 val selectedHalfYears = if (useComplexGrading) {
                     if (requirements.mustCountAllHalfYears) {
                         subject.getHalfYearGrades(currentHalfyear).size
@@ -1351,6 +1371,11 @@ class GradesFragment : Fragment() {
                 saveSwitchStates()
             }
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun saveSubjectGradeData(subject: String, oralGrade: Double?, ratio: Pair<Int, Int>,
@@ -1429,7 +1454,7 @@ class GradesFragment : Fragment() {
     }
 
     private fun showStartNewHalfyearDialog() {
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_new_halfyear_title))
             .setMessage(getString(R.string.grades_new_halfyear_message))
             .setPositiveButton(getString(R.string.grades_new_halfyear_confirm)) { _, _ ->
@@ -1437,6 +1462,11 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun startNewHalfyear() {
@@ -1584,14 +1614,14 @@ class GradesFragment : Fragment() {
             hint = "1.0 - 6.0"
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_menu_set_goal))
             .setMessage(getString(R.string.grades_set_goal_message))
             .setView(editText)
             .setPositiveButton(getString(R.string.grades_save)) { _, _ ->
                 try {
                     val goalGrade = editText.text.toString().replace(",", ".").toFloat()
-                    if (goalGrade >= 1.0f && goalGrade <= 6.0f) {
+                    if (goalGrade in 1.0f..6.0f) {
                         sharedPreferences.edit {
                             putFloat(PREFS_GOAL_GRADE, goalGrade)
                         }
@@ -1606,10 +1636,15 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showResetGraphDialog() {
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_reset_graph_title))
             .setIcon(android.R.drawable.ic_dialog_alert)
             .setMessage(getString(R.string.grades_reset_graph_message))
@@ -1621,6 +1656,11 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showExportOptions() {
@@ -1646,7 +1686,7 @@ class GradesFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_export_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1656,6 +1696,11 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showImportOptions() {
@@ -1679,7 +1724,7 @@ class GradesFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_import_title))
             .setAdapter(adapter) { _, which ->
                 when (which) {
@@ -1689,6 +1734,11 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun exportGradeData(): String {
@@ -1897,7 +1947,7 @@ class GradesFragment : Fragment() {
     }
 
     private fun acceptSubjectChanges() {
-        AlertDialog.Builder(requireContext())
+        val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.grades_subject_update_title))
             .setMessage(getString(R.string.grades_subject_update_message))
             .setPositiveButton(getString(R.string.grades_subject_update_confirm)) { _, _ ->
@@ -1926,6 +1976,11 @@ class GradesFragment : Fragment() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun showDeclineSubjectChangesDialog() {
