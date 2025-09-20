@@ -14,7 +14,7 @@
         <item name="elevation">0dp</item>
 
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:navigationBarColor">@color/white</item>
 
         <!-- drawables -->
         <item name="searchBackgroundColor">@color/light_search_background</item>

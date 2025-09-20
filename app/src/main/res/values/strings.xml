@@ -302,6 +302,7 @@
     <string name="dialog_sec_deselect_all">Alle abwählen</string>
     <string name="dialog_sec_cancel">Abbrechen</string>
     <string name="dialog_sec_save">Speichern</string>
+    <string name="dialog_sec_continue">Weiter</string>
 
     <!-- DIALOG_SUBJECT_DETAILS.XML -->
     <string name="dia_sub_det_subject_name">Mathematik</string>

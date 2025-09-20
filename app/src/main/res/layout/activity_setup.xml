@@ -24,6 +24,7 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/language_selection"
             android:layout_marginBottom="16dp"
+            android:layout_marginTop="16dp"
             android:scaleType="fitCenter"
             android:padding="8dp" />
 
@@ -40,7 +41,7 @@
             <ImageView
                 android:layout_width="120dp"
                 android:layout_height="120dp"
-                android:src="@mipmap/ic_launcher"
+                android:src="@drawable/hks_trans"
                 android:scaleType="fitCenter"
                 android:adjustViewBounds="true"
                 android:layout_marginBottom="16dp" />
@@ -52,7 +53,7 @@
                 android:text="@string/act_set_school_name"
                 android:textSize="24sp"
                 android:textStyle="bold"
-                android:textColor="?attr/colorPrimary"
+                android:textColor="?attr/dialogTitleColor"
                 android:gravity="center"
                 android:layout_marginBottom="0dp" />
 
@@ -84,7 +85,7 @@
                 android:layout_height="36dp"
                 android:text="@string/act_set_missing_program"
                 android:textSize="14sp"
-                android:textColor="?attr/colorPrimary"
+                android:textColor="?attr/dialogTitleColor"
                 android:background="@drawable/button_outlined"
                 android:paddingHorizontal="16dp"
                 android:layout_marginBottom="16dp"
@@ -124,7 +125,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_school"
-                            android:tint="?attr/colorPrimary"
+                            android:tint="?attr/dialogTitleColor"
                             android:layout_marginEnd="12dp" />
 
                         <TextView
@@ -134,7 +135,7 @@
                             android:text="@string/act_set_program_select"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textColor="?attr/dialogTitleColor" />
 
                         <TextView
                             android:id="@+id/tvStep1"
@@ -198,7 +199,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_class"
-                            android:tint="?attr/colorPrimary"
+                            android:tint="?attr/dialogTitleColor"
                             android:layout_marginEnd="12dp" />
 
                         <TextView
@@ -208,7 +209,7 @@
                             android:text="@string/act_set_class_select"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textColor="?attr/dialogTitleColor" />
 
                         <TextView
                             android:id="@+id/tvStep2"

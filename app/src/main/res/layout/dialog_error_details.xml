@@ -55,7 +55,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/dialog_err_details_close"
-            style="?android:attr/buttonBarButtonStyle"
+            style="?attr/dialogSectionButtonColor"
             android:minWidth="100dp"
             android:maxLines="1" />
 

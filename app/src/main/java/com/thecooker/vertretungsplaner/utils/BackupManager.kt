@@ -567,7 +567,7 @@ class BackupManager(private val context: Context) {
         val darkMode = sharedPreferences.getBoolean("dark_mode_enabled", false)
         val landscape = sharedPreferences.getBoolean("landscape_mode_enabled", true)
         val colorblindMode = sharedPreferences.getString("colorblind_mode", "none") ?: ""
-        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
+        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", true)
         val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
         val filterOnlyMySubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
         val autoDeleteHomework = sharedPreferences.getBoolean("auto_delete_homework", false)
@@ -578,7 +578,7 @@ class BackupManager(private val context: Context) {
         val examDueDateReminderEnabled = sharedPreferences.getBoolean("exam_due_date_reminder_enabled", false)
         val examDueDateReminderDays = sharedPreferences.getInt("exam_due_date_reminder_days", 7)
         val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
-        val calendarRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", false)
+        val calendarRealTimeEnabled = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
         val calendarIncludeWeekends = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
         val autoDetectLang = sharedPreferences.getBoolean("language_auto_detect", true)
         val savedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"

@@ -2413,7 +2413,7 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun setupUpdateCooldownSetting() {
-        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", false)
+        val removeCooldown = sharedPreferences.getBoolean("remove_update_cooldown", true)
         switchRemoveUpdateCooldown.isChecked = removeCooldown
     }
 
@@ -2579,37 +2579,71 @@ class SettingsActivity : BaseActivity() {
 
         switchFollowSystem.setOnCheckedChangeListener { _, isChecked ->
             if (!isInitializing) {
-                sharedPreferences.edit().apply {
-                    putBoolean("follow_system_theme", isChecked)
-                    if (isChecked) {
-                        remove("dark_mode_enabled")
+                val previousFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
+
+                if (previousFollowSystem != isChecked) {
+                    val willThemeChange = willThemeActuallyChange(isChecked, switchDarkMode.isChecked)
+
+                    sharedPreferences.edit().apply {
+                        putBoolean("follow_system_theme", isChecked)
+                        if (isChecked) {
+                            remove("dark_mode_enabled")
+                        }
+                        apply()
                     }
-                    commit()
+
+                    switchDarkMode.isEnabled = !isChecked
+                    if (isChecked) {
+                        switchDarkMode.isChecked = false
+                    }
+
+                    android.util.Log.d("Settings", "Saved follow_system_theme: $isChecked")
+
+                    if (willThemeChange) {
+                        restartAppSafely()
+                    }
                 }
-
-                switchDarkMode.isEnabled = !isChecked
-                if (isChecked) {
-                    switchDarkMode.isChecked = false
-                }
-
-                android.util.Log.d("Settings", "Saved follow_system_theme: $isChecked")
-
-                restartAppSafely()
             }
         }
 
         switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-            if (!isInitializing && !followSystemTheme) {
-                sharedPreferences.edit().apply {
-                    putBoolean("dark_mode_enabled", isChecked)
-                    commit()
+            if (!isInitializing) {
+                val currentFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
+
+                if (!currentFollowSystem) {
+                    val previousDarkMode = sharedPreferences.getBoolean("dark_mode_enabled", false)
+
+                    if (previousDarkMode != isChecked) {
+                        sharedPreferences.edit().apply {
+                            putBoolean("dark_mode_enabled", isChecked)
+                            apply()
+                        }
+
+                        android.util.Log.d("Settings", "Saved dark_mode_enabled: $isChecked")
+                        restartAppSafely()
+                    }
                 }
-
-                android.util.Log.d("Settings", "Saved dark_mode_enabled: $isChecked")
-
-                restartAppSafely()
             }
         }
+    }
+
+    private fun willThemeActuallyChange(newFollowSystem: Boolean, currentDarkModeEnabled: Boolean): Boolean {
+        val currentFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
+
+        if (currentFollowSystem && !newFollowSystem) {
+            val isSystemDark = (resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            return isSystemDark != currentDarkModeEnabled
+        } else if (!currentFollowSystem && newFollowSystem) {
+            val currentManualDark = sharedPreferences.getBoolean("dark_mode_enabled", false)
+            val isSystemDark = (resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            return currentManualDark != isSystemDark
+        }
+
+        return false
     }
 
     private fun restartAppSafely() {
@@ -3648,7 +3682,7 @@ class SettingsActivity : BaseActivity() {
         settingsToPreserve["daily_homework_reminder_time"] = sharedPreferences.getString("daily_homework_reminder_time", "19:00")
         settingsToPreserve["exam_due_date_reminder_enabled"] = sharedPreferences.getBoolean("exam_due_date_reminder_enabled", false)
         settingsToPreserve["exam_due_date_reminder_days"] = sharedPreferences.getInt("exam_due_date_reminder_days", 7)
-        settingsToPreserve["remove_update_cooldown"] = sharedPreferences.getBoolean("remove_update_cooldown", false)
+        settingsToPreserve["remove_update_cooldown"] = sharedPreferences.getBoolean("remove_update_cooldown", true)
         settingsToPreserve["calendar_real_time_enabled"] = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
         settingsToPreserve["calendar_include_weekends_dayview"] = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
         settingsToPreserve["left_filter_lift"] = sharedPreferences.getBoolean("left_filter_lift", false)

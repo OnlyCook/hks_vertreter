@@ -80,7 +80,7 @@
             android:id="@+id/saveButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/dialog_sec_save"
+            android:text="@string/dialog_sec_continue"
             android:textColor="?attr/dialogSectionButtonColor"
             style="?android:attr/buttonBarButtonStyle"
             android:minWidth="100dp" />

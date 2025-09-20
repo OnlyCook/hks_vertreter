@@ -3,10 +3,13 @@ package com.thecooker.vertretungsplaner.utils
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.annotation.AttrRes
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
 import com.thecooker.vertretungsplaner.R
 
@@ -128,6 +131,11 @@ class SectionSelectionDialog(
     }
 
     private fun setupButtons() {
+        val buttonColor = context.getThemeColor(R.attr.dialogSectionButtonColor)
+
+        saveButton.setTextColor(buttonColor)
+        cancelButton.setTextColor(buttonColor)
+
         selectAllButton.setOnClickListener {
             sectionCheckBoxes.values.forEach { checkBox ->
                 if (checkBox.isEnabled) {
@@ -151,7 +159,11 @@ class SectionSelectionDialog(
                 .toSet()
 
             if (selectedSections.isEmpty()) {
-                Toast.makeText(context, context.getString(R.string.sec_sel_please_select_at_least_one_section), Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.sec_sel_please_select_at_least_one_section),
+                    Toast.LENGTH_SHORT
+                ).show()
                 return@setOnClickListener
             }
 
@@ -162,6 +174,17 @@ class SectionSelectionDialog(
         cancelButton.setOnClickListener {
             callback?.onSelectionCancelled()
             dismiss()
+        }
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
         }
     }
 }

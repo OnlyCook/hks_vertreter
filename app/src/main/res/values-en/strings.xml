@@ -300,6 +300,7 @@
     <string name="dialog_sec_deselect_all">Deselect all</string>
     <string name="dialog_sec_cancel">Cancel</string>
     <string name="dialog_sec_save">Save</string>
+    <string name="dialog_sec_continue">Continue</string>
 
     <!-- DIALOG_SUBJECT_DETAILS.XML -->
     <string name="dia_sub_det_subject_name">Mathematics</string>

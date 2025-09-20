@@ -235,8 +235,13 @@ class GradesFragment : Fragment() {
 
         view.post {
             setupRecyclerView()
-            loadGrades()
+
             checkForSubjectChanges()
+
+            if (gradeList.isEmpty()) {
+                loadGrades()
+            }
+
             setupListeners()
             updateGradeCount()
             updateFinalGrade()
@@ -1891,9 +1896,14 @@ class GradesFragment : Fragment() {
         if (isFirstTimeSetup) {
             saveCurrentSubjectsAsGradesSubjects()
             hasSubjectChanges = false
+            // force reload grades after saving subjects initially
+            loadGrades()
+            return
         } else if (gradesSubjects.isNullOrEmpty()) {
             saveCurrentSubjectsAsGradesSubjects()
             hasSubjectChanges = false
+            loadGrades()
+            return
         } else {
             // check for changes
             hasSubjectChanges = currentSubjects != gradesSubjects || currentTeachers != gradesTeachers || currentRooms != gradesRooms

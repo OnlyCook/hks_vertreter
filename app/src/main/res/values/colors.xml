@@ -116,8 +116,8 @@
     <color name="exam_warning_background_dark">#3D2A1A</color>
     <color name="exam_soon_background_dark">#2A2A1A</color>
     <color name="exam_upcoming_background_dark">#1A2A1A</color>
-    <color name="exam_text_primary_light">#000000</color>
-    <color name="exam_text_primary_dark">#FFFFFF</color>
+    <color name="exam_text_primary_light">#212121</color>
+    <color name="exam_text_primary_dark">#dedede</color>
     <color name="exam_text_secondary_light">#666666</color>
     <color name="exam_text_secondary_dark">#CCCCCC</color>
     <color name="exam_details_date_hint_light">#666666</color>
@@ -144,8 +144,8 @@
     <color name="homework_due_tomorrow_background_light">#FFFFE0B2</color>
     <color name="homework_due_tomorrow_background_dark">#FF8F4500</color>
     <color name="homework_transparent_background">#00000000</color>
-    <color name="homework_text_primary_light">#FF000000</color>
-    <color name="homework_text_primary_dark">#FFFFFFFF</color>
+    <color name="homework_text_primary_light">#212121</color>
+    <color name="homework_text_primary_dark">#dedede</color>
     <color name="homework_detail_due_date_text_light">#FF666666</color>
     <color name="homework_detail_due_date_text_dark">#FFCCCCCC</color>
 
@@ -181,7 +181,7 @@
     <color name="calendar_notes_inner_light">#E3F2FD</color>
     <color name="homework_light">#0097A7</color>
     <color name="homework_dark">#004D57</color>
-    <color name="exam_light">#9931c4</color>
+    <color name="exam_light">#bf60e6</color>
     <color name="exam_dark">#4A148C</color>
     <color name="holiday_vacation_light">#BDBDBD</color>
     <color name="holiday_vacation_dark">#424242</color>
@@ -196,7 +196,7 @@
     <color name="colorblind_supervised_light">#FF9800</color>
     <color name="colorblind_supervised_dark">#E65100</color>
     <color name="colorblind_substituted_light">#9C27B0</color>
-    <color name="colorblind_substituted_dark">#4A148C</color>
+    <color name="colorblind_substituted_dark">#311975</color>
     <color name="colorblind_tritanopia_cancelled_light">#FF5252</color>
     <color name="colorblind_tritanopia_cancelled_dark">#8B0000</color>
     <color name="colorblind_tritanopia_supervised_light">#E91E63</color>
