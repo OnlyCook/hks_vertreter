@@ -1048,6 +1048,9 @@
     </plurals>
     <string name="exam_exam_not_found">Couldn\'t find exam</string>
     <string name="exam_exam_not_in_current_list">Exam not in the current list</string>
+    <string name="exam_preserve_notes">Transfer notes from existing exams</string>
+    <string name="exam_preserve_notes_message">You already have exams with notes oder grades. Would you like to transfer these to matching exams in the new schedule? Overdue exams with grades are automatically retained.</string>
+    <string name="exam_continue">Continue</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Loading calendar...</string>

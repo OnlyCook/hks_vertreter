@@ -53,6 +53,8 @@
     <color name="highlight_background_dark">#083c70</color>
     <color name="header_bg_light">#FAFAFA</color>
     <color name="header_bg_dark">#2A2A2A</color>
+    <color name="header_buttons_light">#e8e8e8</color>
+    <color name="header_buttons_dark">#3b3b3b</color>
 
     <!-- settingsactivity.kt -->
     <color name="search_bar_dark">#1B1A1B</color>

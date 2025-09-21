@@ -74,6 +74,9 @@ class ExamFragment : Fragment() {
     private lateinit var examShareHelper: ExamShareHelper
     private var isProcessingSharedExam = false
 
+    // exam notes preservation
+    private var preserveExamNotes = false
+
     data class ExamEntry(
         val id: String = UUID.randomUUID().toString(),
         var subject: String,
@@ -558,6 +561,61 @@ class ExamFragment : Fragment() {
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
         }
 
+        val hasExamsWithNotesOrGrades = examList.any {
+            it.note.isNotBlank() || it.mark != null
+        }
+
+        if (hasExamsWithNotesOrGrades) {
+            showNotePreservationDialog()
+        } else {
+            proceedWithExamScheduleScan(preserveNotes = false)
+        }
+    }
+
+    private fun showNotePreservationDialog() {
+        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_exam, null)
+
+        val container = dialogView as ViewGroup
+        container.removeAllViews()
+
+        val messageText = TextView(requireContext()).apply {
+            text = getString(R.string.exam_preserve_notes_message)
+            textSize = 16f
+            setPadding(0, 0, 0, 32)
+        }
+
+        val checkBox = CheckBox(requireContext()).apply {
+            text = getString(R.string.exam_preserve_notes)
+            isChecked = true
+        }
+
+        val layout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+            addView(messageText)
+            addView(checkBox)
+        }
+
+        container.addView(layout)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.exam_scan_schedule))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.exam_continue)) { _, _ ->
+                proceedWithExamScheduleScan(preserveNotes = checkBox.isChecked)
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun proceedWithExamScheduleScan(preserveNotes: Boolean) {
+        this.preserveExamNotes = preserveNotes
+        L.d(TAG, "Setting preserveExamNotes to: $preserveNotes")
+
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "application/pdf"
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -583,9 +641,32 @@ class ExamFragment : Fragment() {
                 val pdfText = extractTextFromPdf(stream)
                 L.d(TAG, "PDF Text extracted:\n$pdfText")
 
+                val oldExams = if (preserveExamNotes && examList.isNotEmpty()) {
+                    val oldExamsCopy = examList.filter { it.note.isNotBlank() || it.mark != null }.map {
+                        it.copy(
+                            id = it.id,
+                            subject = it.subject,
+                            date = Date(it.date.time),
+                            note = it.note,
+                            isCompleted = it.isCompleted,
+                            examNumber = it.examNumber,
+                            isFromSchedule = it.isFromSchedule,
+                            mark = it.mark
+                        )
+                    }
+                    L.d(TAG, "STORED ${oldExamsCopy.size} old exams with notes/grades in processPdfExamSchedule")
+                    oldExamsCopy.forEach { exam ->
+                        L.d(TAG, "Will preserve: ${exam.subject} on ${SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(exam.date)} - note: '${exam.note}', mark: ${exam.mark}, overdue: ${exam.isOverdue()}")
+                    }
+                    oldExamsCopy
+                } else {
+                    L.d(TAG, "No old exams to preserve in processPdfExamSchedule")
+                    emptyList()
+                }
+
                 examList.clear()
 
-                parseExamSchedule(pdfText)
+                parseExamSchedule(pdfText, oldExams)
             }
         } catch (e: Exception) {
             L.e(TAG, "Error processing PDF", e)
@@ -613,9 +694,13 @@ class ExamFragment : Fragment() {
         return stringBuilder.toString()
     }
 
-    private fun parseExamSchedule(pdfText: String) {
+    private fun parseExamSchedule(pdfText: String, storedOldExams: List<ExamEntry> = emptyList()) {
         try {
-            val userClass = sharedPreferences.getString("selected_klasse", getString(R.string.set_act_not_selected)) // be cautious
+            L.d(TAG, "parseExamSchedule called with preserveExamNotes: $preserveExamNotes")
+            L.d(TAG, "Current exam list size: ${examList.size}")
+            L.d(TAG, "Stored old exams size: ${storedOldExams.size}")
+
+            val userClass = sharedPreferences.getString("selected_klasse", getString(R.string.set_act_not_selected))
             if (userClass == getString(R.string.set_act_not_selected)) {
                 Toast.makeText(requireContext(), getString(R.string.exam_select_class), Toast.LENGTH_LONG).show()
                 return
@@ -660,6 +745,16 @@ class ExamFragment : Fragment() {
             L.d(TAG, "Found ${newExams.size} exams")
 
             examList.addAll(newExams)
+
+            L.d(TAG, "After adding new exams: examList.size = ${examList.size}, storedOldExams.size = ${storedOldExams.size}")
+
+            if (preserveExamNotes && storedOldExams.isNotEmpty()) {
+                L.d(TAG, "Calling preserveExamNotesFromOldExams with ${storedOldExams.size} stored old exams")
+                preserveExamNotesFromOldExams(storedOldExams)
+            } else {
+                L.d(TAG, "Skipping note preservation - preserveExamNotes: $preserveExamNotes, storedOldExams.size: ${storedOldExams.size}")
+            }
+
             sortExams()
             saveExams()
             filterExams(searchBar.text.toString())
@@ -673,6 +768,143 @@ class ExamFragment : Fragment() {
             L.e(TAG, "Error parsing exam schedule", e)
             Toast.makeText(requireContext(), getString(R.string.exam_processing_error), Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun preserveExamNotesFromOldExams(oldExams: List<ExamEntry>) {
+        L.d(TAG, "=== Starting note/grade preservation from ${oldExams.size} old exams ===")
+
+        // Include ALL exams that have notes or grades (including overdue ones)
+        val oldExamsToPreserve = oldExams.filter {
+            val hasNote = it.note.isNotBlank()
+            val hasGrade = it.mark != null
+            val shouldPreserve = hasNote || hasGrade
+
+            if (shouldPreserve) {
+                L.d(TAG, "Will preserve: ${it.subject} - hasNote: $hasNote, hasGrade: $hasGrade, isOverdue: ${it.isOverdue()}")
+            }
+
+            shouldPreserve
+        }
+
+        L.d(TAG, "Found ${oldExamsToPreserve.size} old exams with notes or grades to preserve")
+
+        var preservedCount = 0
+
+        for (oldExam in oldExamsToPreserve) {
+            val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(oldExam.date)
+            L.d(TAG, "Processing old exam: ${oldExam.subject} on $dateStr with note: '${oldExam.note}', mark: ${oldExam.mark}")
+
+            // First priority: exact match (same subject and date)
+            val exactMatch = examList.find { newExam ->
+                val subjectMatch = newExam.subject.equals(oldExam.subject, ignoreCase = true)
+                val dateMatch = isSameDay(newExam.date, oldExam.date)
+                L.d(TAG, "Checking exact match with ${newExam.subject}: subjectMatch=$subjectMatch, dateMatch=$dateMatch")
+                subjectMatch && dateMatch
+            }
+
+            if (exactMatch != null) {
+                var preserved = false
+
+                // Always preserve note if old exam has one
+                if (oldExam.note.isNotBlank()) {
+                    exactMatch.note = oldExam.note
+                    preserved = true
+                    L.d(TAG, "Preserved note for exact match")
+                }
+
+                // Always preserve mark if it exists
+                if (oldExam.mark != null) {
+                    exactMatch.mark = oldExam.mark
+                    preserved = true
+                    L.d(TAG, "Preserved mark for exact match")
+                }
+
+                if (preserved) {
+                    preservedCount++
+                    L.d(TAG, "✓ Exact match found - preserved data for ${exactMatch.subject}")
+                }
+                continue
+            }
+
+            // Second priority: same subject with date difference less than 1 month
+            val subjectMatch = examList.find { newExam ->
+                val subjectMatches = newExam.subject.equals(oldExam.subject, ignoreCase = true)
+                val withinMonth = isWithinOneMonth(oldExam.date, newExam.date)
+                L.d(TAG, "Checking subject match with ${newExam.subject}: subjectMatches=$subjectMatches, withinMonth=$withinMonth")
+                subjectMatches && withinMonth
+            }
+
+            if (subjectMatch != null) {
+                val daysDiff = getDaysDifference(oldExam.date, subjectMatch.date)
+                var preserved = false
+
+                // Preserve note if old exam has one and new exam doesn't
+                if (oldExam.note.isNotBlank() && subjectMatch.note.isBlank()) {
+                    subjectMatch.note = oldExam.note
+                    preserved = true
+                    L.d(TAG, "Preserved note for subject match")
+                }
+
+                // Preserve mark if old exam has one and new exam doesn't
+                if (oldExam.mark != null && subjectMatch.mark == null) {
+                    subjectMatch.mark = oldExam.mark
+                    preserved = true
+                    L.d(TAG, "Preserved mark for subject match")
+                }
+
+                if (preserved) {
+                    preservedCount++
+                    L.d(TAG, "✓ Subject match found with $daysDiff days difference - preserved data for ${subjectMatch.subject}")
+                } else {
+                    L.d(TAG, "Subject match found but no data preserved (new exam already has data)")
+                }
+                continue
+            }
+
+            // Third priority: For overdue exams with grades, add them as separate entries if no match found
+            if (oldExam.isOverdue() && oldExam.mark != null) {
+                val existsInNewList = examList.any {
+                    it.subject.equals(oldExam.subject, ignoreCase = true) &&
+                            isSameDay(it.date, oldExam.date)
+                }
+
+                if (!existsInNewList) {
+                    // Add the overdue exam back to preserve the grade
+                    examList.add(oldExam.copy())
+                    preservedCount++
+                    L.d(TAG, "✓ Added overdue exam with grade back to list: ${oldExam.subject}")
+                    continue
+                }
+            }
+
+            L.d(TAG, "✗ No suitable match found for ${oldExam.subject} - data will be lost")
+        }
+
+        L.d(TAG, "=== Preservation complete: preserved data for $preservedCount exams ===")
+    }
+
+    private fun isWithinOneMonth(date1: Date, date2: Date): Boolean {
+        val daysDiff = kotlin.math.abs(getDaysDifference(date1, date2))
+        return daysDiff <= 30
+    }
+
+    private fun getDaysDifference(date1: Date, date2: Date): Long {
+        val cal1 = Calendar.getInstance().apply {
+            time = date1
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val cal2 = Calendar.getInstance().apply {
+            time = date2
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        return TimeUnit.MILLISECONDS.toDays(cal2.timeInMillis - cal1.timeInMillis)
     }
 
     private fun findUserClassPage(pdfText: String, classPrefix: String): String? {
@@ -884,6 +1116,10 @@ class ExamFragment : Fragment() {
                         isFromSchedule = true,
                         examNumber = extractExamNumber(dayEntry.content)
                     )
+                    if (exam.isOverdue()) {
+                        exam.isCompleted = true
+                    }
+
                     exams.add(exam)
                     dayExams.add(exam)
                 }

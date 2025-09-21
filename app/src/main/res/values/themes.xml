@@ -28,7 +28,7 @@
         <item name="homeBackgroundColor">@color/home_bg_light</item>
         <item name="tableBackgroundColor">@color/home_bg_light</item>
         <item name="tableTextColor">@color/black</item>
-        <item name="filterButtonBackgroundColor">@color/home_bg_light</item>
+        <item name="filterButtonBackgroundColor">@color/header_buttons_light</item>
         <item name="refreshButtonTextColor">@color/refresh_button_text_light</item>
         <item name="errorTextColor">@color/error_text_light</item>
         <item name="warningTextColor">@color/warning_text_light</item>

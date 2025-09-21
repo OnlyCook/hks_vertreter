@@ -108,7 +108,7 @@ class SwipeInterceptorLayout @JvmOverloads constructor(
                 val totalVerticalMovement = abs(deltaY)
 
                 if (totalHorizontalMovement > minMovementToDetect) {
-                    if (totalVerticalMovement == 0f || (totalHorizontalMovement / totalVerticalMovement) > 0.3f) {
+                    if (totalVerticalMovement == 0f || (totalHorizontalMovement / totalVerticalMovement) > 0.6f) {
 
                         if (!isSwipeGesture) {
                             isSwipeGesture = true
@@ -606,7 +606,12 @@ class GalleryFragment : Fragment() {
 
         isDayView = !isDayView
         if (isDayView) {
-            currentDayOffset = getCurrentDayOffset()
+            val today = Calendar.getInstance()
+            if (isSameWeek(currentWeekStart.time, today.time)) {
+                currentDayOffset = getCurrentDayOffset()
+            } else if (currentDayOffset > 4 && !includeWeekendsInDayView) {
+                currentDayOffset = 0
+            }
             binding.root.findViewById<Button>(R.id.btnEditCalendar).text = getString(R.string.frag_gal_btn_edit)
             stopCurrentHighlight()
         } else {
@@ -656,7 +661,7 @@ class GalleryFragment : Fragment() {
                 else -> 0
             }
         } else {
-            0
+            currentDayOffset
         }
     }
 
@@ -1676,7 +1681,11 @@ class GalleryFragment : Fragment() {
         }
 
         val dayDate = SimpleDateFormat("dd.MM", Locale.GERMANY).format(currentDay.time)
-        val dayHeader = createStyledCell("$dayName\n$dayDate", isHeader = true, isDayView = true)
+
+        val hasSpecialContent = hasNotesForDay(currentDay.time) || shouldShowAsterisk(currentDay.time)
+        val dayNameWithAsterisk = if (hasSpecialContent) "$dayName*" else dayName
+
+        val dayHeader = createStyledCell("$dayNameWithAsterisk\n$dayDate", isHeader = true, isDayView = true)
 
         // check for today and override styling after createStyledCell
         val today = Calendar.getInstance()
@@ -1685,11 +1694,6 @@ class GalleryFragment : Fragment() {
         if (isToday) {
             dayHeader.background = createRoundedDrawable("#FFC107".toColorInt())
             dayHeader.setTextColor(Color.BLACK)
-        }
-
-        // check for notes and mark with asterisk
-        if (hasNotesForDay(currentDay.time) || shouldShowAsterisk(currentDay.time)) {
-            "${dayHeader.text}*".also { dayHeader.text = it }
         }
 
         dayHeader.setOnClickListener { showDayDetails(currentDay.time) }
@@ -2015,7 +2019,7 @@ class GalleryFragment : Fragment() {
                     displaySubject
                 }
 
-                if (hasRoomChange) {
+                if (hasRoomChange && !finalDisplayText.contains("*")) {
                     finalDisplayText = finalDisplayText.replace(displaySubject, "${displaySubject}*")
                 }
 
@@ -2027,7 +2031,6 @@ class GalleryFragment : Fragment() {
                     if (roomToUse.isNotBlank()) {
                         finalDisplayText = finalDisplayText.replace(" | $roomToUse", " | <s>$roomToUse</s> ➞ $newRoom")
                     }
-                    finalDisplayText = finalDisplayText.replace(displaySubject, "${displaySubject}*")
                 }
 
                 if (additionalInfo.isNotEmpty()) {
@@ -3100,9 +3103,10 @@ class GalleryFragment : Fragment() {
         }
 
         // add exam entries
+        var examAdded = false
         try {
             calendarInfo?.exams?.forEach { exam ->
-                if (exam.subject == subject) {
+                if (!examAdded && exam.subject == subject) {
                     val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
                     val dayTimetable = timetableData[dayKey] ?: return@forEach
 
@@ -3124,25 +3128,29 @@ class GalleryFragment : Fragment() {
                                 colorPriorities["exam"] ?: 0
                             )
                         )
+                        examAdded = true
                     }
                 }
             }
 
-            // fallback with exammanager
-            val dateStr = SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date)
-            val examsFromManager = ExamManager.getExamsForDate(dateStr)
-            examsFromManager.forEach { exam ->
-                if (exam.subject == subject) {
-                    val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
-                    val dayTimetable = timetableData[dayKey]
-                    if (dayTimetable?.get(lesson)?.subject == subject) {
-                        entries.add(
-                            CalendarEntry(
-                                EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
-                                getThemeColor(R.attr.examCellBackgroundColor),
-                                colorPriorities["exam"] ?: 0
+            // fallback with exammanager (only if no exam added yet)
+            if (!examAdded) {
+                val dateStr = SimpleDateFormat("yyyyMMdd", Locale.GERMANY).format(date)
+                val examsFromManager = ExamManager.getExamsForDate(dateStr)
+                examsFromManager.forEach { exam ->
+                    if (!examAdded && exam.subject == subject) {
+                        val dayKey = getWeekdayKey(getDayOfWeekIndex(date))
+                        val dayTimetable = timetableData[dayKey]
+                        if (dayTimetable?.get(lesson)?.subject == subject) {
+                            entries.add(
+                                CalendarEntry(
+                                    EntryType.EXAM, getString(R.string.gall_exam_single), exam.subject,
+                                    getThemeColor(R.attr.examCellBackgroundColor),
+                                    colorPriorities["exam"] ?: 0
+                                )
                             )
-                        )
+                            examAdded = true
+                        }
                     }
                 }
             }
@@ -3309,7 +3317,7 @@ class GalleryFragment : Fragment() {
 
         val subjectSpinner = Spinner(requireContext()).apply {
             adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item,
-                listOf(getString(R.string.gall_no_school)) + subjects).apply { // be cautious about this
+                listOf(getString(R.string.gall_no_school)) + subjects).apply {
                 setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
@@ -3422,8 +3430,19 @@ class GalleryFragment : Fragment() {
         container.addView(roomLabel)
         container.addView(roomSpinner)
 
+        val dayName = when (dayIndex) {
+            0 -> getString(R.string.monday)
+            1 -> getString(R.string.tuesday)
+            2 -> getString(R.string.wednesday)
+            3 -> getString(R.string.thursday)
+            4 -> getString(R.string.friday)
+            5 -> getString(R.string.saturday)
+            6 -> getString(R.string.sunday)
+            else -> "Day ${dayIndex + 1}"
+        }
+
         val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.gall_edit_timetable, weekdays[dayIndex], lesson))
+            .setTitle(getString(R.string.gall_edit_timetable, dayName, lesson))
             .setView(container)
             .setPositiveButton(getString(R.string.gall_save)) { _, _ ->
                 val selectedSubject = subjectSpinner.selectedItem.toString()
@@ -4546,6 +4565,7 @@ class GalleryFragment : Fragment() {
                     try {
                         isRealTimeUpdate = true
                         val now = Calendar.getInstance()
+                        val dayOfWeek = now.get(Calendar.DAY_OF_WEEK)
 
                         if (now.get(Calendar.SECOND) == 0) {
                             updateWeekDisplay()
@@ -4557,7 +4577,11 @@ class GalleryFragment : Fragment() {
                                 }
                                 isSameDay(currentDay.time, now.time)
                             } else {
-                                isSameWeek(currentWeekStart.time, now.time)
+                                if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
+                                    false
+                                } else {
+                                    isSameWeek(currentWeekStart.time, now.time)
+                                }
                             }
 
                             if (shouldUpdateHighlight) {
@@ -4565,7 +4589,11 @@ class GalleryFragment : Fragment() {
                             }
                         }
 
-                        createRealTimeIndicator()
+                        if (isDayView || (dayOfWeek != Calendar.SATURDAY && dayOfWeek != Calendar.SUNDAY)) {
+                            createRealTimeIndicator()
+                        } else {
+                            hideRealTimeIndicator()
+                        }
 
                         isRealTimeUpdate = false
 
@@ -4607,7 +4635,18 @@ class GalleryFragment : Fragment() {
                     lastHighlightedIsBreak = true
                     lastHighlightedBreakAfterLesson = lesson
                     lastHighlightedLessonNumber = -1
-                    highlightCurrentBreakStatic(lesson)
+
+                    val animationsEnabled = android.provider.Settings.Global.getFloat(
+                        requireContext().contentResolver,
+                        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1.0f
+                    ) > 0f
+
+                    if (animationsEnabled) {
+                        highlightCurrentBreak(lesson)
+                    } else {
+                        highlightCurrentBreakStatic(lesson)
+                    }
                 }
                 return
             }
@@ -4619,7 +4658,18 @@ class GalleryFragment : Fragment() {
                     lastHighlightedIsBreak = false
                     lastHighlightedBreakAfterLesson = -1
                     lastHighlightedLessonNumber = lesson
-                    highlightCurrentLessonStatic(lesson, currentTime)
+
+                    val animationsEnabled = android.provider.Settings.Global.getFloat(
+                        requireContext().contentResolver,
+                        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1.0f
+                    ) > 0f
+
+                    if (animationsEnabled) {
+                        highlightCurrentLesson(lesson, currentTime)
+                    } else {
+                        highlightCurrentLessonStatic(lesson, currentTime)
+                    }
                 }
                 return
             }
@@ -4644,7 +4694,12 @@ class GalleryFragment : Fragment() {
                         val breakPosition = getBreakPositionForDayView(i)
                         if (breakPosition == afterLesson) {
                             currentHighlightedCell = cell
-                            setStaticHighlight(cell, getThemeColor(R.attr.calendarBreakBackgroundColor))
+                            val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
+                            cell.background = createRoundedDrawableWithBorder(
+                                breakBackgroundColor,
+                                "#FFC107".toColorInt(),
+                                8
+                            )
                             return
                         }
                     }
@@ -4660,7 +4715,12 @@ class GalleryFragment : Fragment() {
                         val breakPosition = getBreakPositionFromGrid(i)
                         if (breakPosition == afterLesson) {
                             currentHighlightedCell = cell
-                            setStaticHighlight(cell, getThemeColor(R.attr.calendarBreakBackgroundColor))
+                            val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
+                            cell.background = createRoundedDrawableWithBorder(
+                                breakBackgroundColor,
+                                "#FFC107".toColorInt(),
+                                8
+                            )
                             return
                         }
                     }
@@ -4779,9 +4839,9 @@ class GalleryFragment : Fragment() {
 
                 val pulseColor = Color.argb(
                     (255 * alpha).toInt(),
-                    Color.red(Color.YELLOW),
-                    Color.green(Color.YELLOW),
-                    Color.blue(Color.YELLOW)
+                    Color.red("#FFC107".toColorInt()),
+                    Color.green("#FFC107".toColorInt()),
+                    Color.blue("#FFC107".toColorInt())
                 )
 
                 try {
@@ -4826,7 +4886,7 @@ class GalleryFragment : Fragment() {
 
                     cell.background = createRoundedDrawableWithBorder(
                         actualBackgroundColor,
-                        Color.YELLOW,
+                        "#FFC107".toColorInt(),
                         8
                     )
                 }
@@ -4892,7 +4952,17 @@ class GalleryFragment : Fragment() {
                 stopCurrentHighlight()
 
                 calendarGrid.post {
-                    startInitialHighlighting()
+                    val animationsEnabled = android.provider.Settings.Global.getFloat(
+                        requireContext().contentResolver,
+                        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1.0f
+                    ) > 0f
+
+                    if (animationsEnabled) {
+                        startInitialHighlighting()
+                    } else {
+                        startInitialHighlightingStatic()
+                    }
                 }
             }
         } else if (isCurrentWeek) {
@@ -4902,8 +4972,71 @@ class GalleryFragment : Fragment() {
             stopCurrentHighlight()
 
             calendarGrid.post {
-                startInitialHighlighting()
+                val animationsEnabled = android.provider.Settings.Global.getFloat(
+                    requireContext().contentResolver,
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                    1.0f
+                ) > 0f
+
+                if (animationsEnabled) {
+                    startInitialHighlighting()
+                } else {
+                    startInitialHighlightingStatic()
+                }
             }
+        }
+    }
+
+    private fun startInitialHighlightingStatic() {
+        val currentTime = Calendar.getInstance()
+        val dayOfWeek = currentTime.get(Calendar.DAY_OF_WEEK)
+
+        if (!isDayView && (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)) {
+            return
+        }
+
+        val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
+
+        if (!isCurrentWeek && !isDayView) return
+
+        if (isDayView) {
+            val currentDay = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+            val isCurrentDay = isSameDay(currentDay.time, currentTime.time)
+            if (!isCurrentDay) return
+        }
+
+        val maxLessons = getMaxLessonsForWeek()
+
+        for (lesson in 1..maxLessons) {
+            if (isCurrentBreakTime(lesson, currentTime)) {
+                if (isDayView || (dayOfWeek != Calendar.SATURDAY && dayOfWeek != Calendar.SUNDAY)) {
+                    lastHighlightedIsBreak = true
+                    lastHighlightedBreakAfterLesson = lesson
+                    lastHighlightedLessonNumber = -1
+                    highlightCurrentBreakStatic(lesson)
+                    return
+                }
+            }
+        }
+
+        for (lesson in 1..maxLessons) {
+            if (isCurrentLesson(lesson, currentTime)) {
+                lastHighlightedIsBreak = false
+                lastHighlightedBreakAfterLesson = -1
+                lastHighlightedLessonNumber = lesson
+                highlightCurrentLessonStatic(lesson, currentTime)
+                return
+            }
+        }
+
+        if (lastHighlightedLessonNumber != -1 || lastHighlightedIsBreak) {
+            lastHighlightedLessonNumber = -1
+            lastHighlightedIsBreak = false
+            lastHighlightedBreakAfterLesson = -1
+            stopCurrentHighlight()
         }
     }
 
@@ -5001,6 +5134,12 @@ class GalleryFragment : Fragment() {
     private fun startInitialHighlighting() {
         calendarGrid.post {
             val currentTime = Calendar.getInstance()
+            val dayOfWeek = currentTime.get(Calendar.DAY_OF_WEEK)
+
+            if (!isDayView && (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)) {
+                return@post
+            }
+
             val isCurrentWeek = isSameWeek(currentWeekStart.time, currentTime.time)
 
             if (!isCurrentWeek && !isDayView) return@post
@@ -5018,15 +5157,17 @@ class GalleryFragment : Fragment() {
 
             for (lesson in 1..maxLessons) {
                 if (isCurrentBreakTime(lesson, currentTime)) {
-                    if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
-                        lastHighlightedIsBreak = true
-                        lastHighlightedBreakAfterLesson = lesson
-                        lastHighlightedLessonNumber = -1
-                        highlightCurrentBreak(lesson)
-                    } else {
-                        highlightCurrentBreakStatic(lesson)
+                    if (isDayView || (dayOfWeek != Calendar.SATURDAY && dayOfWeek != Calendar.SUNDAY)) {
+                        if (!lastHighlightedIsBreak || lastHighlightedBreakAfterLesson != lesson) {
+                            lastHighlightedIsBreak = true
+                            lastHighlightedBreakAfterLesson = lesson
+                            lastHighlightedLessonNumber = -1
+                            highlightCurrentBreak(lesson)
+                        } else {
+                            highlightCurrentBreakStatic(lesson)
+                        }
+                        return@post
                     }
-                    return@post
                 }
             }
 
@@ -5069,8 +5210,19 @@ class GalleryFragment : Fragment() {
                             stopCurrentHighlight()
                             currentHighlightedCell = cell
                             val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
-                            val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
-                            pulseAnimation.start()
+
+                            val animationsEnabled = android.provider.Settings.Global.getFloat(
+                                requireContext().contentResolver,
+                                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                                1.0f
+                            ) > 0f
+
+                            if (animationsEnabled) {
+                                val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
+                                pulseAnimation.start()
+                            } else {
+                                setStaticHighlight(cell, breakBackgroundColor)
+                            }
                             return
                         }
                     }
@@ -5091,8 +5243,19 @@ class GalleryFragment : Fragment() {
                             stopCurrentHighlight()
                             currentHighlightedCell = cell
                             val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
-                            val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
-                            pulseAnimation.start()
+
+                            val animationsEnabled = android.provider.Settings.Global.getFloat(
+                                requireContext().contentResolver,
+                                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                                1.0f
+                            ) > 0f
+
+                            if (animationsEnabled) {
+                                val pulseAnimation = createOptimizedPulseAnimation(cell, breakBackgroundColor)
+                                pulseAnimation.start()
+                            } else {
+                                setStaticHighlight(cell, breakBackgroundColor)
+                            }
                             return
                         }
                     }
@@ -5136,6 +5299,15 @@ class GalleryFragment : Fragment() {
     }
 
     private fun highlightCurrentLesson(lesson: Int, currentTime: Calendar) {
+        // First check if we should highlight breaks instead
+        val maxLessons = getMaxLessonsForWeek()
+        for (breakLesson in 1..maxLessons) {
+            if (isCurrentBreakTime(breakLesson, currentTime)) {
+                highlightCurrentBreak(breakLesson)
+                return
+            }
+        }
+
         for (i in 0 until calendarGrid.childCount) {
             val row = calendarGrid.getChildAt(i) as? TableRow ?: continue
 
@@ -5167,7 +5339,13 @@ class GalleryFragment : Fragment() {
                                 it != Color.TRANSPARENT
                             } ?: Color.WHITE
 
-                            startCurrentLessonHighlight(cell, backgroundColor)
+                            val animationsEnabled = android.provider.Settings.Global.getFloat(
+                                requireContext().contentResolver,
+                                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                                1.0f
+                            ) > 0f
+
+                            startCurrentLessonHighlight(cell, backgroundColor, animationsEnabled)
                         }
                     } else {
                         val dayIndex = j - 1
@@ -5188,7 +5366,13 @@ class GalleryFragment : Fragment() {
                                     it != Color.TRANSPARENT
                                 } ?: Color.WHITE
 
-                                startCurrentLessonHighlight(cell, backgroundColor)
+                                val animationsEnabled = android.provider.Settings.Global.getFloat(
+                                    requireContext().contentResolver,
+                                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                                    1.0f
+                                ) > 0f
+
+                                startCurrentLessonHighlight(cell, backgroundColor, animationsEnabled)
                             }
                         }
                     }
@@ -5206,7 +5390,7 @@ class GalleryFragment : Fragment() {
         }
 
         try {
-            cell.background = createRoundedDrawable(Color.YELLOW)
+            cell.background = createRoundedDrawable("#FFC107".toColorInt())
             cell.setTextColor(Color.BLACK)
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error highlighting lesson time cell", e)
@@ -5856,8 +6040,23 @@ class GalleryFragment : Fragment() {
         val currentTime = Calendar.getInstance()
         val dayOfWeek = currentTime.get(Calendar.DAY_OF_WEEK)
 
-        if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
-            if (!isDayView || !includeWeekendsInDayView) {
+        if (!isDayView && (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)) {
+            hideRealTimeIndicator()
+            return
+        }
+
+        if (isDayView && (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)) {
+            if (!includeWeekendsInDayView) {
+                hideRealTimeIndicator()
+                return
+            }
+
+            val currentDay = Calendar.getInstance().apply {
+                time = currentWeekStart.time
+                add(Calendar.DAY_OF_WEEK, currentDayOffset)
+            }
+
+            if (!isSameDay(currentDay.time, currentTime.time)) {
                 hideRealTimeIndicator()
                 return
             }
@@ -6089,36 +6288,40 @@ class GalleryFragment : Fragment() {
             return null
         }
 
-        val dayOfWeek = currentDay.get(Calendar.DAY_OF_WEEK)
-        if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
-            val dayKey = getWeekdayKey(getDayOfWeekIndex(currentDay.time))
-            val dayTimetable = timetableData[dayKey] ?: return null
-
-            val hasActiveLessons = dayTimetable.any { (_, entry) ->
-                !entry.isBreak &&
-                        entry.subject != InternalConstants.FREE_LESSON &&
-                        entry.subject != InternalConstants.NO_SCHOOL &&
-                        !entry.subject.contains("_BREAK") &&
-                        entry.subject.isNotBlank()
-            }
-
-            if (!hasActiveLessons) {
-                return null
-            }
-        }
-
         val dayKey = getWeekdayKey(getDayOfWeekIndex(currentDay.time))
-        val dayTimetable = timetableData[dayKey] ?: return null
+        val dayTimetable = timetableData[dayKey]
+
+        if (dayTimetable == null || dayTimetable.isEmpty()) {
+            return null
+        }
 
         val scheduledLessons = dayTimetable.filter { (_, entry) ->
             !entry.isBreak &&
                     entry.subject != InternalConstants.FREE_LESSON &&
                     entry.subject != InternalConstants.NO_SCHOOL &&
                     !entry.subject.contains("_BREAK") &&
-                    entry.subject.isNotBlank()
+                    entry.subject.isNotBlank() &&
+                    entry.subject != "UNKNOWN" &&
+                    entry.subject.trim().isNotEmpty()
         }
 
-        if (scheduledLessons.isEmpty()) return null
+        if (scheduledLessons.isEmpty()) {
+            return null
+        }
+
+        val hasValidLessons = scheduledLessons.any { (_, entry) ->
+            val subject = entry.subject.trim()
+            subject.isNotBlank() &&
+                    !subject.equals("UNKNOWN", ignoreCase = true) &&
+                    !subject.equals("", ignoreCase = true) &&
+                    !subject.equals("null", ignoreCase = true) &&
+                    subject != InternalConstants.FREE_LESSON &&
+                    subject != InternalConstants.NO_SCHOOL
+        }
+
+        if (!hasValidLessons) {
+            return null
+        }
 
         val substituteEntries = if (isRealTimeUpdate) {
             getOnlyCachedSubstituteEntries(currentDay.time)

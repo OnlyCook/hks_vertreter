@@ -14,7 +14,7 @@
         <item name="elevation">0dp</item>
 
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:navigationBarColor">@color/dark_gray</item>
+        <item name="android:navigationBarColor">@color/settings_background_dark</item>
 
         <!-- drawables -->
         <item name="searchBackgroundColor">@color/dark_component_background</item>
@@ -28,7 +28,7 @@
         <item name="homeBackgroundColor">@color/home_bg_dark</item>
         <item name="tableBackgroundColor">@color/table_bg_dark</item>
         <item name="tableTextColor">@color/white</item>
-        <item name="filterButtonBackgroundColor">@color/header_bg_dark</item>
+        <item name="filterButtonBackgroundColor">@color/header_buttons_dark</item>
         <item name="refreshButtonTextColor">@color/refresh_button_text_dark</item>
         <item name="errorTextColor">@color/error_text_dark</item>
         <item name="warningTextColor">@color/warning_text_dark</item>
@@ -36,7 +36,7 @@
         <item name="highlightTextColor">@color/highlight_text_dark</item>
         <item name="highlightBackgroundColor">@color/highlight_background_dark</item>
         <item name="highlightAnimationColor">@color/highlight_animation_dark</item>
-        <item name="headerBackgroundColor">@color/highlight_background_dark</item>
+        <item name="headerBackgroundColor">@color/header_bg_dark</item>
         <item name="tableHeaderBackgroundColor">@color/highlight_background_dark</item>
         <item name="tableHeaderTextColor">@color/table_header_text_dark</item>
 

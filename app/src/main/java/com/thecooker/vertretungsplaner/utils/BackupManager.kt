@@ -800,7 +800,7 @@ class BackupManager(private val context: Context) {
 
             for (exam in examList) {
                 val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(exam.date)
-                val noteStr = exam.note.replace("\n", "\\n")
+                val noteStr = if (exam.note.isBlank()) "" else exam.note.replace("|", "\\|").replace("\n", "\\n").replace("\r", "\\r")
                 val completedStr = if (exam.isCompleted) "1" else "0"
                 val examNumberStr = exam.examNumber?.toString() ?: ""
                 val fromScheduleStr = if (exam.isFromSchedule) "1" else "0"
@@ -847,11 +847,14 @@ class BackupManager(private val context: Context) {
                     calendarLines.add(line)
                 } else if (!line.startsWith("#") && line.trim().isNotEmpty() && line.contains("|")) {
                     val parts = line.split("|")
-                    if (parts.size >= 6) {
+                    if (parts.size >= 7) {
                         try {
                             val subject = parts[0].trim()
                             val date = dateFormat.parse(parts[1].trim()) ?: continue
-                            val note = parts[2].trim().replace("\\n", "\n")
+                            val note = parts[2].trim()
+                                .replace("\\|", "|")
+                                .replace("\\n", "\n")
+                                .replace("\\r", "\r")
                             val isCompleted = parts[3].trim() == "1"
                             val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
                             val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
@@ -871,6 +874,33 @@ class BackupManager(private val context: Context) {
                             importedExamCount++
                         } catch (e: Exception) {
                             L.w(TAG, "Error parsing exam line: $line", e)
+                        }
+                    } else if (parts.size >= 6) {
+                        try {
+                            val subject = parts[0].trim()
+                            val date = dateFormat.parse(parts[1].trim()) ?: continue
+                            val note = parts[2].trim()
+                                .replace("\\|", "|")
+                                .replace("\\n", "\n")
+                                .replace("\\r", "\r")
+                            val isCompleted = parts[3].trim() == "1"
+                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
+
+                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
+                                subject = subject,
+                                date = date,
+                                note = note,
+                                isCompleted = isCompleted,
+                                examNumber = examNumber,
+                                isFromSchedule = isFromSchedule,
+                                mark = null // No mark in old format
+                            )
+
+                            examList.add(exam)
+                            importedExamCount++
+                        } catch (e: Exception) {
+                            L.w(TAG, "Error parsing exam line (old format): $line", e)
                         }
                     }
                 }
@@ -911,11 +941,14 @@ class BackupManager(private val context: Context) {
 
                 if (line.contains("|")) {
                     val parts = line.split("|")
-                    if (parts.size >= 6) {
+                    if (parts.size >= 7) {
                         try {
                             val subject = parts[0].trim()
                             val date = dateFormat.parse(parts[1].trim()) ?: continue
-                            val note = parts[2].trim().replace("\\n", "\n")
+                            val note = parts[2].trim()
+                                .replace("\\|", "|")
+                                .replace("\\n", "\n")
+                                .replace("\\r", "\r")
                             val isCompleted = parts[3].trim() == "1"
                             val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
                             val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
@@ -935,6 +968,33 @@ class BackupManager(private val context: Context) {
                             importedExamCount++
                         } catch (e: Exception) {
                             L.w(TAG, "Error parsing exam line from full backup: $line", e)
+                        }
+                    } else if (parts.size >= 6) {
+                        try {
+                            val subject = parts[0].trim()
+                            val date = dateFormat.parse(parts[1].trim()) ?: continue
+                            val note = parts[2].trim()
+                                .replace("\\|", "|")
+                                .replace("\\n", "\n")
+                                .replace("\\r", "\r")
+                            val isCompleted = parts[3].trim() == "1"
+                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
+
+                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
+                                subject = subject,
+                                date = date,
+                                note = note,
+                                isCompleted = isCompleted,
+                                examNumber = examNumber,
+                                isFromSchedule = isFromSchedule,
+                                mark = null
+                            )
+
+                            examList.add(exam)
+                            importedExamCount++
+                        } catch (e: Exception) {
+                            L.w(TAG, "Error parsing exam line from full backup (old format): $line", e)
                         }
                     }
                 }

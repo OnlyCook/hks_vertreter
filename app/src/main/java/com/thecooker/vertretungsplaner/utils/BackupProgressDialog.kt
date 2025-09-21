@@ -5,10 +5,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
 import com.thecooker.vertretungsplaner.R
 import androidx.core.graphics.drawable.toDrawable
@@ -76,7 +78,15 @@ class BackupProgressDialog(
         editButton = view.findViewById(R.id.editButton)
         scrollView = view.findViewById(R.id.scrollView)
 
-        titleText.text = if (isExport) context.getString(R.string.bac_pro_backup_is_being_created) else context.getString(R.string.bac_pro_backup_is_being_restored)
+        val buttonColor = context.getThemeColor(R.attr.dialogSectionButtonColor)
+        cancelButton.setTextColor(buttonColor)
+        errorButton.setTextColor(buttonColor)
+        editButton.setTextColor(buttonColor)
+
+        titleText.text = if (isExport)
+            context.getString(R.string.bac_pro_backup_is_being_created)
+        else
+            context.getString(R.string.bac_pro_backup_is_being_restored)
 
         errorButton.visibility = View.GONE
         errorButton.setOnClickListener {
@@ -102,6 +112,7 @@ class BackupProgressDialog(
         setupSectionViews()
         return view
     }
+
 
     private fun setupSectionViews() {
         val allSections = listOf(
@@ -191,6 +202,9 @@ class BackupProgressDialog(
         val copyButton = view.findViewById<ImageButton>(R.id.copyButton)
         val closeButton = view.findViewById<Button>(R.id.closeButton)
 
+        val buttonColor = context.getThemeColor(R.attr.dialogSectionButtonColor)
+        closeButton.setTextColor(buttonColor)
+
         errorText.text = errorReport
 
         copyButton.setOnClickListener {
@@ -265,6 +279,17 @@ class BackupProgressDialog(
                     nameText.alpha = 0.6f
                 }
             }
+        }
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
         }
     }
 }

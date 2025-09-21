@@ -52,22 +52,37 @@ class MainActivity : BaseActivity() {
 
         val drawerLayout: DrawerLayout = binding.drawerLayout
         val navView: NavigationView = binding.navView
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
 
-        appBarConfiguration = AppBarConfiguration(
-            setOf(
-                R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow, R.id.nav_klausuren, R.id.nav_noten
-            ), drawerLayout
-        )
+        binding.root.post {
+            try {
+                val navController = findNavController(R.id.nav_host_fragment_content_main)
 
-        setupActionBarWithNavController(navController, appBarConfiguration)
-        navView.setupWithNavController(navController)
+                appBarConfiguration = AppBarConfiguration(
+                    setOf(
+                        R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow, R.id.nav_klausuren, R.id.nav_noten
+                    ), drawerLayout
+                )
 
+                setupActionBarWithNavController(navController, appBarConfiguration)
+                navView.setupWithNavController(navController)
+
+                setupNavigationListener(navView, navController)
+                setupDestinationChangeListener(navController)
+
+                if (!handleIncomingIntent(intent)) {
+                    navigateToStartupPage()
+                }
+            } catch (e: Exception) {
+                L.e("MainActivity", "Error setting up navigation", e)
+                handleIncomingIntent(intent)
+            }
+        }
+    }
+
+    private fun setupNavigationListener(navView: NavigationView, navController: androidx.navigation.NavController) {
         navView.setNavigationItemSelectedListener { menuItem ->
-            //val currentDest = navController.currentDestination
             val args = navController.currentBackStackEntry?.arguments
 
-            // may need some adjustments
             val needsCleanNavigation = args != null && (
                     args.containsKey("highlight_homework_id") ||
                             args.containsKey("highlight_exam_id") ||
@@ -109,7 +124,9 @@ class MainActivity : BaseActivity() {
             binding.drawerLayout.closeDrawers()
             result
         }
+    }
 
+    private fun setupDestinationChangeListener(navController: androidx.navigation.NavController) {
         navController.addOnDestinationChangedListener { _, destination, arguments ->
             L.d("MainActivity", "Navigation changed to: ${destination.label}")
             L.d("MainActivity", "Navigation arguments: $arguments")
@@ -175,10 +192,6 @@ class MainActivity : BaseActivity() {
             if (destination.id != R.id.nav_slideshow && destination.id != R.id.nav_klausuren && destination.id != R.id.nav_home) {
                 homeworkArgumentsCleared = false
             }
-        }
-
-        if (!handleIncomingIntent(intent)) {
-            navigateToStartupPage()
         }
     }
 
