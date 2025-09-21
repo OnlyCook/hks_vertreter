@@ -803,6 +803,7 @@
     <string name="home_offline_mode">Offline</string>
     <string name="home_substitute_not_found">Vertretungsplan-Eintrag nicht gefunden</string>
     <string name="home_substitute_highlight_error">Fehler beim Hervorheben des Vertretunsplan-Eintrags</string>
+    <string name="home_no_cached_data">Keine Vertretungen vorhanden</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.</string>

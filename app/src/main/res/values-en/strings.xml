@@ -803,6 +803,7 @@
     <string name="home_offline_mode">Offline</string>
     <string name="home_substitute_not_found">Substitute entry not found</string>
     <string name="home_substitute_highlight_error">Error highlighting substitute entry</string>
+    <string name="home_no_cached_data">No substitute plan data available</string>
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">You must first scan your timetable to see your grades.</string>

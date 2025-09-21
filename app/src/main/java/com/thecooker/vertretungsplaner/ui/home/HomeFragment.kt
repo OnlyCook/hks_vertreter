@@ -128,6 +128,27 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun showNoDataMessage() {
+        if (!::contentLayout.isInitialized || !isAdded) return
+
+        contentLayout.removeAllViews()
+        val noDataText = TextView(requireContext()).apply {
+            text = getString(R.string.home_no_cached_data)
+            gravity = android.view.Gravity.CENTER
+            textSize = 16f
+            alpha = 0.7f
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+                topMargin = 50
+            }
+        }
+        contentLayout.addView(noDataText)
+    }
+
     private fun startBackgroundDataLoad() {
         L.d("HomeFragment", "Starting background data load")
 
@@ -141,29 +162,24 @@ class HomeFragment : Fragment() {
             classText.text = getString(R.string.home_class_prefix, klasse)
         }
 
-        setInitialLastUpdateText(klasse!!)
-
         val willLoadFromNetwork = shouldLoadFromNetwork()
 
-        if (willLoadFromNetwork) {
-            showLoadingState()
-        }
+        setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
 
         scope?.launch(Dispatchers.IO) {
             try {
-                //delay(if (willLoadFromNetwork) 50L else 25L)
-
-                if (!willLoadFromNetwork) {
+                if (willLoadFromNetwork) {
+                    withContext(Dispatchers.Main) {
+                        showLoadingState()
+                    }
+                    loadNetworkDataInBackground(klasse)
+                } else {
                     val hasCachedData = loadCachedDataInBackground(klasse)
                     if (!hasCachedData) {
                         withContext(Dispatchers.Main) {
-                            showLoadingState()
+                            showNoDataMessage()
                         }
                     }
-                }
-
-                if (willLoadFromNetwork) {
-                    loadNetworkDataInBackground(klasse)
                 }
 
             } catch (e: Exception) {
@@ -177,7 +193,7 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun setInitialLastUpdateText(klasse: String) {
+    private fun setInitialLastUpdateText(klasse: String, willLoadFromNetwork: Boolean) {
         if (!::lastUpdateText.isInitialized) return
 
         try {
@@ -185,20 +201,21 @@ class HomeFragment : Fragment() {
 
             if (lastUpdateFile.exists()) {
                 val lastUpdate = lastUpdateFile.readText()
-                val willLoadFromNetwork = shouldLoadFromNetwork()
 
                 when {
                     !cooldownEnabled -> {
-                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
-                        L.d("HomeFragment", "Set initial lastUpdate (cooldown disabled): $lastUpdate")
+                        lastUpdateText.text = if (willLoadFromNetwork) {
+                            getString(R.string.home_last_update, lastUpdate)
+                        } else {
+                            getString(R.string.home_last_update_offline, lastUpdate)
+                        }
                     }
                     willLoadFromNetwork -> {
-                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
-                        L.d("HomeFragment", "Set initial lastUpdate (cooldown expired): $lastUpdate offline")
+                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
                     }
                     else -> {
                         lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
-                        L.d("HomeFragment", "Set initial lastUpdate (cooldown active): $lastUpdate offline")
+                        L.d("HomeFragment", "Set initial lastUpdate with offline tag (cooldown active): $lastUpdate")
                     }
                 }
             } else {
@@ -244,7 +261,7 @@ class HomeFragment : Fragment() {
                     if (isAdded && _binding != null) {
                         contentLayout.removeAllViews()
                         displaySubstitutePlan(filteredJsonData)
-                        L.d("HomeFragment", "Displayed cached data instantly")
+                        L.d("HomeFragment", "Displayed cached data (cooldown active)")
                     }
                 }
                 true
@@ -259,8 +276,16 @@ class HomeFragment : Fragment() {
 
     private suspend fun loadNetworkDataInBackground(klasse: String) {
         if (!isNetworkAvailable()) {
-            L.d("HomeFragment", "No internet connection, loading cached data instead")
-            loadCachedDataInBackground(klasse)
+            L.d("HomeFragment", "No internet connection, using cached data")
+            withContext(Dispatchers.Main) {
+                if (isAdded && _binding != null && ::lastUpdateText.isInitialized) {
+                    val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+                    if (lastUpdateFile.exists()) {
+                        val lastUpdate = lastUpdateFile.readText()
+                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                    }
+                }
+            }
             return
         }
 
@@ -274,12 +299,12 @@ class HomeFragment : Fragment() {
 
             withContext(Dispatchers.Main) {
                 if (isAdded && _binding != null) {
-
                     if (::lastUpdateText.isInitialized) {
                         lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
                         L.d("HomeFragment", "Updated lastUpdateText to fresh: $lastUpdate")
                     }
 
+                    contentLayout.removeAllViews()
                     displaySubstitutePlan(substitutePlan)
                     L.d("HomeFragment", "Displayed fresh network data")
 
@@ -288,8 +313,16 @@ class HomeFragment : Fragment() {
                 }
             }
         } catch (e: Exception) {
-            L.e("HomeFragment", "Network load failed, loading cached data as fallback", e)
-            loadCachedDataInBackground(klasse)
+            L.e("HomeFragment", "Network load failed, keeping cached data", e)
+            withContext(Dispatchers.Main) {
+                if (isAdded && _binding != null && ::lastUpdateText.isInitialized) {
+                    val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+                    if (lastUpdateFile.exists()) {
+                        val lastUpdate = lastUpdateFile.readText()
+                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                    }
+                }
+            }
         }
     }
 
@@ -696,10 +729,25 @@ class HomeFragment : Fragment() {
                         if (klasse != getString(R.string.home_not_selected) && ::classText.isInitialized) {
                             classText.text = getString(R.string.home_class_prefix, klasse)
                         }
+
+                        if (::lastUpdateText.isInitialized && klasse != getString(R.string.home_not_selected)) {
+                            val willLoadFromNetwork = shouldLoadFromNetwork()
+                            setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
+                        }
                     }
                 }
 
-                if (currentJsonData == null || shouldLoadFromNetwork()) {
+                val shouldReload = currentJsonData == null || shouldLoadFromNetwork()
+                if (shouldReload) {
+                    val willLoadFromNetwork = shouldLoadFromNetwork()
+                    if (willLoadFromNetwork) {
+                        binding.root.post {
+                            if (isAdded && _binding != null && ::contentLayout.isInitialized) {
+                                showLoadingState()
+                            }
+                        }
+                    }
+
                     binding.root.postDelayed({
                         if (isAdded && _binding != null && !isInSharedContentMode) {
                             startBackgroundDataLoad()
