@@ -582,6 +582,7 @@ class BackupManager(private val context: Context) {
         val calendarIncludeWeekends = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
         val autoDetectLang = sharedPreferences.getBoolean("language_auto_detect", true)
         val savedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+        val calendarColorLegend = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -610,6 +611,7 @@ class BackupManager(private val context: Context) {
             appendLine("CALENDAR_INCLUDE_WEEKENDS=$calendarIncludeWeekends")
             appendLine("LANGUAGE_AUTO_DETECT=$autoDetectLang")
             appendLine("SELECTED_LANGUAGE=$savedLanguage")
+            appendLine("CALENDAR_COLOR_LEGEND=$calendarColorLegend")
         }
     }
 
@@ -747,6 +749,11 @@ class BackupManager(private val context: Context) {
                         "selected_language",
                         line.substringAfter("=")
                     )
+
+                    line.startsWith("CALENDAR_COLOR_LEGEND=") -> putBoolean(
+                        "calendar_color_legend_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
                 }
             }
         }
@@ -819,17 +826,15 @@ class BackupManager(private val context: Context) {
         }
     }
 
-    fun importExamData(content: String) {
+    fun importExamDataFromFullBackup(content: String) {
         try {
-            if (!content.contains("# Heinrich-Kleyer-Schule Klausuren Export")) {
-                throw IllegalArgumentException(context.getString(R.string.backup_invalid_data_format))
-            }
-
             val lines = content.split("\n")
             val examList = mutableListOf<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>()
 
-            val calendarManager = CalendarDataManager.getInstance(context)
-            calendarManager.clearCalendarData()
+            if (!isFullBackupRestore) {
+                val calendarManager = CalendarDataManager.getInstance(context)
+                calendarManager.clearCalendarData()
+            }
 
             var importedExamCount = 0
             val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
@@ -875,127 +880,6 @@ class BackupManager(private val context: Context) {
                         } catch (e: Exception) {
                             L.w(TAG, "Error parsing exam line: $line", e)
                         }
-                    } else if (parts.size >= 6) {
-                        try {
-                            val subject = parts[0].trim()
-                            val date = dateFormat.parse(parts[1].trim()) ?: continue
-                            val note = parts[2].trim()
-                                .replace("\\|", "|")
-                                .replace("\\n", "\n")
-                                .replace("\\r", "\r")
-                            val isCompleted = parts[3].trim() == "1"
-                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
-
-                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
-                                subject = subject,
-                                date = date,
-                                note = note,
-                                isCompleted = isCompleted,
-                                examNumber = examNumber,
-                                isFromSchedule = isFromSchedule,
-                                mark = null // No mark in old format
-                            )
-
-                            examList.add(exam)
-                            importedExamCount++
-                        } catch (e: Exception) {
-                            L.w(TAG, "Error parsing exam line (old format): $line", e)
-                        }
-                    }
-                }
-            }
-
-            if (calendarLines.isNotEmpty() && !isFullBackupRestore) {
-                val calendarContent = calendarLines.joinToString("\n")
-                calendarManager.importCalendarData(calendarContent)
-            }
-
-            val json = Gson().toJson(examList)
-            sharedPreferences.edit {
-                putString("exam_list", json)
-            }
-
-            ExamManager.setExams(examList)
-
-            L.d(TAG, "Imported $importedExamCount exams successfully")
-
-        } catch (e: Exception) {
-            L.e(TAG, "Error importing exam data", e)
-            throw Exception(context.getString(R.string.backup_import_error, e.message ?: ""))
-        }
-    }
-
-    private fun importExamDataFromFullBackup(content: String) {
-        try {
-            val lines = content.split("\n")
-            val examList = mutableListOf<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>()
-
-            var importedExamCount = 0
-            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
-
-            for (line in lines) {
-                if (line.startsWith("#") || line.trim().isEmpty()) {
-                    continue
-                }
-
-                if (line.contains("|")) {
-                    val parts = line.split("|")
-                    if (parts.size >= 7) {
-                        try {
-                            val subject = parts[0].trim()
-                            val date = dateFormat.parse(parts[1].trim()) ?: continue
-                            val note = parts[2].trim()
-                                .replace("\\|", "|")
-                                .replace("\\n", "\n")
-                                .replace("\\r", "\r")
-                            val isCompleted = parts[3].trim() == "1"
-                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
-                            val mark = parts.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-
-                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
-                                subject = subject,
-                                date = date,
-                                note = note,
-                                isCompleted = isCompleted,
-                                examNumber = examNumber,
-                                isFromSchedule = isFromSchedule,
-                                mark = mark
-                            )
-
-                            examList.add(exam)
-                            importedExamCount++
-                        } catch (e: Exception) {
-                            L.w(TAG, "Error parsing exam line from full backup: $line", e)
-                        }
-                    } else if (parts.size >= 6) {
-                        try {
-                            val subject = parts[0].trim()
-                            val date = dateFormat.parse(parts[1].trim()) ?: continue
-                            val note = parts[2].trim()
-                                .replace("\\|", "|")
-                                .replace("\\n", "\n")
-                                .replace("\\r", "\r")
-                            val isCompleted = parts[3].trim() == "1"
-                            val examNumber = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-                            val isFromSchedule = parts.getOrNull(5)?.trim() == "1"
-
-                            val exam = com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry(
-                                subject = subject,
-                                date = date,
-                                note = note,
-                                isCompleted = isCompleted,
-                                examNumber = examNumber,
-                                isFromSchedule = isFromSchedule,
-                                mark = null
-                            )
-
-                            examList.add(exam)
-                            importedExamCount++
-                        } catch (e: Exception) {
-                            L.w(TAG, "Error parsing exam line from full backup (old format): $line", e)
-                        }
                     }
                 }
             }
@@ -1005,17 +889,68 @@ class BackupManager(private val context: Context) {
                 sharedPreferences.edit {
                     putString("exam_list", json)
                 }
-
                 ExamManager.setExams(examList)
-
-                L.d(TAG, "Imported $importedExamCount exams from full backup successfully")
-            } else {
-                L.w(TAG, "No exam data found in full backup section")
             }
 
+            if (calendarLines.isNotEmpty() && !isFullBackupRestore) {
+                val calendarContent = calendarLines.joinToString("\n")
+                val calendarManager = CalendarDataManager.getInstance(context)
+                calendarManager.importCalendarData(calendarContent)
+            }
+
+            if (isFullBackupRestore && importedExamCount > 0) {
+                val calendarManager = CalendarDataManager.getInstance(context)
+
+                for (exam in examList) {
+                    val existingInfo = calendarManager.getCalendarInfoForDate(exam.date)
+
+                    if (existingInfo != null) {
+                        val updatedExams = existingInfo.exams.toMutableList()
+                        if (!updatedExams.any { it.id == exam.id }) {
+                            updatedExams.add(exam)
+                            val updatedInfo = existingInfo.copy(exams = updatedExams)
+                            calendarManager.updateCalendarDay(updatedInfo)
+                        }
+                    } else {
+                        val cal = Calendar.getInstance().apply { time = exam.date }
+                        val dayOfWeek = getGermanWeekday(exam.date)
+
+                        val newInfo = CalendarDataManager.CalendarDayInfo(
+                            date = exam.date,
+                            dayOfWeek = dayOfWeek,
+                            month = cal.get(Calendar.MONTH) + 1,
+                            year = cal.get(Calendar.YEAR),
+                            content = exam.subject,
+                            exams = listOf(exam),
+                            isSpecialDay = false,
+                            specialNote = ""
+                        )
+                        calendarManager.addCalendarDay(newInfo)
+                    }
+                }
+
+                calendarManager.saveCalendarData()
+            }
+
+            L.d(TAG, "Imported $importedExamCount exams successfully")
+
         } catch (e: Exception) {
-            L.e(TAG, "Error importing exam data from full backup", e)
+            L.e(TAG, "Error importing exam data", e)
             throw Exception(context.getString(R.string.backup_exam_import_failed, e.message ?: ""))
+        }
+    }
+
+    private fun getGermanWeekday(date: Date): String {
+        val calendar = Calendar.getInstance().apply { time = date }
+        return when (calendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "Mo"
+            Calendar.TUESDAY -> "Di"
+            Calendar.WEDNESDAY -> "Mi"
+            Calendar.THURSDAY -> "Do"
+            Calendar.FRIDAY -> "Fr"
+            Calendar.SATURDAY -> "Sa"
+            Calendar.SUNDAY -> "So"
+            else -> ""
         }
     }
 

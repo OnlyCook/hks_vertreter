@@ -1,6 +1,5 @@
 package com.thecooker.vertretungsplaner.ui.slideshow
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.ClipData
@@ -48,6 +47,7 @@ class SlideshowFragment : Fragment() {
 
     private var isLoading = true
     private lateinit var loadingView: View
+    private var isInitialized = false
 
     private lateinit var btnAddHomework: Button
     private lateinit var btnMenu: Button
@@ -298,6 +298,16 @@ class SlideshowFragment : Fragment() {
         showLoadingState()
 
         view.post {
+            if (isAdded && view.parent != null) {
+                performHeavyInitialization()
+            }
+        }
+
+        return view
+    }
+
+    private fun performHeavyInitialization() {
+        try {
             setupRecyclerView()
             loadHomework()
             setupSearchBar()
@@ -305,15 +315,29 @@ class SlideshowFragment : Fragment() {
             updateHomeworkCount()
 
             isLoading = false
+            isInitialized = true
             hideLoadingState()
 
             cleanupHandler.post(cleanupRunnable)
-        }
 
-        return view
+            L.d(TAG, "Homework fragment initialization completed successfully")
+        } catch (e: Exception) {
+            L.e(TAG, "Error during initialization", e)
+            showErrorState()
+        }
     }
 
-    @SuppressLint("InflateParams")
+    private fun showErrorState() {
+        if (!isAdded || view == null) return
+
+        try {
+            hideLoadingState()
+            Toast.makeText(requireContext(), getString(R.string.slide_loading_error), Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            L.e(TAG, "Error showing error state", e)
+        }
+    }
+
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -323,7 +347,17 @@ class SlideshowFragment : Fragment() {
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(resources.getColor(android.R.color.black))
+
+            val typedValue = TypedValue()
+            val theme = requireContext().theme
+            theme.resolveAttribute(android.R.attr.textColorPrimary, typedValue, true)
+            val textColor = if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(requireContext(), typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
+            setTextColor(textColor)
+
             setTypeface(null, Typeface.BOLD)
         }
 
@@ -1634,32 +1668,25 @@ class SlideshowFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        L.d("SlideshowFragment", "onViewCreated called")
-        L.d("SlideshowFragment", "Arguments: $arguments")
+        L.d(TAG, "onViewCreated called")
+        L.d(TAG, "Arguments: $arguments")
 
-        arguments?.getString("shared_homework_uri")?.let { uriString ->
-            handleSharedHomework(uriString.toUri())
-            arguments?.remove("shared_homework_uri")
-        }
+        if (isInitialized) {
+            arguments?.getString("shared_homework_uri")?.let { uriString ->
+                handleSharedHomework(uriString.toUri())
+                arguments?.remove("shared_homework_uri")
+            }
 
-        // handle homework highlighting from navigation bundle
-        arguments?.getString("highlight_homework_id")?.let { homeworkId ->
-            L.d("SlideshowFragment", "Processing highlight_homework_id: $homeworkId")
-
-            if (isLoading) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    highlightAndShowHomework(homeworkId)
-                }, 500)
-            } else {
+            arguments?.getString("highlight_homework_id")?.let { homeworkId ->
+                L.d(TAG, "Processing highlight_homework_id: $homeworkId")
                 highlightAndShowHomework(homeworkId)
             }
-        }
 
-        // clear args INSTANTLY after processing them
-        Handler(Looper.getMainLooper()).post {
-            L.d("SlideshowFragment", "Clearing arguments to prevent reuse")
-            arguments?.clear()
-            arguments = Bundle() // also clear bundle
+            Handler(Looper.getMainLooper()).post {
+                L.d(TAG, "Clearing arguments to prevent reuse")
+                arguments?.clear()
+                arguments = Bundle()
+            }
         }
     }
 
@@ -1914,11 +1941,43 @@ class SlideshowFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        L.d("SlideshowFragment", "onResume called")
-        L.d("SlideshowFragment", "Arguments in onResume: $arguments")
+        L.d(TAG, "onResume called")
 
-        if (arguments?.containsKey("highlight_homework_id") == true) {
-            arguments = Bundle()
+        try {
+            if (!isAdded || view == null) {
+                L.w(TAG, "Fragment not properly attached")
+                return
+            }
+
+            arguments?.getString("shared_homework_uri")?.let { uriString ->
+                if (isInitialized) {
+                    handleSharedHomework(uriString.toUri())
+                } else {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isInitialized) handleSharedHomework(uriString.toUri())
+                    }, 200)
+                }
+                arguments?.remove("shared_homework_uri")
+            }
+
+            arguments?.getString("highlight_homework_id")?.let { homeworkId ->
+                if (isInitialized) {
+                    highlightAndShowHomework(homeworkId)
+                } else {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isInitialized) highlightAndShowHomework(homeworkId)
+                    }, 200)
+                }
+            }
+
+            Handler(Looper.getMainLooper()).post {
+                arguments?.clear()
+                arguments = Bundle()
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error in onResume", e)
+            showErrorState()
         }
     }
 }

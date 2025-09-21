@@ -16,10 +16,10 @@ open class BaseActivity : AppCompatActivity() {
         val savedLanguage = LanguageUtil.getSavedLanguage(this)
         LanguageUtil.setLanguage(this, savedLanguage)
 
-        super.onCreate(savedInstanceState)
-
         sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
         applyOrientationSetting()
+
+        super.onCreate(savedInstanceState)
     }
 
     override fun onResume() {

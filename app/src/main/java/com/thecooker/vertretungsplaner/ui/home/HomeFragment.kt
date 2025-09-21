@@ -32,6 +32,7 @@ import android.graphics.Color
 import android.util.TypedValue
 import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
+import androidx.core.view.isEmpty
 
 class TouchScrollView @JvmOverloads constructor(
     context: Context,
@@ -87,6 +88,7 @@ class HomeFragment : Fragment() {
     private var refreshContainer: LinearLayout? = null
     private var refreshIcon: ImageView? = null
 
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -112,6 +114,9 @@ class HomeFragment : Fragment() {
                     loadFilterSetting()
                     updateTemporaryFilterButtonVisibility()
                     loadCooldownSetting()
+                    loadColorBlindSettings()
+
+                    startBackgroundDataLoad()
                 }
             }
 
@@ -123,47 +128,179 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun createErrorView(inflater: LayoutInflater, container: ViewGroup?): View {
-        return try {
-            _binding = FragmentHomeBinding.inflate(inflater, container, false)
-            val root: View = binding.root
+    private fun startBackgroundDataLoad() {
+        L.d("HomeFragment", "Starting background data load")
 
-            val constraintLayout = root as androidx.constraintlayout.widget.ConstraintLayout
-            constraintLayout.removeAllViews()
+        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+        if (klasse == getString(R.string.home_not_selected)) {
+            showError(getString(R.string.home_no_class_selected))
+            return
+        }
 
-            val errorLayout = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = android.view.Gravity.CENTER
-                setPadding(24, 24, 24, 24)
-                layoutParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
-                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
-                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT
-                )
-            }
+        if (::classText.isInitialized) {
+            classText.text = getString(R.string.home_class_prefix, klasse)
+        }
 
-            val errorText = TextView(requireContext()).apply {
-                text = getString(R.string.home_fragment_init_error)
-                textSize = 18f
-                gravity = android.view.Gravity.CENTER
-                setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
-            }
+        setInitialLastUpdateText(klasse!!)
 
-            val retryButton = Button(requireContext()).apply {
-                text = getString(R.string.home_retry_button)
-                setOnClickListener {
-                    retryInitialization()
+        val willLoadFromNetwork = shouldLoadFromNetwork()
+
+        if (willLoadFromNetwork) {
+            showLoadingState()
+        }
+
+        scope?.launch(Dispatchers.IO) {
+            try {
+                //delay(if (willLoadFromNetwork) 50L else 25L)
+
+                if (!willLoadFromNetwork) {
+                    val hasCachedData = loadCachedDataInBackground(klasse)
+                    if (!hasCachedData) {
+                        withContext(Dispatchers.Main) {
+                            showLoadingState()
+                        }
+                    }
+                }
+
+                if (willLoadFromNetwork) {
+                    loadNetworkDataInBackground(klasse)
+                }
+
+            } catch (e: Exception) {
+                L.e("HomeFragment", "Error in background data load", e)
+                withContext(Dispatchers.Main) {
+                    if (isAdded && _binding != null) {
+                        showSafeErrorState()
+                    }
                 }
             }
-
-            errorLayout.addView(errorText)
-            errorLayout.addView(retryButton)
-            constraintLayout.addView(errorLayout)
-
-            root
-        } catch (e: Exception) {
-            L.e("HomeFragment", "Critical error creating error view", e)
-            inflater.inflate(android.R.layout.simple_list_item_1, container, false)
         }
+    }
+
+    private fun setInitialLastUpdateText(klasse: String) {
+        if (!::lastUpdateText.isInitialized) return
+
+        try {
+            val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+
+            if (lastUpdateFile.exists()) {
+                val lastUpdate = lastUpdateFile.readText()
+                val willLoadFromNetwork = shouldLoadFromNetwork()
+
+                when {
+                    !cooldownEnabled -> {
+                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                        L.d("HomeFragment", "Set initial lastUpdate (cooldown disabled): $lastUpdate")
+                    }
+                    willLoadFromNetwork -> {
+                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                        L.d("HomeFragment", "Set initial lastUpdate (cooldown expired): $lastUpdate offline")
+                    }
+                    else -> {
+                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                        L.d("HomeFragment", "Set initial lastUpdate (cooldown active): $lastUpdate offline")
+                    }
+                }
+            } else {
+                lastUpdateText.text = ""
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error setting initial last update text", e)
+            lastUpdateText.text = ""
+        }
+    }
+
+    private fun showLoadingState() {
+        if (!::contentLayout.isInitialized || !isAdded) return
+
+        contentLayout.removeAllViews()
+        val loadingText = TextView(requireContext()).apply {
+            text = getString(R.string.home_loading_plan)
+            gravity = android.view.Gravity.CENTER
+            textSize = 16f
+            alpha = 0.7f
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+                topMargin = 50
+            }
+        }
+        contentLayout.addView(loadingText)
+    }
+
+    private suspend fun loadCachedDataInBackground(klasse: String): Boolean {
+        return try {
+            val cacheFile = File(requireContext().cacheDir, "substitute_plan_$klasse.json")
+
+            if (cacheFile.exists()) {
+                val cachedData = cacheFile.readText()
+                val rawJsonData = JSONObject(cachedData)
+                val filteredJsonData = filterPastDates(rawJsonData)
+
+                withContext(Dispatchers.Main) {
+                    if (isAdded && _binding != null) {
+                        contentLayout.removeAllViews()
+                        displaySubstitutePlan(filteredJsonData)
+                        L.d("HomeFragment", "Displayed cached data instantly")
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error loading cached data in background", e)
+            false
+        }
+    }
+
+    private suspend fun loadNetworkDataInBackground(klasse: String) {
+        if (!isNetworkAvailable()) {
+            L.d("HomeFragment", "No internet connection, loading cached data instead")
+            loadCachedDataInBackground(klasse)
+            return
+        }
+
+        try {
+            L.d("HomeFragment", "Loading fresh data from network")
+
+            val lastUpdate = fetchLastUpdateTime()
+            val substitutePlan = fetchSubstitutePlan(klasse)
+
+            saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
+
+            withContext(Dispatchers.Main) {
+                if (isAdded && _binding != null) {
+
+                    if (::lastUpdateText.isInitialized) {
+                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                        L.d("HomeFragment", "Updated lastUpdateText to fresh: $lastUpdate")
+                    }
+
+                    displaySubstitutePlan(substitutePlan)
+                    L.d("HomeFragment", "Displayed fresh network data")
+
+                    lastLoadTime = System.currentTimeMillis()
+                    isFirstLoad = false
+                }
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Network load failed, loading cached data as fallback", e)
+            loadCachedDataInBackground(klasse)
+        }
+    }
+
+    private fun shouldLoadFromNetwork(): Boolean {
+        if (!cooldownEnabled) return true
+        if (isFirstLoad) return true
+
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastLoad = currentTime - lastLoadTime
+
+        return timeSinceLastLoad >= loadCooldownMs
     }
 
     private fun setupMinimalUI() {
@@ -230,6 +367,235 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun setupUI() {
+        val constraintLayout = binding.root
+        constraintLayout.removeAllViews()
+
+        constraintLayout.setBackgroundColor(getThemeColor(R.attr.homeBackgroundColor))
+
+        headerLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+            elevation = 8f
+            setBackgroundColor(getThemeColor(R.attr.headerBackgroundColor))
+        }
+
+        classText = TextView(requireContext()).apply {
+            textSize = 20f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 12)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
+        }
+
+        lastUpdateText = TextView(requireContext()).apply {
+            textSize = 14f
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 16)
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
+        }
+
+        refreshButton = Button(requireContext()).apply {
+            text = getString(R.string.home_refresh)
+            textSize = 16f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(64, 32, 64, 32)
+            setBackgroundColor(getThemeColor(R.attr.filterButtonBackgroundColor))
+            setTextColor(getThemeColor(R.attr.refreshButtonTextColor))
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
+            setOnClickListener {
+                L.d("HomeFragment", "Refresh button clicked - forcing reload")
+                isFirstLoad = true
+                lastLoadTime = 0
+                loadSubstitutePlan()
+                lastLoadTime = System.currentTimeMillis()
+                isFirstLoad = false
+            }
+        }
+
+        val topRowLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+        val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
+        val shouldShowButtons = hasScannedDocument && filterEnabled
+        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
+
+        // invisible left button (spacer  for temp filter btn)
+        invisibleLeftButton = ImageButton(requireContext()).apply {
+            setImageResource(android.R.drawable.ic_menu_view)
+            setPadding(16, 16, 16, 16)
+            isEnabled = false
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 16, 0)
+            }
+        }
+
+        temporaryFilterButton = ImageButton(requireContext()).apply {
+            setImageResource(R.drawable.ic_eye_closed)
+            setPadding(16, 16, 16, 16)
+            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(16, 0, 0, 0)
+            }
+
+            setOnTouchListener { view, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        setImageResource(R.drawable.ic_eye_open)
+                        L.d("HomeFragment", "Temporary filter button pressed - lifting filter")
+                        isTemporaryFilterDisabled = true
+                        displaySubstitutePlan(getCurrentJsonData())
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        setImageResource(R.drawable.ic_eye_closed)
+                        L.d("HomeFragment", "Temporary filter button released - restoring filter")
+                        isTemporaryFilterDisabled = false
+                        displaySubstitutePlan(getCurrentJsonData())
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+
+        classText.apply {
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        }
+
+        // filter lift button views based on filter lift pos
+        if (!leftFilterLift) {
+            if (shouldShowButtons) {
+                temporaryFilterButton.visibility = View.VISIBLE
+                invisibleLeftButton.visibility = View.INVISIBLE
+            } else {
+                temporaryFilterButton.visibility = View.GONE
+                invisibleLeftButton.visibility = View.GONE
+            }
+            topRowLayout.addView(temporaryFilterButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(invisibleLeftButton)
+        } else {
+            if (shouldShowButtons) {
+                temporaryFilterButton.visibility = View.VISIBLE
+                invisibleLeftButton.visibility = View.INVISIBLE
+            } else {
+                temporaryFilterButton.visibility = View.GONE
+                invisibleLeftButton.visibility = View.GONE
+            }
+            topRowLayout.addView(invisibleLeftButton)
+            topRowLayout.addView(classText)
+            topRowLayout.addView(temporaryFilterButton)
+        }
+
+        headerLayout.addView(topRowLayout)
+        headerLayout.addView(lastUpdateText)
+        headerLayout.addView(refreshButton)
+
+        contentScrollView = ScrollView(requireContext()).apply {
+            isFillViewport = true
+            setBackgroundColor(getThemeColor(R.attr.homeBackgroundColor))
+        }
+        contentLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 16, 24, 24)
+        }
+        contentScrollView.addView(contentLayout)
+
+        headerLayout.id = View.generateViewId()
+        contentScrollView.id = View.generateViewId()
+
+        val headerParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+        }
+
+        val scrollParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+            0
+        ).apply {
+            topToBottom = headerLayout.id
+            bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+        }
+
+        constraintLayout.addView(headerLayout, headerParams)
+        constraintLayout.addView(contentScrollView, scrollParams)
+
+        binding.root.post {
+            setupPullToRefresh()
+        }
+
+        L.d("HomeFragment", "UI setup completed")
+    }
+
+    private fun createErrorView(inflater: LayoutInflater, container: ViewGroup?): View {
+        return try {
+            _binding = FragmentHomeBinding.inflate(inflater, container, false)
+            val root: View = binding.root
+
+            val constraintLayout = root as androidx.constraintlayout.widget.ConstraintLayout
+            constraintLayout.removeAllViews()
+
+            val errorLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(24, 24, 24, 24)
+                layoutParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
+                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
+                    androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            val errorText = TextView(requireContext()).apply {
+                text = getString(R.string.home_fragment_init_error)
+                textSize = 18f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
+            }
+
+            val retryButton = Button(requireContext()).apply {
+                text = getString(R.string.home_retry_button)
+                setOnClickListener {
+                    retryInitialization()
+                }
+            }
+
+            errorLayout.addView(errorText)
+            errorLayout.addView(retryButton)
+            constraintLayout.addView(errorLayout)
+
+            root
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Critical error creating error view", e)
+            inflater.inflate(android.R.layout.simple_list_item_1, container, false)
+        }
+    }
+
     private fun showMinimalMessage() {
         contentLayout.let { layout ->
             layout.removeAllViews()
@@ -252,15 +618,6 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         L.d("HomeFragment", "onViewCreated called, shared mode: $isInSharedContentMode")
-
-        if (!isInSharedContentMode) {
-            view.post {
-                if (isAdded && _binding != null) {
-                    L.d("HomeFragment", "Initializing substitute plan loading")
-                    safeLoadSubstitutePlan()
-                }
-            }
-        }
 
         arguments?.getString("highlight_substitute_subject")?.let { subject ->
             val lesson = arguments?.getInt("highlight_substitute_lesson", -1) ?: -1
@@ -294,8 +651,6 @@ class HomeFragment : Fragment() {
                 return
             }
 
-            initializationAttempts = 0
-
             val wasInSharedMode = isInSharedContentMode
             isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
@@ -304,39 +659,53 @@ class HomeFragment : Fragment() {
                 initializationAttempts = 0
                 isInitialized = false
 
-                binding.root.post {
+                binding.root.postDelayed({
                     if (isAdded && _binding != null) {
                         try {
                             setupUI()
-                            loadStudentSubjects()
-                            loadFilterSetting()
-                            loadCooldownSetting()
-                            loadColorBlindSettings()
-                            updateTemporaryFilterButtonVisibility()
-                            safeLoadSubstitutePlan()
+                            binding.root.postDelayed({
+                                if (isAdded && _binding != null) {
+                                    loadStudentSubjects()
+                                    loadFilterSetting()
+                                    loadCooldownSetting()
+                                    loadColorBlindSettings()
+                                    updateTemporaryFilterButtonVisibility()
+                                    startBackgroundDataLoad()
+                                }
+                            }, 50)
                         } catch (e: Exception) {
                             L.e("HomeFragment", "Error during forced reinitialization", e)
                             showSafeErrorState()
                         }
                     }
-                }
+                }, 50)
                 return
             }
 
             if (!isInSharedContentMode) {
-                loadStudentSubjects()
-                loadFilterSetting()
-                loadCooldownSetting()
-                loadColorBlindSettings()
-                updateTemporaryFilterButtonVisibility()
+                binding.root.post {
+                    if (isAdded && _binding != null) {
+                        loadStudentSubjects()
+                        loadFilterSetting()
+                        loadCooldownSetting()
+                        loadColorBlindSettings()
+                        updateTemporaryFilterButtonVisibility()
+                        reorganizeHeaderLayout()
 
-                reorganizeHeaderLayout()
-
-                binding.root.postDelayed({
-                    if (isAdded && _binding != null && isResumed) {
-                        safeLoadSubstitutePlan()
+                        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+                        if (klasse != getString(R.string.home_not_selected) && ::classText.isInitialized) {
+                            classText.text = getString(R.string.home_class_prefix, klasse)
+                        }
                     }
-                }, 100)
+                }
+
+                if (currentJsonData == null || shouldLoadFromNetwork()) {
+                    binding.root.postDelayed({
+                        if (isAdded && _binding != null && !isInSharedContentMode) {
+                            startBackgroundDataLoad()
+                        }
+                    }, 50)
+                }
             }
         } catch (e: Exception) {
             L.e("HomeFragment", "Error in onResume", e)
@@ -602,6 +971,15 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun immediateLoad() {
+        if (!isAdded || _binding == null || isInSharedContentMode) {
+            return
+        }
+
+        L.d("HomeFragment", "Immediate substitute plan loading started")
+        startBackgroundDataLoad()
+    }
+
     private fun isSubjectRelevant(subject: String): Boolean {
         return studentSubjects.any { studentSubject ->
             subject.contains(studentSubject, ignoreCase = true)
@@ -617,13 +995,11 @@ class HomeFragment : Fragment() {
         loadCooldownSetting()
 
         if (!isInitialized && _binding != null) {
-            binding.root.postDelayed({
-                if (isAdded && _binding != null && !isInitialized) {
-                    L.d("HomeFragment", "Late initialization in onStart")
-                    loadSubstitutePlanWithCooldown()
-                    isInitialized = true
-                }
-            }, 200)
+            if (isAdded && _binding != null && !isInitialized) {
+                L.d("HomeFragment", "Immediate initialization in onStart")
+                immediateLoad()
+                isInitialized = true
+            }
         }
     }
 
@@ -655,188 +1031,6 @@ class HomeFragment : Fragment() {
         val typedValue = TypedValue()
         requireContext().theme.resolveAttribute(attrRes, typedValue, true)
         return ContextCompat.getColor(requireContext(), typedValue.resourceId)
-    }
-
-    private fun setupUI() {
-        val constraintLayout = binding.root
-        constraintLayout.removeAllViews()
-
-        headerLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundColor(getThemeColor(R.attr.headerBackgroundColor))
-            elevation = 8f
-        }
-
-        classText = TextView(requireContext()).apply {
-            textSize = 20f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = android.view.Gravity.CENTER
-            setTextColor(getThemeColor(R.attr.textPrimaryColor))
-            setPadding(0, 0, 0, 12)
-        }
-
-        lastUpdateText = TextView(requireContext()).apply {
-            textSize = 14f
-            gravity = android.view.Gravity.CENTER
-            setTextColor(getThemeColor(R.attr.textSecondaryColor))
-            setPadding(0, 0, 0, 16)
-        }
-
-        refreshButton = Button(requireContext()).apply {
-            text = getString(R.string.home_refresh)
-            textSize = 16f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setBackgroundColor(getThemeColor(R.attr.filterButtonBackgroundColor))
-            setTextColor(getThemeColor(R.attr.refreshButtonTextColor))
-            setPadding(64, 32, 64, 32)
-            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
-            setOnClickListener {
-                L.d("HomeFragment", "Refresh button clicked - forcing reload")
-                isFirstLoad = true
-                lastLoadTime = 0
-                loadSubstitutePlan()
-                lastLoadTime = System.currentTimeMillis()
-                isFirstLoad = false
-            }
-        }
-
-        val topRowLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
-        val filterEnabled = sharedPreferences.getBoolean("filter_only_my_subjects", false)
-        val shouldShowButtons = hasScannedDocument && filterEnabled
-        val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
-
-        // invisible left button (spacer  for temp filter btn)
-        invisibleLeftButton = ImageButton(requireContext()).apply {
-            setImageResource(android.R.drawable.ic_menu_view)
-            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
-            setPadding(16, 16, 16, 16)
-            isEnabled = false
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 16, 0)
-            }
-        }
-
-        temporaryFilterButton = ImageButton(requireContext()).apply {
-            setImageResource(R.drawable.ic_eye_closed)
-            background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
-            setPadding(16, 16, 16, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(16, 0, 0, 0)
-            }
-
-            setOnTouchListener { view, event ->
-                when (event.action) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        setImageResource(R.drawable.ic_eye_open)
-                        L.d("HomeFragment", "Temporary filter button pressed - lifting filter")
-                        isTemporaryFilterDisabled = true
-                        displaySubstitutePlan(getCurrentJsonData())
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        setImageResource(R.drawable.ic_eye_closed)
-                        L.d("HomeFragment", "Temporary filter button released - restoring filter")
-                        isTemporaryFilterDisabled = false
-                        displaySubstitutePlan(getCurrentJsonData())
-                        true
-                    }
-                    else -> false
-                }
-            }
-        }
-
-        classText.apply {
-            gravity = android.view.Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
-        }
-
-        // filter lift button views based on filter lift pos
-        if (!leftFilterLift) {
-            if (shouldShowButtons) {
-                temporaryFilterButton.visibility = View.VISIBLE
-                invisibleLeftButton.visibility = View.INVISIBLE
-            } else {
-                temporaryFilterButton.visibility = View.GONE
-                invisibleLeftButton.visibility = View.GONE
-            }
-            topRowLayout.addView(temporaryFilterButton)
-            topRowLayout.addView(classText)
-            topRowLayout.addView(invisibleLeftButton)
-        } else {
-            if (shouldShowButtons) {
-                temporaryFilterButton.visibility = View.VISIBLE
-                invisibleLeftButton.visibility = View.INVISIBLE
-            } else {
-                temporaryFilterButton.visibility = View.GONE
-                invisibleLeftButton.visibility = View.GONE
-            }
-            topRowLayout.addView(invisibleLeftButton)
-            topRowLayout.addView(classText)
-            topRowLayout.addView(temporaryFilterButton)
-        }
-
-        headerLayout.addView(topRowLayout)
-        headerLayout.addView(lastUpdateText)
-        headerLayout.addView(refreshButton)
-
-        contentScrollView = ScrollView(requireContext()).apply {
-            isFillViewport = true
-            setBackgroundColor(getThemeColor(R.attr.homeBackgroundColor))
-        }
-        contentLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 24)
-        }
-        contentScrollView.addView(contentLayout)
-
-        headerLayout.id = View.generateViewId()
-        contentScrollView.id = View.generateViewId()
-
-        val headerParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
-            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
-            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-            startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-            endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-        }
-
-        val scrollParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
-            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT,
-            0
-        ).apply {
-            topToBottom = headerLayout.id
-            bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-            startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-            endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-        }
-
-        constraintLayout.addView(headerLayout, headerParams)
-        constraintLayout.addView(contentScrollView, scrollParams)
-
-        setupPullToRefresh()
-
-        L.d("HomeFragment", "UI setup completed")
     }
 
     private fun loadColorBlindSettings() {
@@ -891,6 +1085,24 @@ class HomeFragment : Fragment() {
             return
         }
 
+        if (::contentLayout.isInitialized) {
+            contentLayout.removeAllViews()
+            val loadingText = TextView(requireContext()).apply {
+                text = getString(R.string.home_loading_plan)
+                gravity = android.view.Gravity.CENTER
+                textSize = 16f
+                alpha = 0.7f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = android.view.Gravity.CENTER
+                    topMargin = 50
+                }
+            }
+            contentLayout.addView(loadingText)
+        }
+
         scope?.launch {
             try {
                 L.d("HomeFragment", "Starting network request")
@@ -900,34 +1112,10 @@ class HomeFragment : Fragment() {
                     return@launch
                 }
 
-                if (::contentLayout.isInitialized) {
-                    contentLayout.removeAllViews()
-                    val loadingText = TextView(requireContext()).apply {
-                        text = getString(R.string.home_loading_plan)
-                        gravity = android.view.Gravity.CENTER
-                        textSize = 16f
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            gravity = android.view.Gravity.CENTER
-                            topMargin = 100
-                        }
-                    }
-                    contentLayout.addView(loadingText)
-                }
-
-                val lastUpdate = withContext(Dispatchers.IO) {
-                    fetchLastUpdateTime()
-                }
-
-                if (!isAdded || _binding == null) {
-                    L.w("HomeFragment", "Fragment detached during network call, aborting")
-                    return@launch
-                }
-
-                val substitutePlan = withContext(Dispatchers.IO) {
-                    fetchSubstitutePlan(klasse!!)
+                val networkData = withContext(Dispatchers.IO) {
+                    val lastUpdate = fetchLastUpdateTime()
+                    val substitutePlan = fetchSubstitutePlan(klasse!!)
+                    Pair(substitutePlan, lastUpdate)
                 }
 
                 if (!isAdded || _binding == null) {
@@ -935,6 +1123,7 @@ class HomeFragment : Fragment() {
                     return@launch
                 }
 
+                val (substitutePlan, lastUpdate) = networkData
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
                 if (::lastUpdateText.isInitialized) {
@@ -2175,7 +2364,7 @@ class HomeFragment : Fragment() {
 
     private fun findTableViewForEntry(dateIndex: Int, entryIndex: Int): View? {
         try {
-            if (!::contentLayout.isInitialized || contentLayout.childCount == 0) {
+            if (!::contentLayout.isInitialized || contentLayout.isEmpty()) {
                 L.w("HomeFragment", "Content layout not initialized or empty")
                 return null
             }

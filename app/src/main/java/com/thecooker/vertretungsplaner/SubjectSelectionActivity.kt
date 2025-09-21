@@ -2,6 +2,7 @@ package com.thecooker.vertretungsplaner
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -91,6 +92,12 @@ class SubjectSelectionActivity : BaseActivity() {
     private var isEditingMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        val landscapeEnabled = tempPrefs.getBoolean("landscape_mode_enabled", true)
+        if (!landscapeEnabled) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_subject_selection)
 
@@ -339,23 +346,22 @@ class SubjectSelectionActivity : BaseActivity() {
 
         fun addAlternativeRoomField(text: String = "") {
             if (alternativeRoomEditTexts.size >= 2) {
-                Toast.makeText(this, getString(R.string.sub_sel_max_alt_rooms), Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SubjectSelectionActivity, getString(R.string.sub_sel_max_alt_rooms), Toast.LENGTH_SHORT).show()
                 return
             }
 
-            val roomLayout = LinearLayout(this).apply {
+            val roomLayout = LinearLayout(this@SubjectSelectionActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 8, 0, 8)
             }
 
-            val editText = EditText(this).apply {
+            val editText = EditText(this@SubjectSelectionActivity).apply {
                 hint = getString(R.string.sub_sel_alt_room_hint)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setText(text)
             }
-            alternativeRoomEditTexts.add(editText)
 
-            val removeButton = Button(this).apply {
+            val removeButton = Button(this@SubjectSelectionActivity).apply {
                 setText("×")
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -370,9 +376,14 @@ class SubjectSelectionActivity : BaseActivity() {
 
             roomLayout.addView(editText)
             roomLayout.addView(removeButton)
-            alternativeRoomsContainer.addView(roomLayout, alternativeRoomsContainer.childCount - 1)
 
+            alternativeRoomEditTexts.add(editText)
+            alternativeRoomsContainer.visibility = View.INVISIBLE
+            alternativeRoomsContainer.addView(roomLayout, alternativeRoomsContainer.childCount - 1)
             btnAddAlternativeRoom.visibility = if (alternativeRoomEditTexts.size < 2) View.VISIBLE else View.GONE
+            alternativeRoomsContainer.post {
+                alternativeRoomsContainer.visibility = View.VISIBLE
+            }
         }
 
         fun updateAlternativeRoomsVisibility() {

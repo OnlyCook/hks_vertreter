@@ -1,6 +1,5 @@
 package com.thecooker.vertretungsplaner.ui.grades
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
@@ -234,8 +233,36 @@ class GradesFragment : Fragment() {
         showLoadingState()
 
         view.post {
-            setupRecyclerView()
+            if (isAdded && view.parent != null) {
+                performHeavyInitialization()
+            }
+        }
 
+        return view
+    }
+
+    override fun onResume() {
+        super.onResume()
+        L.d("GradesFragment", "onResume called")
+
+        try {
+            if (!isAdded) {
+                L.w("GradesFragment", "Fragment not properly attached")
+                return
+            }
+
+            if (gradeList.isNotEmpty()) {
+                updateGradeCount()
+                updateFinalGrade()
+            }
+        } catch (e: Exception) {
+            L.e("GradesFragment", "Error in onResume", e)
+        }
+    }
+
+    private fun performHeavyInitialization() {
+        try {
+            setupRecyclerView()
             checkForSubjectChanges()
 
             if (gradeList.isEmpty()) {
@@ -247,12 +274,16 @@ class GradesFragment : Fragment() {
             updateFinalGrade()
 
             hideLoadingState()
+        } catch (e: Exception) {
+            L.e("GradesFragment", "Error during initialization", e)
+            hideLoadingState()
+            Toast.makeText(requireContext(), "Error loading grades", Toast.LENGTH_LONG).show()
         }
-
-        return view
     }
 
     private fun showLoadingState() {
+        if (!isAdded) return
+
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
         val loadingText = loadingView.findViewById<TextView>(android.R.id.text1)
@@ -276,6 +307,8 @@ class GradesFragment : Fragment() {
     }
 
     private fun hideLoadingState() {
+        if (!isAdded) return
+
         if (::loadingView.isInitialized) {
             val rootLayout = loadingView.parent as? ViewGroup
             rootLayout?.removeView(loadingView)

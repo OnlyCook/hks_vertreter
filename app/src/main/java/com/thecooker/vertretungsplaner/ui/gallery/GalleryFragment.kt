@@ -199,6 +199,7 @@ class GalleryFragment : Fragment() {
     private lateinit var colorLegend: LinearLayout
 
     private var isLoading = true
+    private var isDelayedLoadScheduled = false
 
     private var currentLanguage = ""
     private var lastHighlightedLessonNumber: Int = -1
@@ -349,11 +350,58 @@ class GalleryFragment : Fragment() {
             refreshLanguageDependentContent()
         }
 
-        showLoadingState()
+        showInitialLoadingState()
 
-        loadDataAsync()
+        scheduleDelayedCalendarLoad()
 
         return binding.root
+    }
+
+    private fun scheduleDelayedCalendarLoad() {
+        if (!isAdded || _binding == null || isDelayedLoadScheduled) {
+            return
+        }
+
+        isDelayedLoadScheduled = true
+
+        binding.root.postDelayed({
+            if (isAdded && _binding != null && isResumed) {
+                L.d("GalleryFragment", "Delayed calendar loading started")
+                loadDataAsync()
+            }
+            isDelayedLoadScheduled = false
+        }, 150)
+    }
+
+    private fun showInitialLoadingState() {
+        calendarGrid.removeAllViews()
+
+        val loadingRow = TableRow(requireContext()).apply {
+            layoutParams = TableLayout.LayoutParams(
+                TableLayout.LayoutParams.MATCH_PARENT,
+                TableLayout.LayoutParams.WRAP_CONTENT
+            )
+            gravity = Gravity.CENTER
+        }
+
+        val loadingMessage = TextView(requireContext()).apply {
+            text = getString(R.string.gall_calendar_loading)
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setPadding(32, 64, 32, 64)
+            setTextColor(getThemeColor(R.attr.textPrimaryColor))
+            setTypeface(null, Typeface.BOLD)
+
+            layoutParams = TableRow.LayoutParams(
+                TableRow.LayoutParams.MATCH_PARENT,
+                200
+            )
+        }
+
+        loadingRow.addView(loadingMessage)
+        calendarGrid.addView(loadingRow)
+
+        colorLegend.visibility = View.GONE
     }
 
     private fun loadDataAsync() {
@@ -386,6 +434,8 @@ class GalleryFragment : Fragment() {
                     isInitialDataLoaded = true
                     updateCalendar()
 
+                    loadColorLegendPreference()
+
                     Handler(Looper.getMainLooper()).postDelayed({
                         startInitialHighlighting()
                         setupRealTimeUpdates()
@@ -407,7 +457,7 @@ class GalleryFragment : Fragment() {
         val loadingRow = TableRow(requireContext()).apply {
             layoutParams = TableLayout.LayoutParams(
                 TableLayout.LayoutParams.MATCH_PARENT,
-                TableLayout.LayoutParams.MATCH_PARENT
+                TableLayout.LayoutParams.WRAP_CONTENT
             )
             gravity = Gravity.CENTER
         }
@@ -422,12 +472,18 @@ class GalleryFragment : Fragment() {
 
             layoutParams = TableRow.LayoutParams(
                 TableRow.LayoutParams.MATCH_PARENT,
-                TableRow.LayoutParams.MATCH_PARENT
+                400
             )
         }
 
         loadingRow.addView(loadingMessage)
         calendarGrid.addView(loadingRow)
+
+        colorLegend.visibility = View.GONE
+    }
+
+    private fun hideLoadingState() {
+        colorLegend.visibility = View.VISIBLE
     }
 
     private fun showErrorState() {
@@ -2917,7 +2973,22 @@ class GalleryFragment : Fragment() {
         }
     }
 
+    private fun loadColorLegendPreference() {
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val colorLegendEnabled = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
+        colorLegend.visibility = if (colorLegendEnabled) View.VISIBLE else View.GONE
+    }
+
     private fun setupColorLegend() {
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val colorLegendEnabled = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
+
+        if (!colorLegendEnabled) {
+            colorLegend.visibility = View.GONE
+            return
+        }
+
+        colorLegend.visibility = View.VISIBLE
         colorLegend.removeAllViews()
 
         colorLegend.orientation = LinearLayout.VERTICAL
@@ -5966,30 +6037,89 @@ class GalleryFragment : Fragment() {
         }
     }
 
+    private fun Int.dpToPx(): Int {
+        return (this * requireContext().resources.displayMetrics.density).toInt()
+    }
+
     private fun setupWeekButtons() {
         val prevButton = binding.root.findViewById<Button>(R.id.btnPreviousWeek)
         val nextButton = binding.root.findViewById<Button>(R.id.btnNextWeek)
 
-        fun setArrow(button: Button, iconRes: Int, sizeDp: Int, paddingDp: Int) {
-            val drawable = AppCompatResources.getDrawable(requireContext(), iconRes)
-            val sizePx = (sizeDp * resources.displayMetrics.density).toInt()
-            drawable?.setBounds(0, 0, sizePx, sizePx)
+        prevButton.apply {
+            text = ""
+            setPadding(32, 8, 8, 8)
 
-            button.text = ""
-            button.setCompoundDrawables(
-                if (iconRes == R.drawable.ic_arrow_left) drawable else null,
-                null,
-                if (iconRes == R.drawable.ic_arrow_right) drawable else null,
-                null
-            )
-            button.compoundDrawablePadding = (-paddingDp * resources.displayMetrics.density).toInt()
+            layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
+                width = 56.dpToPx()
+                height = 48.dpToPx()
+                gravity = Gravity.CENTER
+                marginStart = 4.dpToPx()
+            }
+
+            val drawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_left)
+            drawable?.let { arrow ->
+                val size = 32.dpToPx()
+                arrow.setBounds(0, 0, size, size)
+                arrow.setTint(getThemeColor(R.attr.settingsColorPrimary))
+                setCompoundDrawables(arrow, null, null, null)
+            }
+
+            contentDescription = getString(R.string.gall_previous_week)
+
+            gravity = Gravity.CENTER
+
+            setOnTouchListener { view, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        view.alpha = 0.6f
+                        false
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        view.alpha = 1.0f
+                        false
+                    }
+                    else -> false
+                }
+            }
         }
 
-        setArrow(prevButton, R.drawable.ic_arrow_left, sizeDp = 32, paddingDp = 0)
-        prevButton.contentDescription = getString(R.string.gall_previous_week)
+        nextButton.apply {
+            text = ""
+            setPadding(8, 8, 32, 8)
 
-        setArrow(nextButton, R.drawable.ic_arrow_right, sizeDp = 32, paddingDp = 0)
-        nextButton.contentDescription = getString(R.string.gall_next_week)
+            layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
+                width = 56.dpToPx()
+                height = 48.dpToPx()
+                gravity = Gravity.CENTER
+                marginEnd = 4.dpToPx()
+            }
+
+            val drawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_right)
+            drawable?.let { arrow ->
+                val size = 32.dpToPx()
+                arrow.setBounds(0, 0, size, size)
+                arrow.setTint(getThemeColor(R.attr.settingsColorPrimary))
+                setCompoundDrawables(null, null, arrow, null)
+            }
+
+            contentDescription = getString(R.string.gall_next_week)
+
+            gravity = Gravity.CENTER
+
+            setOnTouchListener { view, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        view.alpha = 0.6f
+                        false
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        view.alpha = 1.0f
+                        false
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     private fun detectLanguageChange(): Boolean {
@@ -6419,11 +6549,19 @@ class GalleryFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+
+        if (!isAdded || _binding == null) {
+            L.w("GalleryFragment", "Fragment not properly attached")
+            return
+        }
+
         if (detectLanguageChange()) {
             refreshLanguageDependentContent()
         }
+
         loadRealTimePreference()
         loadWeekendPreference()
+        loadColorLegendPreference()
         val oldColorBlindMode = colorBlindMode
         loadColorBlindSettings()
 
@@ -6431,8 +6569,12 @@ class GalleryFragment : Fragment() {
             setupColorLegend()
         }
 
-        setupRealTimeUpdates()
-        updateCalendar()
+        if (isInitialDataLoaded) {
+            setupRealTimeUpdates()
+            updateCalendar()
+        } else if (!isDelayedLoadScheduled) {
+            scheduleDelayedCalendarLoad()
+        }
     }
 
     override fun onPause() {

@@ -384,9 +384,19 @@ class ExamFragment : Fragment() {
         initializeViews(view)
         setupFilePickerLaunchers()
 
-        showLoadingState() // instant
+        showLoadingState()
 
-        view.post { // async
+        view.post {
+            if (isAdded && view.parent != null) {
+                performHeavyInitialization()
+            }
+        }
+
+        return view
+    }
+
+    private fun performHeavyInitialization() {
+        try {
             CalendarDataManager.getInstance(requireContext()).loadCalendarData()
 
             setupRecyclerView()
@@ -397,9 +407,27 @@ class ExamFragment : Fragment() {
 
             isLoading = false
             hideLoadingState()
+        } catch (e: Exception) {
+            L.e("ExamFragment", "Error during initialization", e)
+            isLoading = false
+            hideLoadingState()
+            Toast.makeText(requireContext(), "Error loading exams", Toast.LENGTH_LONG).show()
         }
+    }
 
-        return view
+    private fun showErrorState() {
+        if (!isAdded) return
+
+        hideLoadingState()
+        Toast.makeText(requireContext(), getString(R.string.exam_loading_error), Toast.LENGTH_LONG).show()
+
+        recyclerView.visibility = View.VISIBLE
+        searchBar.visibility = View.VISIBLE
+        btnAddExam.visibility = View.VISIBLE
+        btnMenu.visibility = View.VISIBLE
+        tvExamCount.visibility = View.VISIBLE
+
+        isLoading = false
     }
 
     private fun showLoadingState() {
@@ -411,7 +439,15 @@ class ExamFragment : Fragment() {
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
-            setTextColor(resources.getColor(android.R.color.black))
+
+            val textColor = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                requireContext().getColor(android.R.color.primary_text_dark)
+            } else {
+                @Suppress("DEPRECATION")
+                requireContext().resources.getColor(android.R.color.primary_text_dark)
+            }
+            setTextColor(textColor)
+
             setTypeface(null, Typeface.BOLD)
         }
 
@@ -2173,7 +2209,7 @@ class ExamFragment : Fragment() {
 
     private fun importExamData(content: String) {
         try {
-            backupManager.importExamData(content)
+            backupManager.importExamDataFromFullBackup(content)
 
             loadExams()
 
@@ -3155,6 +3191,23 @@ class ExamFragment : Fragment() {
         return Color.argb(a, r, g, b)
     }
 
+    private fun waitForInitializationThenExecute(action: () -> Unit) {
+        if (!isLoading) {
+            Handler(Looper.getMainLooper()).postDelayed(action, 100)
+        } else {
+            val checkInitialization = object : Runnable {
+                override fun run() {
+                    if (!isLoading && isAdded) {
+                        action()
+                    } else if (isAdded) {
+                        Handler(Looper.getMainLooper()).postDelayed(this, 100)
+                    }
+                }
+            }
+            Handler(Looper.getMainLooper()).postDelayed(checkInitialization, 200)
+        }
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -3167,7 +3220,7 @@ class ExamFragment : Fragment() {
             if (isLoading) {
                 Handler(Looper.getMainLooper()).postDelayed({
                     handleSharedExamFromUri(uriString)
-                }, 100)
+                }, 500)
             } else {
                 Handler(Looper.getMainLooper()).postDelayed({
                     handleSharedExamFromUri(uriString)

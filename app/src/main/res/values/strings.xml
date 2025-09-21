@@ -599,6 +599,11 @@
     <string name="act_set_class_advanced_successfully">Erfolgreich in Klasse %s aufgestiegen</string>
     <string name="act_set_class_descended_successfully">Erfolgreich in Klasse %s gewechselt</string>
     <string name="act_set_class_changed_successfully">Erfolgreich zu Klasse %s gewechselt</string>
+    <string name="act_set_color_legend">Farblegende</string>
+    <string name="act_set_color_legend_desc">Zeigt eine Legende mit Farberklärungen im Kalender an</string>
+    <string name="act_set_show_color_legend">Farblegende anzeigen</string>
+    <string name="act_set_color_legend_enabled">Farblegende aktiviert</string>
+    <string name="act_set_color_legend_disabled">Farblegende deaktiviert</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -751,6 +756,7 @@
     <string name="slide_free_lesson">Freistunde</string>
     <string name="slide_homework_not_found">Hausaufgabe nicht gefunden</string>
     <string name="slide_homework_notes">"Hausaufgaben Notizen"</string>
+    <string name="slide_loading_error">Fehler beim Laden der Hausaufgaben</string>
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Nicht ausgewählt</string>
@@ -1051,6 +1057,7 @@
     <string name="exam_preserve_notes">Notizen von bestehenden Klausuren übernehmen</string>
     <string name="exam_preserve_notes_message">Sie haben bereits Klausuren mit Notizen oder Noten. Möchten Sie diese bei passenden Klausuren im neuen Stundenplan übernehmen? Überfallige Klausuren mit Noten werden automatisch beibehalten.</string>
     <string name="exam_continue">Fortfahren</string>
+    <string name="exam_loading_error">Fehler beim Laden der Klausuren</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen...</string>

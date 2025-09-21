@@ -599,6 +599,11 @@
     <string name="act_set_class_changed_successfully">Successfully switched to class %s</string>
     <string name="act_set_show_app_info">Show App Information</string>
     <string name="act_set_hide_app_info">Hide App Information</string>
+    <string name="act_set_color_legend">Color Legend</string>
+    <string name="act_set_color_legend_desc">Shows a legend explaining colors in the calendar</string>
+    <string name="act_set_show_color_legend">Show color legend</string>
+    <string name="act_set_color_legend_enabled">Color legend enabled</string>
+    <string name="act_set_color_legend_disabled">Color legend disabled</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -751,6 +756,7 @@
     <string name="slide_free_lesson">Free period</string>
     <string name="slide_homework_not_found">Couldn\'t find homework</string>
     <string name="slide_homework_notes">"Homework notes"</string>
+    <string name="slide_loading_error">Error loading homework</string>
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Not selected</string>
@@ -1051,6 +1057,7 @@
     <string name="exam_preserve_notes">Transfer notes from existing exams</string>
     <string name="exam_preserve_notes_message">You already have exams with notes oder grades. Would you like to transfer these to matching exams in the new schedule? Overdue exams with grades are automatically retained.</string>
     <string name="exam_continue">Continue</string>
+    <string name="exam_loading_error">Error loading exams</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Loading calendar...</string>

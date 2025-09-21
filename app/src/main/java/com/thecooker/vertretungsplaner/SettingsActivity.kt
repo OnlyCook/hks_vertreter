@@ -157,7 +157,15 @@ class SettingsActivity : BaseActivity() {
     // class advancement
     private lateinit var btnAdvanceClass: Button
 
+    private lateinit var switchCalendarColorLegend: Switch
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        val landscapeEnabled = tempPrefs.getBoolean("landscape_mode_enabled", true)
+        if (!landscapeEnabled) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
@@ -190,6 +198,7 @@ class SettingsActivity : BaseActivity() {
         setupDarkModeSetting()
         setupCalendarSettings()
         setupCalendarWeekendSetting()
+        setupCalendarColorLegendSetting()
         setupBackUpManager()
         setupFilterLift()
         setupLanguageSettings()
@@ -406,6 +415,7 @@ class SettingsActivity : BaseActivity() {
         btnAdvanceClass = findViewById(R.id.btnAdvanceClass)
         layoutAppInfoContent = findViewById(R.id.layoutAppInfoContent)
         btnAppInfoToggle = findViewById(R.id.btnAppInfoToggle)
+        switchCalendarColorLegend = findViewById(R.id.switchCalendarColorLegend)
     }
 
     private fun setupToolbar() {
@@ -2559,6 +2569,10 @@ class SettingsActivity : BaseActivity() {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
+        if (!landscapeEnabled && resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
         val intent = Intent().apply {
             action = "com.thecooker.vertretungsplaner.ORIENTATION_CHANGED"
             putExtra("landscape_enabled", landscapeEnabled)
@@ -2676,6 +2690,29 @@ class SettingsActivity : BaseActivity() {
                     Toast.LENGTH_SHORT).show()
             } else {
                 sharedPreferences.edit {putBoolean("calendar_real_time_enabled", isChecked) }
+            }
+        }
+    }
+
+    private fun setupCalendarColorLegendSetting() {
+        val colorLegendEnabled = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
+        switchCalendarColorLegend.isChecked = colorLegendEnabled
+
+        switchCalendarColorLegend.setOnCheckedChangeListener { _, isChecked ->
+            if (!isInitializing) {
+                sharedPreferences.edit {
+                    putBoolean("calendar_color_legend_enabled", isChecked)
+                }
+
+                Toast.makeText(this,
+                    if (isChecked) getString(R.string.act_set_color_legend_enabled)
+                    else getString(R.string.act_set_color_legend_disabled),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                sharedPreferences.edit {
+                    putBoolean("calendar_color_legend_enabled", isChecked)
+                }
             }
         }
     }
@@ -3494,13 +3531,16 @@ class SettingsActivity : BaseActivity() {
             .create()
 
         val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
-        btnContinue.setTextColor(buttonColor)
+        val grayColor = ContextCompat.getColor(this, android.R.color.darker_gray)
+
+        btnContinue.setTextColor(grayColor)
         btnCancel.setTextColor(buttonColor)
 
         spinnerNewClass.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (position == 0) {
                     btnContinue.isEnabled = false
+                    btnContinue.setTextColor(grayColor)
                     return
                 }
 
@@ -3509,10 +3549,12 @@ class SettingsActivity : BaseActivity() {
 
                 updateAdvancementDialog(advancementType, tvAdvancementType, checkboxPreserveGrades)
                 btnContinue.isEnabled = true
+                btnContinue.setTextColor(buttonColor)
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {
                 btnContinue.isEnabled = false
+                btnContinue.setTextColor(grayColor)
             }
         }
 

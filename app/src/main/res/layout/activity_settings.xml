@@ -1139,6 +1139,72 @@
 
             </androidx.cardview.widget.CardView>
 
+            <!-- Kalender color legend settings -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:elevation="3dp"
+                android:radius="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp"
+                    android:background="?attr/cardBackgroundColor">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/act_set_color_legend"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/settingsColorPrimary"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/act_set_color_legend_desc"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        android:lineSpacingExtra="2dp"
+                        android:layout_marginBottom="16dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/act_set_show_color_legend"
+                                android:textSize="14sp"
+                                android:textColor="?attr/textPrimaryColor" />
+
+                        </LinearLayout>
+
+                        <Switch
+                            android:id="@+id/switchCalendarColorLegend"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="24dp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </androidx.cardview.widget.CardView>
+
             <!-- divider -->
             <View
                 android:layout_width="match_parent"

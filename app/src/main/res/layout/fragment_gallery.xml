@@ -63,17 +63,20 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="8dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
         android:background="?attr/galleryBackgroundColor">
 
         <Button
             android:id="@+id/btnPreviousWeek"
-            android:layout_width="48dp"
+            android:layout_width="56dp"
             android:layout_height="48dp"
-            android:text="◄"
-            android:textSize="18sp"
+            android:layout_gravity="center"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:textColor="?attr/settingsColorPrimary" />
+            android:contentDescription="@string/gall_previous_week"
+            style="?android:attr/borderlessButtonStyle" />
 
         <TextView
             android:id="@+id/currentWeekTextView"
@@ -88,16 +91,18 @@
             android:clickable="true"
             android:focusable="true"
             android:background="?attr/selectableItemBackground"
-            android:padding="8dp" />
+            android:padding="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp" />
 
         <Button
             android:id="@+id/btnNextWeek"
-            android:layout_width="48dp"
+            android:layout_width="56dp"
             android:layout_height="48dp"
-            android:text="►"
-            android:textSize="18sp"
+            android:layout_gravity="center"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:textColor="?attr/settingsColorPrimary" />
+            android:contentDescription="@string/gall_next_week"
+            style="?android:attr/borderlessButtonStyle" />
 
     </LinearLayout>
 
