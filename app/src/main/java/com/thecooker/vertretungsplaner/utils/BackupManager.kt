@@ -905,8 +905,10 @@ class BackupManager(private val context: Context) {
                     val existingInfo = calendarManager.getCalendarInfoForDate(exam.date)
 
                     if (existingInfo != null) {
-                        val updatedExams = existingInfo.exams.toMutableList()
-                        if (!updatedExams.any { it.id == exam.id }) {
+                        val examAlreadyExists = existingInfo.exams.any { it.id == exam.id }
+
+                        if (!examAlreadyExists) {
+                            val updatedExams = existingInfo.exams.toMutableList()
                             updatedExams.add(exam)
                             val updatedInfo = existingInfo.copy(exams = updatedExams)
                             calendarManager.updateCalendarDay(updatedInfo)

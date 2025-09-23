@@ -1748,7 +1748,7 @@ class GalleryFragment : Fragment() {
         val isToday = isSameDay(currentDay.time, today.time)
 
         if (isToday) {
-            dayHeader.background = createRoundedDrawable("#FFC107".toColorInt())
+            dayHeader.background = createRoundedDrawable(getThemeColor(R.attr.navDividerColor))
             dayHeader.setTextColor(Color.BLACK)
         }
 
@@ -2384,7 +2384,7 @@ class GalleryFragment : Fragment() {
                         isSameWeek(currentWeekStart.time, today.time)
 
                 background = if (isToday) {
-                    createFlatRoundedDrawable("#FFC107")
+                    createFlatRoundedDrawable(getThemeColor(R.attr.navDividerColor))
                 } else {
                     createFlatRoundedDrawable("#0f5293")
                 }
@@ -4768,7 +4768,7 @@ class GalleryFragment : Fragment() {
                             val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
                             cell.background = createRoundedDrawableWithBorder(
                                 breakBackgroundColor,
-                                "#FFC107".toColorInt(),
+                                getThemeColor(R.attr.navDividerColor),
                                 8
                             )
                             return
@@ -4789,7 +4789,7 @@ class GalleryFragment : Fragment() {
                             val breakBackgroundColor = getThemeColor(R.attr.calendarBreakBackgroundColor)
                             cell.background = createRoundedDrawableWithBorder(
                                 breakBackgroundColor,
-                                "#FFC107".toColorInt(),
+                                getThemeColor(R.attr.navDividerColor),
                                 8
                             )
                             return
@@ -4910,9 +4910,9 @@ class GalleryFragment : Fragment() {
 
                 val pulseColor = Color.argb(
                     (255 * alpha).toInt(),
-                    Color.red("#FFC107".toColorInt()),
-                    Color.green("#FFC107".toColorInt()),
-                    Color.blue("#FFC107".toColorInt())
+                    Color.red(getThemeColor(R.attr.navDividerColor)),
+                    Color.green(getThemeColor(R.attr.navDividerColor)),
+                    Color.blue(getThemeColor(R.attr.navDividerColor))
                 )
 
                 try {
@@ -4957,7 +4957,7 @@ class GalleryFragment : Fragment() {
 
                     cell.background = createRoundedDrawableWithBorder(
                         actualBackgroundColor,
-                        "#FFC107".toColorInt(),
+                        getThemeColor(R.attr.navDividerColor),
                         8
                     )
                 }
@@ -5461,7 +5461,7 @@ class GalleryFragment : Fragment() {
         }
 
         try {
-            cell.background = createRoundedDrawable("#FFC107".toColorInt())
+            cell.background = createRoundedDrawable(getThemeColor(R.attr.navDividerColor))
             cell.setTextColor(Color.BLACK)
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error highlighting lesson time cell", e)

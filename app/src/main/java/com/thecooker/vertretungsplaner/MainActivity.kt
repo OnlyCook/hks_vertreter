@@ -120,6 +120,15 @@ class MainActivity : BaseActivity() {
                 }
             }
 
+            if (menuItem.itemId == R.id.nav_home && navController.currentDestination?.id != R.id.nav_home) {
+                val bundle = Bundle().apply {
+                    putBoolean("from_navigation_drawer", true)
+                }
+                navController.navigate(R.id.nav_home, bundle)
+                binding.drawerLayout.closeDrawers()
+                return@setNavigationItemSelectedListener true
+            }
+
             val result = NavigationUI.onNavDestinationSelected(menuItem, navController)
             binding.drawerLayout.closeDrawers()
             result

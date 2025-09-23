@@ -1148,13 +1148,18 @@ class SlideshowFragment : Fragment() {
     private fun sortHomework() {
         homeworkList.sortWith { a, b ->
             when {
-                // both completed -> sort by due date then due time
+                // both completed -> sort by due date, then lesson/time, then subject
                 a.isCompleted && b.isCompleted -> {
                     val dateComparison = a.dueDate.compareTo(b.dueDate)
                     if (dateComparison != 0) {
                         dateComparison
                     } else {
-                        compareByTime(a, b)
+                        val timeComparison = compareByTimeAndLesson(a, b)
+                        if (timeComparison != 0) {
+                            timeComparison
+                        } else {
+                            a.subject.compareTo(b.subject, ignoreCase = true)
+                        }
                     }
                 }
 
@@ -1169,13 +1174,18 @@ class SlideshowFragment : Fragment() {
                 // both uncompleted
                 !a.isCompleted && !b.isCompleted -> {
                     when {
-                        // both overdue -> sort by date then time
+                        // both overdue -> sort by date, then lesson/time, then subject
                         a.isOverdue() && b.isOverdue() -> {
                             val dateComparison = a.dueDate.compareTo(b.dueDate)
                             if (dateComparison != 0) {
                                 dateComparison
                             } else {
-                                compareByTime(a, b)
+                                val timeComparison = compareByTimeAndLesson(a, b)
+                                if (timeComparison != 0) {
+                                    timeComparison
+                                } else {
+                                    a.subject.compareTo(b.subject, ignoreCase = true)
+                                }
                             }
                         }
 
@@ -1183,13 +1193,18 @@ class SlideshowFragment : Fragment() {
                         a.isOverdue() && !b.isOverdue() -> 1
                         !a.isOverdue() && b.isOverdue() -> -1
 
-                        // both not overdue -> sort by date then time
+                        // both not overdue -> sort by date, then lesson/time, then subject
                         else -> {
                             val dateComparison = a.dueDate.compareTo(b.dueDate)
                             if (dateComparison != 0) {
                                 dateComparison
                             } else {
-                                compareByTime(a, b)
+                                val timeComparison = compareByTimeAndLesson(a, b)
+                                if (timeComparison != 0) {
+                                    timeComparison
+                                } else {
+                                    a.subject.compareTo(b.subject, ignoreCase = true)
+                                }
                             }
                         }
                     }
@@ -1201,17 +1216,26 @@ class SlideshowFragment : Fragment() {
         adapter.notifyDataSetChanged()
     }
 
-    private fun compareByTime(a: HomeworkEntry, b: HomeworkEntry): Int {
+    private fun compareByTimeAndLesson(a: HomeworkEntry, b: HomeworkEntry): Int {
         return when {
+            // both have lesson numbers -> sort by lesson number (earlier lessons first)
+            a.lessonNumber != null && b.lessonNumber != null -> {
+                a.lessonNumber!!.compareTo(b.lessonNumber!!)
+            }
             // both have due times -> sort by time
             a.dueTime != null && b.dueTime != null -> {
                 a.dueTime!!.compareTo(b.dueTime!!)
             }
-            // 1 has time, 2 doesnt -> 1 comes first (higher priority)
+            // one has lesson number, one has time -> lesson number takes priority (comes first)
+            a.lessonNumber != null && b.dueTime != null -> -1
+            a.dueTime != null && b.lessonNumber != null -> 1
+            // one has lesson number, one doesnt -> lesson number comes first (higher priority)
+            a.lessonNumber != null && b.lessonNumber == null -> -1
+            b.lessonNumber != null -> 1
+            // one has time, one doesnt -> time comes first (higher priority)
             a.dueTime != null && b.dueTime == null -> -1
-            // 2 has time, 1 doesnt -> 2 comes first (higher priority)
-            a.dueTime == null && b.dueTime != null -> 1
-            // neither has time -> equal priority
+            b.dueTime != null -> 1
+            // neither has time or lesson -> equal priority
             else -> 0
         }
     }
@@ -1239,7 +1263,7 @@ class SlideshowFragment : Fragment() {
     }
 
     private fun updateHomeworkCount() {
-        val uncompletedCount = homeworkList.count { !it.isCompleted }
+        val uncompletedCount = homeworkList.count { !it.isCompleted && !it.isOverdue() }
         val totalCount = homeworkList.size
         tvHomeworkCount.text = getString(R.string.slide_homework_count, uncompletedCount, totalCount)
     }

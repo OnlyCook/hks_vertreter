@@ -1,4 +1,8 @@
-# HKS Vertreter
+<h1 align="center">
+  <img src="app/src/main/res/drawable/hks_trans.webp" alt="HKS Vertreter Icon" width="96" height="96">
+  <br>
+  HKS Vertreter
+</h1>
 
 Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
@@ -44,12 +48,12 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 3. Installiere die App auf deinem Android-Gerät
    - *Hinweis: Du musst möglicherweise "Installation aus unbekannten Quellen" aktivieren*
 
-## 🎨 Screenshots (1.5.2)
+## 🎨 Screenshots (1.7.2)
 <div align="center">
    <img src="git/image_1.jpeg" width="200" alt="Screenshot 1">
    <img src="git/image_2.jpeg" width="200" alt="Screenshot 2">
-   <img src="git/image_3.png" width="200" alt="Screenshot 2">
-   <img src="git/image_5.png" width="200" alt="Screenshot 3">
+   <img src="git/image_3.png" width="200" alt="Screenshot 3">
+   <img src="git/image_5.png" width="200" alt="Screenshot 4">
 </div>
 
 ## ⚠️ Wichtige Hinweise
@@ -109,7 +113,7 @@ Diese App verarbeitet **keine personenbezogenen Daten**. Alle von dir eingegeben
   - Noten und Bewertungen
   - App-Einstellungen und Personalisierung
 
-*So transparent wie möglich - du entscheidest selbst, welche Daten du eingeben möchtest.*
+*So transparent wie möglich – du entscheidest selbst, welche Daten du eingeben möchtest.*
 
 ### Datenschutz
 - ✅ Keine Datensammlung durch den Entwickler

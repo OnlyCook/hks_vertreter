@@ -2213,12 +2213,6 @@ class ExamFragment : Fragment() {
 
             loadExams()
 
-            val calendarManager = CalendarDataManager.getInstance(requireContext())
-            for (exam in examList) {
-                addExamToCalendarDataManager(exam)
-            }
-            calendarManager.saveCalendarData()
-
             filterExams(searchBar.text.toString())
             updateExamCount()
 

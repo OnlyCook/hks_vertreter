@@ -28,6 +28,7 @@ import com.thecooker.vertretungsplaner.utils.TimePickerDialogHelper
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.os.Build
@@ -3549,7 +3550,7 @@ class SettingsActivity : BaseActivity() {
 
                 updateAdvancementDialog(advancementType, tvAdvancementType, checkboxPreserveGrades)
                 btnContinue.isEnabled = true
-                btnContinue.setTextColor(buttonColor)
+                btnContinue.setTextColor(Color.WHITE)
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {

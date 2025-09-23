@@ -68,6 +68,8 @@ class HomeFragment : Fragment() {
     private var initializationAttempts = 0
     private val maxInitializationAttempts = 3
     private var isInSharedContentMode = false
+    private var isFirstStartup = true
+    private var isFromNavigationDrawer = false
 
     // filter variable
     private var filterOnlyMySubjects = false
@@ -88,7 +90,6 @@ class HomeFragment : Fragment() {
     private var refreshContainer: LinearLayout? = null
     private var refreshIcon: ImageView? = null
 
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -103,6 +104,8 @@ class HomeFragment : Fragment() {
                 sharedPreferences = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
                 scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+                isFromNavigationDrawer = arguments?.getBoolean("from_navigation_drawer", false) ?: false
+
                 isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
                 if (isInSharedContentMode) {
@@ -116,7 +119,17 @@ class HomeFragment : Fragment() {
                     loadCooldownSetting()
                     loadColorBlindSettings()
 
-                    startBackgroundDataLoad()
+                    if (isFirstStartup && !isFromNavigationDrawer) {
+                        startBackgroundDataLoad()
+                        isFirstStartup = false
+                    } else {
+                        binding.root.postDelayed({
+                            if (isAdded && _binding != null) {
+                                startBackgroundDataLoad()
+                            }
+                        }, 25)
+                        isFirstStartup = false
+                    }
                 }
             }
 
@@ -162,7 +175,8 @@ class HomeFragment : Fragment() {
             classText.text = getString(R.string.home_class_prefix, klasse)
         }
 
-        val willLoadFromNetwork = shouldLoadFromNetwork()
+        val hasBasicConn = hasBasicConnectivity()
+        val willLoadFromNetwork = hasBasicConn && shouldLoadFromNetwork()
 
         setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
 
@@ -177,7 +191,19 @@ class HomeFragment : Fragment() {
                     val hasCachedData = loadCachedDataInBackground(klasse)
                     if (!hasCachedData) {
                         withContext(Dispatchers.Main) {
-                            showNoDataMessage()
+                            if (!hasBasicConn) {
+                                showOfflineNoDataMessage()
+                            } else {
+                                showNoDataMessage()
+                            }
+                        }
+                    } else {
+                        if (!hasBasicConn) {
+                            withContext(Dispatchers.Main) {
+                                view?.let {
+                                    Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
                 }
@@ -186,10 +212,42 @@ class HomeFragment : Fragment() {
                 L.e("HomeFragment", "Error in background data load", e)
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
-                        showSafeErrorState()
+                        scope?.launch(Dispatchers.IO) {
+                            val hasCachedData = loadCachedDataInBackground(klasse)
+                            if (!hasCachedData) {
+                                withContext(Dispatchers.Main) {
+                                    showOfflineNoDataMessage()
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private fun showOfflineNoDataMessage() {
+        if (!::contentLayout.isInitialized || !isAdded) return
+
+        contentLayout.removeAllViews()
+        val noDataText = TextView(requireContext()).apply {
+            text = getString(R.string.home_no_cached_data)
+            gravity = android.view.Gravity.CENTER
+            textSize = 16f
+            alpha = 0.7f
+            setTextColor(getThemeColor(R.attr.textSecondaryColor))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+                topMargin = 50
+            }
+        }
+        contentLayout.addView(noDataText)
+
+        view?.let {
+            Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_LONG).show()
         }
     }
 
@@ -257,11 +315,27 @@ class HomeFragment : Fragment() {
                 val rawJsonData = JSONObject(cachedData)
                 val filteredJsonData = filterPastDates(rawJsonData)
 
+                currentJsonData = filteredJsonData
+
                 withContext(Dispatchers.Main) {
-                    if (isAdded && _binding != null) {
+                    if (isAdded && _binding != null && ::contentLayout.isInitialized) {
                         contentLayout.removeAllViews()
                         displaySubstitutePlan(filteredJsonData)
-                        L.d("HomeFragment", "Displayed cached data (cooldown active)")
+
+                        if (::lastUpdateText.isInitialized) {
+                            val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+                            if (lastUpdateFile.exists()) {
+                                val lastUpdate = lastUpdateFile.readText()
+                                val hasConnectivity = hasBasicConnectivity()
+                                lastUpdateText.text = if (hasConnectivity) {
+                                    getString(R.string.home_last_update, lastUpdate)
+                                } else {
+                                    getString(R.string.home_last_update_offline, lastUpdate)
+                                }
+                            }
+                        }
+
+                        L.d("HomeFragment", "Displayed cached data and preserved in currentJsonData")
                     }
                 }
                 true
@@ -275,52 +349,103 @@ class HomeFragment : Fragment() {
     }
 
     private suspend fun loadNetworkDataInBackground(klasse: String) {
-        if (!isNetworkAvailable()) {
-            L.d("HomeFragment", "No internet connection, using cached data")
+        if (!hasBasicConnectivity()) {
+            L.d("HomeFragment", "No connectivity detected at start, loading cached data immediately")
             withContext(Dispatchers.Main) {
-                if (isAdded && _binding != null && ::lastUpdateText.isInitialized) {
-                    val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
-                    if (lastUpdateFile.exists()) {
-                        val lastUpdate = lastUpdateFile.readText()
-                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                if (isAdded && _binding != null) {
+                    val hasCachedData = loadCachedDataInBackground(klasse)
+                    if (!hasCachedData) {
+                        showOfflineNoDataMessage()
+                    } else {
+                        if (::lastUpdateText.isInitialized) {
+                            val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+                            if (lastUpdateFile.exists()) {
+                                val lastUpdate = lastUpdateFile.readText()
+                                lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                            }
+                        }
+                        view?.let {
+                            Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
             return
         }
 
-        try {
-            L.d("HomeFragment", "Loading fresh data from network")
+        val retryDelays = listOf(1000L, 2000L, 3000L)
 
-            val lastUpdate = fetchLastUpdateTime()
-            val substitutePlan = fetchSubstitutePlan(klasse)
+        for (attempt in 0..2) {
+            try {
+                L.d("HomeFragment", "Network attempt ${attempt + 1}/3")
 
-            saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
+                if (!hasBasicConnectivity()) {
+                    L.d("HomeFragment", "Lost connectivity during attempt ${attempt + 1}, stopping retries")
+                    break
+                }
 
-            withContext(Dispatchers.Main) {
-                if (isAdded && _binding != null) {
-                    if (::lastUpdateText.isInitialized) {
-                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
-                        L.d("HomeFragment", "Updated lastUpdateText to fresh: $lastUpdate")
+                val lastUpdate = fetchLastUpdateTime()
+                val substitutePlan = fetchSubstitutePlan(klasse)
+
+                saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
+
+                withContext(Dispatchers.Main) {
+                    if (isAdded && _binding != null) {
+                        if (::lastUpdateText.isInitialized) {
+                            lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                            L.d("HomeFragment", "Updated lastUpdateText to fresh: $lastUpdate")
+                        }
+
+                        contentLayout.removeAllViews()
+                        displaySubstitutePlan(substitutePlan)
+                        L.d("HomeFragment", "Displayed fresh network data")
+
+                        lastLoadTime = System.currentTimeMillis()
+                        isFirstLoad = false
                     }
+                }
+                return
 
-                    contentLayout.removeAllViews()
-                    displaySubstitutePlan(substitutePlan)
-                    L.d("HomeFragment", "Displayed fresh network data")
+            } catch (e: Exception) {
+                L.w("HomeFragment", "Network attempt ${attempt + 1} failed: ${e.message}")
 
-                    lastLoadTime = System.currentTimeMillis()
-                    isFirstLoad = false
+                if (!hasBasicConnectivity()) {
+                    L.d("HomeFragment", "Connectivity lost during network error, stopping retries")
+                    break
+                }
+
+                if (attempt < 2) {
+                    val delay = retryDelays.getOrElse(attempt) { 2000L }
+                    L.d("HomeFragment", "Retrying in ${delay}ms...")
+                    delay(delay)
                 }
             }
-        } catch (e: Exception) {
-            L.e("HomeFragment", "Network load failed, keeping cached data", e)
-            withContext(Dispatchers.Main) {
-                if (isAdded && _binding != null && ::lastUpdateText.isInitialized) {
-                    val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
-                    if (lastUpdateFile.exists()) {
-                        val lastUpdate = lastUpdateFile.readText()
-                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+        }
+
+        // all retries failed
+        withContext(Dispatchers.Main) {
+            if (isAdded && _binding != null) {
+                val hasCachedData = loadCachedDataInBackground(klasse)
+
+                if (!hasCachedData) {
+                    showOfflineNoDataMessage()
+                } else {
+                    if (::lastUpdateText.isInitialized) {
+                        val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
+                        if (lastUpdateFile.exists()) {
+                            val lastUpdate = lastUpdateFile.readText()
+                            lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                        }
                     }
+                }
+
+                view?.let {
+                    val message = if (hasBasicConnectivity()) {
+                        getString(R.string.home_network_error_using_cache)
+                    } else {
+                        getString(R.string.home_offline_mode)
+                    }
+                    Snackbar.make(it, message, Snackbar.LENGTH_LONG).show()
                 }
             }
         }
@@ -437,10 +562,13 @@ class HomeFragment : Fragment() {
             setTextColor(getThemeColor(R.attr.refreshButtonTextColor))
             background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setOnClickListener {
-                L.d("HomeFragment", "Refresh button clicked - forcing reload")
+                L.d("HomeFragment", "Refresh button clicked")
+
                 isFirstLoad = true
                 lastLoadTime = 0
+
                 loadSubstitutePlan()
+
                 lastLoadTime = System.currentTimeMillis()
                 isFirstLoad = false
             }
@@ -460,7 +588,7 @@ class HomeFragment : Fragment() {
         val shouldShowButtons = hasScannedDocument && filterEnabled
         val leftFilterLift = sharedPreferences.getBoolean("left_filter_lift", false)
 
-        // invisible left button (spacer  for temp filter btn)
+        // invisible left button (spacer for temp filter btn)
         invisibleLeftButton = ImageButton(requireContext()).apply {
             setImageResource(android.R.drawable.ic_menu_view)
             setPadding(16, 16, 16, 16)
@@ -579,8 +707,12 @@ class HomeFragment : Fragment() {
         constraintLayout.addView(headerLayout, headerParams)
         constraintLayout.addView(contentScrollView, scrollParams)
 
-        binding.root.post {
+        if (isFirstStartup && !isFromNavigationDrawer) {
             setupPullToRefresh()
+        } else {
+            binding.root.post {
+                setupPullToRefresh()
+            }
         }
 
         L.d("HomeFragment", "UI setup completed")
@@ -692,26 +824,24 @@ class HomeFragment : Fragment() {
                 initializationAttempts = 0
                 isInitialized = false
 
-                binding.root.postDelayed({
+                binding.root.post {
                     if (isAdded && _binding != null) {
                         try {
                             setupUI()
-                            binding.root.postDelayed({
-                                if (isAdded && _binding != null) {
-                                    loadStudentSubjects()
-                                    loadFilterSetting()
-                                    loadCooldownSetting()
-                                    loadColorBlindSettings()
-                                    updateTemporaryFilterButtonVisibility()
-                                    startBackgroundDataLoad()
-                                }
-                            }, 50)
+                            if (isAdded && _binding != null) {
+                                loadStudentSubjects()
+                                loadFilterSetting()
+                                loadCooldownSetting()
+                                loadColorBlindSettings()
+                                updateTemporaryFilterButtonVisibility()
+                                startBackgroundDataLoad()
+                            }
                         } catch (e: Exception) {
                             L.e("HomeFragment", "Error during forced reinitialization", e)
                             showSafeErrorState()
                         }
                     }
-                }, 50)
+                }
                 return
             }
 
@@ -731,28 +861,66 @@ class HomeFragment : Fragment() {
                         }
 
                         if (::lastUpdateText.isInitialized && klasse != getString(R.string.home_not_selected)) {
-                            val willLoadFromNetwork = shouldLoadFromNetwork()
+                            val willLoadFromNetwork = hasBasicConnectivity() && shouldLoadFromNetwork()
                             setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
                         }
                     }
                 }
 
-                val shouldReload = currentJsonData == null || shouldLoadFromNetwork()
-                if (shouldReload) {
-                    val willLoadFromNetwork = shouldLoadFromNetwork()
-                    if (willLoadFromNetwork) {
+                val hasConnectivity = hasBasicConnectivity()
+                val shouldReload = shouldLoadFromNetwork()
+                val hasCurrentData = currentJsonData != null && !currentJsonData!!.toString().equals("{}")
+
+                L.d("HomeFragment", "onResume data check - hasConnectivity: $hasConnectivity, shouldReload: $shouldReload, hasCurrentData: $hasCurrentData")
+
+                when {
+                    (hasConnectivity && shouldReload) || (!hasCurrentData && hasConnectivity) -> {
                         binding.root.post {
                             if (isAdded && _binding != null && ::contentLayout.isInitialized) {
                                 showLoadingState()
                             }
                         }
-                    }
-
-                    binding.root.postDelayed({
-                        if (isAdded && _binding != null && !isInSharedContentMode) {
-                            startBackgroundDataLoad()
+                        binding.root.post {
+                            if (isAdded && _binding != null && !isInSharedContentMode) {
+                                startBackgroundDataLoad()
+                            }
                         }
-                    }, 50)
+                    }
+                    !hasCurrentData && !hasConnectivity -> {
+                        L.d("HomeFragment", "No current data and offline - attempting cached data load")
+                        binding.root.post {
+                            if (isAdded && _binding != null && !isInSharedContentMode) {
+                                val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+                                if (klasse != getString(R.string.home_not_selected)) {
+                                    scope?.launch(Dispatchers.IO) {
+                                        val hasCachedData = loadCachedDataInBackground(klasse!!)
+                                        if (!hasCachedData) {
+                                            withContext(Dispatchers.Main) {
+                                                showOfflineNoDataMessage()
+                                            }
+                                        } else {
+                                            withContext(Dispatchers.Main) {
+                                                view?.let {
+                                                    Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    hasCurrentData && !hasConnectivity -> {
+                        L.d("HomeFragment", "Have cached data and offline - showing offline indicator")
+                        binding.root.post {
+                            view?.let {
+                                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    else -> {
+                        L.d("HomeFragment", "Data preserved, no action needed")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -989,28 +1157,37 @@ class HomeFragment : Fragment() {
 
             classText.text = getString(R.string.home_class_prefix, klasse)
 
+            val hasConnectivity = hasBasicConnectivity()
             val shouldLoadFromNetwork = isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs
 
-            L.d("HomeFragment", "Cooldown check - shouldLoadFromNetwork: $shouldLoadFromNetwork, cooldownEnabled: $cooldownEnabled, timeSinceLastLoad: ${timeSinceLastLoad}ms")
+            L.d("HomeFragment", "Cooldown check - shouldLoadFromNetwork: $shouldLoadFromNetwork, cooldownEnabled: $cooldownEnabled, timeSinceLastLoad: ${timeSinceLastLoad}ms, hasConnectivity: $hasConnectivity")
 
-            if (shouldLoadFromNetwork) {
+            if (shouldLoadFromNetwork && hasConnectivity) {
                 L.d("HomeFragment", "Loading substitute plan from network")
                 loadSubstitutePlan()
                 lastLoadTime = currentTime
                 isFirstLoad = false
             } else {
-                val remainingCooldown = loadCooldownMs - timeSinceLastLoad
-                L.d("HomeFragment", "Substitute plan loading skipped due to cooldown; remaining: ${remainingCooldown}ms")
+                val remainingCooldown = if (cooldownEnabled) loadCooldownMs - timeSinceLastLoad else 0
+                L.d("HomeFragment", "Loading cached data - cooldown remaining: ${remainingCooldown}ms, hasConnectivity: $hasConnectivity")
 
-                if (!isNetworkAvailable()) {
-                    L.d("HomeFragment", "Cooldown active and no internet - loading cached data")
-                    loadCachedSubstitutePlan(klasse!!)
-                    view?.let {
-                        Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                scope?.launch(Dispatchers.IO) {
+                    val hasCachedData = loadCachedDataInBackground(klasse!!)
+                    withContext(Dispatchers.Main) {
+                        if (hasCachedData) {
+                            if (!hasConnectivity) {
+                                view?.let {
+                                    Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            if (!hasConnectivity) {
+                                showOfflineNoDataMessage()
+                            } else {
+                                showNoDataMessage()
+                            }
+                        }
                     }
-                } else {
-                    L.d("HomeFragment", "Cooldown active but internet available - loading cached data anyway")
-                    loadCachedSubstitutePlan(klasse!!)
                 }
             }
         } catch (e: Exception) {
@@ -1034,6 +1211,27 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun ensureCachedDataPersistence() {
+        try {
+            if (currentJsonData == null || currentJsonData!!.toString().equals("{}")) {
+                L.d("HomeFragment", "No current data - attempting to restore from cache")
+                val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+                if (klasse != getString(R.string.home_not_selected)) {
+                    scope?.launch(Dispatchers.IO) {
+                        val hasCachedData = loadCachedDataInBackground(klasse!!)
+                        if (hasCachedData) {
+                            L.d("HomeFragment", "Successfully restored cached data")
+                        } else {
+                            L.d("HomeFragment", "No cached data available to restore")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error ensuring cached data persistence", e)
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         L.d("HomeFragment", "onStart called, isInitialized: $isInitialized")
@@ -1041,6 +1239,8 @@ class HomeFragment : Fragment() {
         loadStudentSubjects()
         loadFilterSetting()
         loadCooldownSetting()
+
+        ensureCachedDataPersistence()
 
         if (!isInitialized && _binding != null) {
             if (isAdded && _binding != null && !isInitialized) {
@@ -1090,14 +1290,23 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun isNetworkAvailable(): Boolean {
+    private fun hasBasicConnectivity(): Boolean {
         return try {
             val connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val network = connectivityManager.activeNetwork ?: return false
             val networkCapabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+
+            val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            val hasValidated = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val hasTransport = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+
+            val isConnected = hasInternet && hasValidated && hasTransport
+            L.d("HomeFragment", "Connectivity check: internet=$hasInternet, validated=$hasValidated, transport=$hasTransport, result=$isConnected")
+
+            return isConnected
         } catch (e: Exception) {
-            L.e("HomeFragment", "Error checking network availability", e)
+            L.e("HomeFragment", "Error checking connectivity", e)
             false
         }
     }
@@ -1122,84 +1331,49 @@ class HomeFragment : Fragment() {
             return
         }
 
-        classText.text = getString(R.string.home_class_prefix, klasse)
-
-        if (!isNetworkAvailable()) {
-            L.d("HomeFragment", "No internet connection, loading cached data")
-            loadCachedSubstitutePlan(klasse!!)
-            view?.let {
-                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
-            }
-            return
+        if (::classText.isInitialized) {
+            classText.text = getString(R.string.home_class_prefix, klasse)
         }
 
-        if (::contentLayout.isInitialized) {
-            contentLayout.removeAllViews()
-            val loadingText = TextView(requireContext()).apply {
-                text = getString(R.string.home_loading_plan)
-                gravity = android.view.Gravity.CENTER
-                textSize = 16f
-                alpha = 0.7f
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = android.view.Gravity.CENTER
-                    topMargin = 50
-                }
-            }
-            contentLayout.addView(loadingText)
-        }
+        val hasBasicConn = hasBasicConnectivity()
+        val willLoadFromNetwork = hasBasicConn && shouldLoadFromNetwork()
 
-        scope?.launch {
+        setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
+
+        scope?.launch(Dispatchers.IO) {
             try {
-                L.d("HomeFragment", "Starting network request")
-
-                if (!isAdded || _binding == null) {
-                    L.w("HomeFragment", "Fragment detached during loading, aborting")
-                    return@launch
+                if (willLoadFromNetwork) {
+                    withContext(Dispatchers.Main) {
+                        showLoadingState()
+                    }
+                    loadNetworkDataInBackground(klasse)
+                } else {
+                    val hasCachedData = loadCachedDataInBackground(klasse)
+                    if (!hasCachedData) {
+                        withContext(Dispatchers.Main) {
+                            if (!hasBasicConn) {
+                                showOfflineNoDataMessage()
+                            } else {
+                                showNoDataMessage()
+                            }
+                        }
+                    } else if (!hasBasicConn) {
+                        withContext(Dispatchers.Main) {
+                            view?.let {
+                                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
                 }
-
-                val networkData = withContext(Dispatchers.IO) {
-                    val lastUpdate = fetchLastUpdateTime()
-                    val substitutePlan = fetchSubstitutePlan(klasse!!)
-                    Pair(substitutePlan, lastUpdate)
-                }
-
-                if (!isAdded || _binding == null) {
-                    L.w("HomeFragment", "Fragment detached after network call, aborting UI update")
-                    return@launch
-                }
-
-                val (substitutePlan, lastUpdate) = networkData
-                saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
-
-                if (::lastUpdateText.isInitialized) {
-                    lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
-                }
-                displaySubstitutePlan(substitutePlan)
-
-                L.d("HomeFragment", "Successfully loaded substitute plan")
 
             } catch (e: Exception) {
-                L.e("HomeFragment", "Error loading substitute plan", e)
-
-                if (!isAdded || _binding == null) {
-                    L.w("HomeFragment", "Fragment detached, skipping error handling")
-                    return@launch
-                }
-
-                if (!isNetworkAvailable()) {
-                    L.d("HomeFragment", "Network error confirmed - no internet connection, loading cached data")
-                    loadCachedSubstitutePlan(klasse!!)
-                    view?.let {
-                        Snackbar.make(it, getString(R.string.home_no_internet), Snackbar.LENGTH_LONG).show()
-                    }
-                } else {
-                    L.d("HomeFragment", "Network error but internet available - server issue, loading cached data")
-                    loadCachedSubstitutePlan(klasse!!)
-                    view?.let {
-                        Snackbar.make(it, getString(R.string.home_network_error_using_cache), Snackbar.LENGTH_LONG).show()
+                L.e("HomeFragment", "Error in loadSubstitutePlan", e)
+                withContext(Dispatchers.Main) {
+                    if (isAdded && _binding != null) {
+                        val hasCachedData = loadCachedDataInBackground(klasse)
+                        if (!hasCachedData) {
+                            showOfflineNoDataMessage()
+                        }
                     }
                 }
             }
@@ -1224,19 +1398,20 @@ class HomeFragment : Fragment() {
 
             L.d("HomeFragment", "Loaded cached substitute plan with past dates filtered")
         } else {
-            if (!isNetworkAvailable()) {
-                showNoInternetMessage()
+            if (!hasBasicConnectivity()) {
+                L.d("HomeFragment", "No cache and no connectivity - showing offline message")
+                showOfflineNoDataMessage()
             } else {
-                L.d("HomeFragment", "No cache found but internet available - attempting network load")
+                L.d("HomeFragment", "No cache but connectivity available - attempting network load")
                 loadSubstitutePlan()
             }
         }
     } catch (e: Exception) {
         L.e("HomeFragment", "Error loading cached data", e)
-        if (!isNetworkAvailable()) {
-            showNoInternetMessage()
+        if (!hasBasicConnectivity()) {
+            showOfflineNoDataMessage()
         } else {
-            L.d("HomeFragment", "Cache error but internet available - attempting network load")
+            L.d("HomeFragment", "Cache error but connectivity available - attempting network load")
             loadSubstitutePlan()
         }
     }
@@ -1261,8 +1436,8 @@ class HomeFragment : Fragment() {
 
         return try {
             connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
             val html = connection.inputStream.bufferedReader().use { it.readText() }
 
             // Extract the "Stand" information
@@ -1270,7 +1445,7 @@ class HomeFragment : Fragment() {
             val matchResult = regex.find(html)
             val originalText = matchResult?.groups?.get(1)?.value ?: "Unbekannt"
 
-            translateWeekdayInText(originalText) // translate weekday abbreviations
+            translateWeekdayInText(originalText)
         } finally {
             connection.disconnect()
         }
@@ -1301,8 +1476,8 @@ class HomeFragment : Fragment() {
 
         return try {
             connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
             val jsonString = connection.inputStream.bufferedReader().use { it.readText() }
             val jsonData = JSONObject(jsonString)
 
@@ -1318,6 +1493,12 @@ class HomeFragment : Fragment() {
         currentJsonData = jsonData
         if (!::contentLayout.isInitialized || !isAdded) {
             L.w("HomeFragment", "Cannot display substitute plan - fragment not properly initialized")
+            return
+        }
+
+        if (jsonData.length() == 0) {
+            L.w("HomeFragment", "Empty JSON data provided")
+            showOfflineNoDataMessage()
             return
         }
 
@@ -1950,28 +2131,6 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun showNoInternetMessage() {
-        if (!::contentLayout.isInitialized || !isAdded) {
-            L.w("HomeFragment", "cannot show no internet message, fragment not properly initialized")
-            return
-        }
-
-        contentLayout.removeAllViews()
-        val noInternetText = TextView(requireContext()).apply {
-            text = getString(R.string.home_no_internet)
-            gravity = android.view.Gravity.CENTER
-            textSize = 16f
-            setTextColor(getThemeColor(R.attr.warningTextColor))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            ).apply {
-                gravity = android.view.Gravity.CENTER
-            }
-        }
-        contentLayout.addView(noInternetText)
-    }
-
     private fun loadFilterSetting() {
         try {
             filterOnlyMySubjects = sharedPreferences.getBoolean("filter_only_my_subjects", false)
@@ -2192,11 +2351,24 @@ class HomeFragment : Fragment() {
 
         scope?.launch {
             try {
-                isFirstLoad = true
-                lastLoadTime = 0
-                loadSubstitutePlan()
-                lastLoadTime = System.currentTimeMillis()
-                isFirstLoad = false
+                if (!hasBasicConnectivity()) {
+                    L.d("HomeFragment", "No connectivity detected - loading cached data instead of network refresh")
+                    val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+                    if (klasse != getString(R.string.home_not_selected)) {
+                        withContext(Dispatchers.Main) {
+                            loadCachedSubstitutePlan(klasse!!)
+                            view?.let {
+                                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    isFirstLoad = true
+                    lastLoadTime = 0
+                    loadSubstitutePlan()
+                    lastLoadTime = System.currentTimeMillis()
+                    isFirstLoad = false
+                }
 
                 delay(800)
             } finally {

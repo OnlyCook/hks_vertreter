@@ -841,17 +841,18 @@ class SubjectSelectionActivity : BaseActivity() {
 
         val visibleSelectedCount = selectedSubjects.intersect(filteredSubjectTriplets.map { it.subject }.toSet()).size
         val visibleTotalCount = filteredSubjectTriplets.size
+        val visibleUnselectedCount = visibleTotalCount - visibleSelectedCount
 
-        btnSelectAll.text = if (visibleTotalCount == 0) {
+        btnSelectAll.text = if (visibleUnselectedCount == 0) {
             getString(R.string.act_sub_sel_select_all)
         } else {
-            getString(R.string.sub_sel_select_all, visibleTotalCount)
+            getString(R.string.sub_sel_select_all, visibleUnselectedCount)
         }
 
         btnDeselectAll.text = if (visibleSelectedCount == 0) {
             getString(R.string.act_sub_sel_deselect_all)
         } else {
-            getString(R.string.sub_sel_deselect_all, visibleTotalCount)
+            getString(R.string.sub_sel_deselect_all, visibleSelectedCount)
         }
 
         btnSelectAll.isEnabled = visibleSelectedCount < visibleTotalCount

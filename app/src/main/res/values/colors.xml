@@ -142,9 +142,9 @@
     <color name="homework_completed_background_light">#FF8BC34A</color>
     <color name="homework_completed_background_dark">#FF2E7D32</color>
     <color name="homework_due_today_background_light">#FFFFCDD2</color>
-    <color name="homework_due_today_background_dark">#FF8F2922</color>
+    <color name="homework_due_today_background_dark">#6e1813</color>
     <color name="homework_due_tomorrow_background_light">#FFFFE0B2</color>
-    <color name="homework_due_tomorrow_background_dark">#FF8F4500</color>
+    <color name="homework_due_tomorrow_background_dark">#7d571f</color>
     <color name="homework_transparent_background">#00000000</color>
     <color name="homework_text_primary_light">#212121</color>
     <color name="homework_text_primary_dark">#dedede</color>
@@ -163,7 +163,7 @@
 
     <!-- nav_divider.xml -->
     <color name="nav_divider_color_light">#FED75E</color>
-    <color name="nav_divider_color_dark">#A67C2D</color>
+    <color name="nav_divider_color_dark">#CFA743</color>
 
     <!-- splash screen -->
     <color name="splash_background_light">#FFFFFF</color>
