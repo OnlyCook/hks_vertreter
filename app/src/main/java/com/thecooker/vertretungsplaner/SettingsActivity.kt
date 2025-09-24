@@ -1947,7 +1947,7 @@ class SettingsActivity : BaseActivity() {
             getString(R.string.act_set_exams),
             getString(R.string.dlg_edit_sub_grades)
         )
-        val currentSelection = sharedPreferences.getInt("startup_page_index", 1)
+        var currentSelection = sharedPreferences.getInt("startup_page_index", 1)
 
         btnStartupPage.text = getString(R.string.set_act_startup_page_format, startupPages[currentSelection])
 
@@ -1955,6 +1955,7 @@ class SettingsActivity : BaseActivity() {
             val alertDialog = AlertDialog.Builder(this)
                 .setTitle(getString(R.string.set_act_choose_start_up_page))
                 .setSingleChoiceItems(startupPages, currentSelection) { dialog, which ->
+                    currentSelection = which
                     sharedPreferences.edit {
                         putInt("startup_page_index", which)
                     }
@@ -2003,7 +2004,8 @@ class SettingsActivity : BaseActivity() {
         }
 
         btnAutoUpdateTime.setOnClickListener {
-            val timeParts = autoUpdateTime.split(":")
+            val currentAutoUpdateTime = sharedPreferences.getString("auto_update_time", "06:00") ?: "06:00"
+            val timeParts = currentAutoUpdateTime.split(":")
             val hour = timeParts[0].toIntOrNull() ?: 6
             val minute = timeParts[1].toIntOrNull() ?: 0
 
@@ -2090,7 +2092,8 @@ class SettingsActivity : BaseActivity() {
         }
 
         btnChangeNotificationInterval.setOnClickListener {
-            TimePickerDialogHelper.showIntervalPicker(this, changeNotificationInterval) { selectedInterval ->
+            val currentChangeNotificationInterval = sharedPreferences.getInt("change_notification_interval", 15)
+            TimePickerDialogHelper.showIntervalPicker(this, currentChangeNotificationInterval) { selectedInterval ->
                 sharedPreferences.edit {putInt("change_notification_interval", selectedInterval) }
 
                 btnChangeNotificationInterval.text = formatInterval(selectedInterval)
@@ -3808,7 +3811,7 @@ class SettingsActivity : BaseActivity() {
             val oralGradesHistoryType = object : com.google.gson.reflect.TypeToken<Map<String, MutableMap<Int, Double>>>() {}.type
             val oralGradesHistory: MutableMap<String, MutableMap<Int, Double>> = try {
                 com.google.gson.Gson().fromJson(oralGradesHistoryJson, oralGradesHistoryType) ?: mutableMapOf()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 mutableMapOf()
             }
 

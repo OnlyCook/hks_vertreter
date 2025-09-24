@@ -100,6 +100,8 @@
         <item name="homeworkTextPrimaryColor">@color/homework_text_primary_dark</item>
         <item name="homeworkDetailDueDateTextColor">@color/homework_detail_due_date_text_dark</item>
 
+        <item name="entryHighlightColor">@color/entry_highlight_color_dark</item>
+
         <!-- gradesfragment.kt -->
         <item name="gradesMainFontColor">@color/grades_main_font_color_dark_improved</item>
         <item name="gradesCardBackgroundColor">@color/grades_card_background_dark_improved</item>
@@ -130,6 +132,9 @@
         <item name="homeworkCellBackgroundColor">@color/homework_dark</item>
         <item name="examCellBackgroundColor">@color/exam_dark</item>
         <item name="holidayVacationCellBackgroundColor">@color/holiday_vacation_dark</item>
+        <item name="editModeUndoColor">@color/edit_mode_undo_dark</item>
+        <item name="editModeSaveColor">@color/edit_mode_save_dark</item>
+        <item name="editModeCancelColor">@color/edit_mode_cancel_dark</item>
 
         <!-- side_nav_bar.xml -->
         <item name="navHeaderStartColor">#0C417C</item>

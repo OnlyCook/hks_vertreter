@@ -1226,6 +1226,7 @@
     <string name="gall_open_exam_details">Klausur-Details öffnen</string>
     <string name="gall_open_substitute_details">Vertretungs-Details öffnen</string>
     <string name="gall_error_opening_page">Fehler beim Öffnen der Seite</string>
+    <string name="gall_max_occasions_reached">Maximal 5 besondere Anlässe pro Tag erlaubt</string>
 
     <!-- AUTOUPDATEWORKER.KT -->
     <string name="auto_update_notification_channel">Automatische Updates</string>

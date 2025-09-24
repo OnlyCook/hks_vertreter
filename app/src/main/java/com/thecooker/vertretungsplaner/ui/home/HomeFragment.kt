@@ -33,6 +33,7 @@ import android.util.TypedValue
 import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
 import androidx.core.view.isEmpty
+import androidx.core.content.edit
 
 class TouchScrollView @JvmOverloads constructor(
     context: Context,
@@ -79,9 +80,11 @@ class HomeFragment : Fragment() {
 
     // 1 minute cooldown variables
     private var cooldownEnabled = true
-    private var lastLoadTime: Long = 0
-    private val loadCooldownMs = 60000L // 1 minute in milliseconds
-    private var isFirstLoad = true
+    private val loadCooldownMs = 60000L // 1 min in ms
+
+    private var hasShownOfflineMessage = false
+    private var lastOfflineMessageTime = 0L
+    private val offlineMessageCooldown = 30000L
 
     // color blind support
     private var colorBlindMode = "none"
@@ -120,7 +123,10 @@ class HomeFragment : Fragment() {
                     loadColorBlindSettings()
 
                     if (isFirstStartup && !isFromNavigationDrawer) {
-                        startBackgroundDataLoad()
+                        showLoadingState()
+                        setLastLoadTime(0)
+                        hasShownOfflineMessage = false
+                        loadSubstitutePlan()
                         isFirstStartup = false
                     } else {
                         binding.root.postDelayed({
@@ -176,32 +182,48 @@ class HomeFragment : Fragment() {
         }
 
         val hasBasicConn = hasBasicConnectivity()
+
+        if (isFirstAppLoad()) {
+            setLastLoadTime(0)
+            hasShownOfflineMessage = false
+            L.d("HomeFragment", "First app load - resetting cooldown to force fresh data")
+        }
+
         val willLoadFromNetwork = hasBasicConn && shouldLoadFromNetwork()
+
+        if (isFirstStartup) {
+            showLoadingState()
+        }
 
         setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
 
         scope?.launch(Dispatchers.IO) {
             try {
                 if (willLoadFromNetwork) {
-                    withContext(Dispatchers.Main) {
-                        showLoadingState()
+                    if (!isFirstStartup) {
+                        withContext(Dispatchers.Main) {
+                            showLoadingState()
+                        }
                     }
                     loadNetworkDataInBackground(klasse)
                 } else {
-                    val hasCachedData = loadCachedDataInBackground(klasse)
-                    if (!hasCachedData) {
-                        withContext(Dispatchers.Main) {
-                            if (!hasBasicConn) {
-                                showOfflineNoDataMessage()
-                            } else {
-                                showNoDataMessage()
-                            }
-                        }
+                    if (isFirstStartup) {
+                        L.d("HomeFragment", "First startup - skipping cached data to prevent flickering, attempting network load anyway")
+                        loadNetworkDataInBackground(klasse)
                     } else {
-                        if (!hasBasicConn) {
+                        val hasCachedData = loadCachedDataInBackground(klasse)
+                        if (!hasCachedData) {
                             withContext(Dispatchers.Main) {
-                                view?.let {
-                                    Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                                if (!hasBasicConn) {
+                                    showOfflineNoDataMessage()
+                                } else {
+                                    showNoDataMessage()
+                                }
+                            }
+                        } else {
+                            if (!hasBasicConn) {
+                                withContext(Dispatchers.Main) {
+                                    showOfflineMessageIfNeeded()
                                 }
                             }
                         }
@@ -212,13 +234,17 @@ class HomeFragment : Fragment() {
                 L.e("HomeFragment", "Error in background data load", e)
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
-                        scope?.launch(Dispatchers.IO) {
-                            val hasCachedData = loadCachedDataInBackground(klasse)
-                            if (!hasCachedData) {
-                                withContext(Dispatchers.Main) {
-                                    showOfflineNoDataMessage()
+                        if (!isFirstStartup) {
+                            scope?.launch(Dispatchers.IO) {
+                                val hasCachedData = loadCachedDataInBackground(klasse)
+                                if (!hasCachedData) {
+                                    withContext(Dispatchers.Main) {
+                                        showOfflineNoDataMessage()
+                                    }
                                 }
                             }
+                        } else {
+                            showOfflineNoDataMessage()
                         }
                     }
                 }
@@ -251,30 +277,50 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun shouldShowOfflineTag(isDisplayingCachedData: Boolean): Boolean {
+        return isDisplayingCachedData
+    }
+
+    private fun setLastUpdateTextWithCorrectOfflineStatus(klasse: String, lastUpdate: String, isDisplayingCachedData: Boolean) {
+        if (!::lastUpdateText.isInitialized) return
+
+        try {
+            val showOfflineTag = shouldShowOfflineTag(isDisplayingCachedData)
+
+            lastUpdateText.text = if (showOfflineTag) {
+                getString(R.string.home_last_update_offline, lastUpdate)
+            } else {
+                getString(R.string.home_last_update, lastUpdate)
+            }
+
+            L.d("HomeFragment", "Set lastUpdate text: offline=$showOfflineTag, cached=$isDisplayingCachedData, text='$lastUpdate'")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error setting last update text", e)
+            lastUpdateText.text = ""
+        }
+    }
+
     private fun setInitialLastUpdateText(klasse: String, willLoadFromNetwork: Boolean) {
         if (!::lastUpdateText.isInitialized) return
 
         try {
             val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
 
+            if (isFirstAppLoad()) {
+                lastUpdateText.text = ""
+                L.d("HomeFragment", "First app load - clearing last update text until load completes")
+                return
+            }
+
             if (lastUpdateFile.exists()) {
                 val lastUpdate = lastUpdateFile.readText()
 
-                when {
-                    !cooldownEnabled -> {
-                        lastUpdateText.text = if (willLoadFromNetwork) {
-                            getString(R.string.home_last_update, lastUpdate)
-                        } else {
-                            getString(R.string.home_last_update_offline, lastUpdate)
-                        }
-                    }
-                    willLoadFromNetwork -> {
-                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
-                    }
-                    else -> {
-                        lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
-                        L.d("HomeFragment", "Set initial lastUpdate with offline tag (cooldown active): $lastUpdate")
-                    }
+                if (willLoadFromNetwork) {
+                    lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                    L.d("HomeFragment", "Set initial lastUpdate without offline tag (will load fresh): $lastUpdate")
+                } else {
+                    lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
+                    L.d("HomeFragment", "Set initial lastUpdate with offline tag (cached only): $lastUpdate")
                 }
             } else {
                 lastUpdateText.text = ""
@@ -307,6 +353,10 @@ class HomeFragment : Fragment() {
     }
 
     private suspend fun loadCachedDataInBackground(klasse: String): Boolean {
+        return loadCachedDataInBackground(klasse, true)
+    }
+
+    private suspend fun loadCachedDataInBackground(klasse: String, showAsOffline: Boolean): Boolean {
         return try {
             val cacheFile = File(requireContext().cacheDir, "substitute_plan_$klasse.json")
 
@@ -322,20 +372,15 @@ class HomeFragment : Fragment() {
                         contentLayout.removeAllViews()
                         displaySubstitutePlan(filteredJsonData)
 
-                        if (::lastUpdateText.isInitialized) {
+                        if (::lastUpdateText.isInitialized && showAsOffline) {
                             val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
                             if (lastUpdateFile.exists()) {
                                 val lastUpdate = lastUpdateFile.readText()
-                                val hasConnectivity = hasBasicConnectivity()
-                                lastUpdateText.text = if (hasConnectivity) {
-                                    getString(R.string.home_last_update, lastUpdate)
-                                } else {
-                                    getString(R.string.home_last_update_offline, lastUpdate)
-                                }
+                                setLastUpdateTextWithCorrectOfflineStatus(klasse, lastUpdate, true)
                             }
                         }
 
-                        L.d("HomeFragment", "Displayed cached data and preserved in currentJsonData")
+                        L.d("HomeFragment", "Displayed cached data" + if (showAsOffline) " with offline tag" else "")
                     }
                 }
                 true
@@ -348,25 +393,36 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun showOfflineMessageIfNeeded(isManualRefresh: Boolean = false) {
+        val currentTime = System.currentTimeMillis()
+
+        if (isManualRefresh || !hasShownOfflineMessage || (currentTime - lastOfflineMessageTime) > offlineMessageCooldown) {
+            view?.let {
+                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
+                hasShownOfflineMessage = true
+                lastOfflineMessageTime = currentTime
+                L.d("HomeFragment", "Offline message shown (manual: $isManualRefresh)")
+            }
+        } else {
+            L.d("HomeFragment", "Offline message suppressed (cooldown active)")
+        }
+    }
+
+    private fun onConnectivityRestored() {
+        hasShownOfflineMessage = false
+        lastOfflineMessageTime = 0L
+    }
+
     private suspend fun loadNetworkDataInBackground(klasse: String) {
         if (!hasBasicConnectivity()) {
             L.d("HomeFragment", "No connectivity detected at start, loading cached data immediately")
+            val hasCachedData = loadCachedDataInBackground(klasse)
             withContext(Dispatchers.Main) {
                 if (isAdded && _binding != null) {
-                    val hasCachedData = loadCachedDataInBackground(klasse)
                     if (!hasCachedData) {
                         showOfflineNoDataMessage()
                     } else {
-                        if (::lastUpdateText.isInitialized) {
-                            val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
-                            if (lastUpdateFile.exists()) {
-                                val lastUpdate = lastUpdateFile.readText()
-                                lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
-                            }
-                        }
-                        view?.let {
-                            Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
-                        }
+                        showOfflineMessageIfNeeded()
                     }
                 }
             }
@@ -391,17 +447,20 @@ class HomeFragment : Fragment() {
 
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
+                        onConnectivityRestored()
+
                         if (::lastUpdateText.isInitialized) {
                             lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
-                            L.d("HomeFragment", "Updated lastUpdateText to fresh: $lastUpdate")
+                            L.d("HomeFragment", "Network load successful - showing fresh update text: $lastUpdate")
                         }
 
                         contentLayout.removeAllViews()
                         displaySubstitutePlan(substitutePlan)
+                        currentJsonData = substitutePlan
                         L.d("HomeFragment", "Displayed fresh network data")
 
-                        lastLoadTime = System.currentTimeMillis()
-                        isFirstLoad = false
+                        setLastLoadTime(System.currentTimeMillis())
+                        setFirstAppLoadCompleted()
                     }
                 }
                 return
@@ -423,42 +482,57 @@ class HomeFragment : Fragment() {
         }
 
         // all retries failed
+        val hasCachedData = loadCachedDataInBackground(klasse, true)
         withContext(Dispatchers.Main) {
             if (isAdded && _binding != null) {
-                val hasCachedData = loadCachedDataInBackground(klasse)
-
                 if (!hasCachedData) {
                     showOfflineNoDataMessage()
+                }
+
+                val message = if (hasBasicConnectivity()) {
+                    getString(R.string.home_network_error_using_cache)
                 } else {
-                    if (::lastUpdateText.isInitialized) {
-                        val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
-                        if (lastUpdateFile.exists()) {
-                            val lastUpdate = lastUpdateFile.readText()
-                            lastUpdateText.text = getString(R.string.home_last_update_offline, lastUpdate)
-                        }
-                    }
+                    getString(R.string.home_offline_mode)
                 }
 
                 view?.let {
-                    val message = if (hasBasicConnectivity()) {
-                        getString(R.string.home_network_error_using_cache)
-                    } else {
-                        getString(R.string.home_offline_mode)
-                    }
                     Snackbar.make(it, message, Snackbar.LENGTH_LONG).show()
+                    if (!hasBasicConnectivity()) {
+                        hasShownOfflineMessage = true
+                        lastOfflineMessageTime = System.currentTimeMillis()
+                    }
                 }
             }
         }
     }
 
+    private fun getLastLoadTime(): Long {
+        return sharedPreferences.getLong("last_network_load_time", 0L)
+    }
+
+    private fun setLastLoadTime(time: Long) {
+        sharedPreferences.edit { putLong("last_network_load_time", time) }
+    }
+
+    private fun isFirstAppLoad(): Boolean {
+        return sharedPreferences.getBoolean("is_first_app_load", true)
+    }
+
+    private fun setFirstAppLoadCompleted() {
+        sharedPreferences.edit { putBoolean("is_first_app_load", false)}
+    }
+
     private fun shouldLoadFromNetwork(): Boolean {
         if (!cooldownEnabled) return true
-        if (isFirstLoad) return true
+        if (isFirstAppLoad()) return true
 
         val currentTime = System.currentTimeMillis()
-        val timeSinceLastLoad = currentTime - lastLoadTime
+        val lastLoad = getLastLoadTime()
+        val timeSinceLastLoad = currentTime - lastLoad
 
-        return timeSinceLastLoad >= loadCooldownMs
+        val shouldLoad = timeSinceLastLoad >= loadCooldownMs
+        L.d("HomeFragment", "Cooldown check: enabled=$cooldownEnabled, timeSince=${timeSinceLastLoad}ms, threshold=${loadCooldownMs}ms, shouldLoad=$shouldLoad")
+        return shouldLoad
     }
 
     private fun setupMinimalUI() {
@@ -562,15 +636,15 @@ class HomeFragment : Fragment() {
             setTextColor(getThemeColor(R.attr.refreshButtonTextColor))
             background = createRoundedDrawable(getThemeColor(R.attr.filterButtonBackgroundColor))
             setOnClickListener {
-                L.d("HomeFragment", "Refresh button clicked")
+                L.d("HomeFragment", "Refresh button clicked - manual refresh")
 
-                isFirstLoad = true
-                lastLoadTime = 0
+                setLastLoadTime(0)
+                hasShownOfflineMessage = false
 
                 loadSubstitutePlan()
 
-                lastLoadTime = System.currentTimeMillis()
-                isFirstLoad = false
+                setLastLoadTime(System.currentTimeMillis())
+                setFirstAppLoadCompleted()
             }
         }
 
@@ -869,12 +943,26 @@ class HomeFragment : Fragment() {
 
                 val hasConnectivity = hasBasicConnectivity()
                 val shouldReload = shouldLoadFromNetwork()
-                val hasCurrentData = currentJsonData != null && !currentJsonData!!.toString().equals("{}")
+                val hasCurrentData = currentJsonData != null && currentJsonData!!.toString() != "{}"
 
                 L.d("HomeFragment", "onResume data check - hasConnectivity: $hasConnectivity, shouldReload: $shouldReload, hasCurrentData: $hasCurrentData")
 
                 when {
-                    (hasConnectivity && shouldReload) || (!hasCurrentData && hasConnectivity) -> {
+                    hasConnectivity && shouldReload -> {
+                        L.d("HomeFragment", "Connectivity available and cooldown allows reload")
+                        binding.root.post {
+                            if (isAdded && _binding != null && ::contentLayout.isInitialized) {
+                                showLoadingState()
+                            }
+                        }
+                        binding.root.post {
+                            if (isAdded && _binding != null && !isInSharedContentMode) {
+                                startBackgroundDataLoad()
+                            }
+                        }
+                    }
+                    !hasCurrentData && hasConnectivity -> {
+                        L.d("HomeFragment", "No current data and connectivity available - loading regardless of cooldown")
                         binding.root.post {
                             if (isAdded && _binding != null && ::contentLayout.isInitialized) {
                                 showLoadingState()
@@ -893,7 +981,7 @@ class HomeFragment : Fragment() {
                                 val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
                                 if (klasse != getString(R.string.home_not_selected)) {
                                     scope?.launch(Dispatchers.IO) {
-                                        val hasCachedData = loadCachedDataInBackground(klasse!!)
+                                        val hasCachedData = loadCachedDataInBackground(klasse!!, false)
                                         if (!hasCachedData) {
                                             withContext(Dispatchers.Main) {
                                                 showOfflineNoDataMessage()
@@ -918,8 +1006,33 @@ class HomeFragment : Fragment() {
                             }
                         }
                     }
+
                     else -> {
-                        L.d("HomeFragment", "Data preserved, no action needed")
+                        L.d("HomeFragment", "Data preserved, cooldown active - no reload needed")
+                        binding.root.post {
+                            if (isAdded && _binding != null && currentJsonData != null) {
+                                displaySubstitutePlan(currentJsonData!!)
+                                if (::lastUpdateText.isInitialized) {
+                                    val klasse = sharedPreferences.getString(
+                                        "selected_klasse",
+                                        getString(R.string.home_not_selected)
+                                    )
+                                    if (klasse != getString(R.string.home_not_selected)) {
+                                        val lastUpdateFile = File(
+                                            requireContext().cacheDir,
+                                            "last_update_$klasse.txt"
+                                        )
+                                        if (lastUpdateFile.exists()) {
+                                            val lastUpdate = lastUpdateFile.readText()
+                                            lastUpdateText.text = getString(
+                                                R.string.home_last_update_offline,
+                                                lastUpdate
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1146,7 +1259,7 @@ class HomeFragment : Fragment() {
             }
 
             val currentTime = System.currentTimeMillis()
-            val timeSinceLastLoad = currentTime - lastLoadTime
+            val timeSinceLastLoad = currentTime - getLastLoadTime()
 
             val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
 
@@ -1158,15 +1271,15 @@ class HomeFragment : Fragment() {
             classText.text = getString(R.string.home_class_prefix, klasse)
 
             val hasConnectivity = hasBasicConnectivity()
-            val shouldLoadFromNetwork = isFirstLoad || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs
+            val shouldLoadFromNetwork = isFirstAppLoad() || !cooldownEnabled || timeSinceLastLoad >= loadCooldownMs
 
             L.d("HomeFragment", "Cooldown check - shouldLoadFromNetwork: $shouldLoadFromNetwork, cooldownEnabled: $cooldownEnabled, timeSinceLastLoad: ${timeSinceLastLoad}ms, hasConnectivity: $hasConnectivity")
 
             if (shouldLoadFromNetwork && hasConnectivity) {
                 L.d("HomeFragment", "Loading substitute plan from network")
                 loadSubstitutePlan()
-                lastLoadTime = currentTime
-                isFirstLoad = false
+                setLastLoadTime(currentTime)
+                setFirstAppLoadCompleted()
             } else {
                 val remainingCooldown = if (cooldownEnabled) loadCooldownMs - timeSinceLastLoad else 0
                 L.d("HomeFragment", "Loading cached data - cooldown remaining: ${remainingCooldown}ms, hasConnectivity: $hasConnectivity")
@@ -1213,7 +1326,7 @@ class HomeFragment : Fragment() {
 
     private fun ensureCachedDataPersistence() {
         try {
-            if (currentJsonData == null || currentJsonData!!.toString().equals("{}")) {
+            if (currentJsonData == null || currentJsonData!!.toString() == "{}") {
                 L.d("HomeFragment", "No current data - attempting to restore from cache")
                 val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
                 if (klasse != getString(R.string.home_not_selected)) {
@@ -1336,6 +1449,13 @@ class HomeFragment : Fragment() {
         }
 
         val hasBasicConn = hasBasicConnectivity()
+
+        if (isFirstAppLoad()) {
+            setLastLoadTime(0)
+            hasShownOfflineMessage = false
+            L.d("HomeFragment", "First app load in loadSubstitutePlan - resetting cooldown")
+        }
+
         val willLoadFromNetwork = hasBasicConn && shouldLoadFromNetwork()
 
         setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
@@ -2347,7 +2467,7 @@ class HomeFragment : Fragment() {
             icon.startAnimation(rotateAnimation)
         }
 
-        L.d("HomeFragment", "Pull-to-refresh triggered")
+        L.d("HomeFragment", "Pull-to-refresh triggered - manual refresh")
 
         scope?.launch {
             try {
@@ -2357,17 +2477,16 @@ class HomeFragment : Fragment() {
                     if (klasse != getString(R.string.home_not_selected)) {
                         withContext(Dispatchers.Main) {
                             loadCachedSubstitutePlan(klasse!!)
-                            view?.let {
-                                Snackbar.make(it, getString(R.string.home_offline_mode), Snackbar.LENGTH_SHORT).show()
-                            }
+                            showOfflineMessageIfNeeded(isManualRefresh = true)
                         }
                     }
                 } else {
-                    isFirstLoad = true
-                    lastLoadTime = 0
+                    setLastLoadTime(0)
+                    hasShownOfflineMessage = false
+
                     loadSubstitutePlan()
-                    lastLoadTime = System.currentTimeMillis()
-                    isFirstLoad = false
+                    setLastLoadTime(System.currentTimeMillis())
+                    setFirstAppLoadCompleted()
                 }
 
                 delay(800)

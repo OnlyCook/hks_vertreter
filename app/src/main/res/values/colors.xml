@@ -46,7 +46,7 @@
     <color name="highlight_text_light">#FFFFFF</color>
     <color name="highlight_text_dark">#FFFFFF</color>
     <color name="highlight_animation_light">#FFE082</color>
-    <color name="highlight_animation_dark">#FFA726</color>
+    <color name="highlight_animation_dark">#db9021</color>
     <color name="table_header_text_light">#FFFFFF</color>
     <color name="table_header_text_dark">#FFFFFF</color>
     <color name="highlight_background_light">#0e5292</color>
@@ -151,6 +151,9 @@
     <color name="homework_detail_due_date_text_light">#FF666666</color>
     <color name="homework_detail_due_date_text_dark">#FFCCCCCC</color>
 
+    <color name="entry_highlight_color_light">#2fa7d4</color>
+    <color name="entry_highlight_color_dark">#247b9c</color>
+
     <!-- gradesfragment.kt -->
     <color name="grades_main_font_color_dark_improved">#E8E8E8</color>
     <color name="grades_secondary_font_color_dark">#CCCCCC</color>
@@ -176,15 +179,15 @@
     <color name="calendar_cell_border_dark">#404040</color>
     <color name="calendar_lesson_time_bg_dark">#2a2a2a</color>
     <color name="calendar_notes_light">#ffffff</color>
-    <color name="calendar_notes_dark">#e0e0e0</color>
+    <color name="calendar_notes_dark">#b0b0b0</color>
     <color name="calendar_notes_text_light">#545454</color>
-    <color name="calendar_notes_text_dark">#363636</color>
-    <color name="calendar_notes_inner_dark">#bac6cf</color>
+    <color name="calendar_notes_text_dark">#2a2a2a</color>
+    <color name="calendar_notes_inner_dark">#505050</color>
     <color name="calendar_notes_inner_light">#E3F2FD</color>
     <color name="homework_light">#0097A7</color>
     <color name="homework_dark">#004D57</color>
-    <color name="exam_light">#bf60e6</color>
-    <color name="exam_dark">#4A148C</color>
+    <color name="exam_light">#d670ff</color>
+    <color name="exam_dark">#3A0B66</color>
     <color name="holiday_vacation_light">#BDBDBD</color>
     <color name="holiday_vacation_dark">#424242</color>
     <color name="cancelled_light">#FF5252</color>
@@ -205,4 +208,10 @@
     <color name="colorblind_tritanopia_supervised_dark">#AD1457</color>
     <color name="colorblind_tritanopia_substituted_light">#4CAF50</color>
     <color name="colorblind_tritanopia_substituted_dark">#2E7D32</color>
+    <color name="edit_mode_undo_light">#abaaab</color>
+    <color name="edit_mode_undo_dark">#808080</color>
+    <color name="edit_mode_save_light">#4CAF50</color>
+    <color name="edit_mode_save_dark">#2E7D32</color>
+    <color name="edit_mode_cancel_light">#f44336</color>
+    <color name="edit_mode_cancel_dark">#C62828</color>
 </resources>

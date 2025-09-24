@@ -85,6 +85,8 @@
     <attr name="homeworkTextPrimaryColor" format="color" />
     <attr name="homeworkDetailDueDateTextColor" format="color" />
 
+    <attr name="entryHighlightColor" format="color" />
+
     <!-- fragment_grades.xml -->
     <attr name="gradesCardBackgroundColor" format="color" />
 
@@ -114,6 +116,9 @@
     <attr name="colorblindTritanopiaCancelledCellBackgroundColor" format="color" />
     <attr name="colorblindTritanopiaSupervisedCellBackgroundColor" format="color" />
     <attr name="colorblindTritanopiaSubstitutedCellBackgroundColor" format="color" />
+    <attr name="editModeUndoColor" format="color" />
+    <attr name="editModeSaveColor" format="color" />
+    <attr name="editModeCancelColor" format="color" />
 
     <!-- side_nav_bar.xml -->
     <attr name="navHeaderStartColor" format="color" />

@@ -482,10 +482,6 @@ class GalleryFragment : Fragment() {
         colorLegend.visibility = View.GONE
     }
 
-    private fun hideLoadingState() {
-        colorLegend.visibility = View.VISIBLE
-    }
-
     private fun showErrorState() {
         calendarGrid.removeAllViews()
 
@@ -635,10 +631,22 @@ class GalleryFragment : Fragment() {
 
         editModeControls = binding.root.findViewById(R.id.editModeControls)
 
-        binding.root.findViewById<Button>(R.id.btnUndo).setOnClickListener { performUndo() }
-        binding.root.findViewById<Button>(R.id.btnRedo).setOnClickListener { performRedo() }
-        binding.root.findViewById<Button>(R.id.btnCancel).setOnClickListener { cancelEdit() }
-        binding.root.findViewById<Button>(R.id.btnSave).setOnClickListener { saveEdit() }
+        binding.root.findViewById<Button>(R.id.btnUndo).apply {
+            setOnClickListener { performUndo() }
+            setBackgroundColor(getThemeColor(R.attr.editModeUndoColor))
+        }
+        binding.root.findViewById<Button>(R.id.btnRedo).apply {
+            setOnClickListener { performRedo() }
+            setBackgroundColor(getThemeColor(R.attr.editModeUndoColor))
+        }
+        binding.root.findViewById<Button>(R.id.btnCancel).apply {
+            setOnClickListener { cancelEdit() }
+            setBackgroundColor(getThemeColor(R.attr.editModeCancelColor))
+        }
+        binding.root.findViewById<Button>(R.id.btnSave).apply {
+            setOnClickListener { saveEdit() }
+            setBackgroundColor(getThemeColor(R.attr.editModeSaveColor))
+        }
 
         currentWeekTextView = binding.root.findViewById(R.id.currentWeekTextView)
         colorLegend = binding.root.findViewById(R.id.colorLegend)
@@ -2256,24 +2264,24 @@ class GalleryFragment : Fragment() {
             }
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
-                val teacherText = if (hasTeacherSubstitute) {
-                    "<s>${timetableEntry.teacher}</s>"
-                } else {
-                    timetableEntry.teacher
+                val teacherText = when {
+                    isCancelled -> "<s>${timetableEntry.teacher}</s>"
+                    hasTeacherSubstitute -> "<s>${timetableEntry.teacher}</s>"
+                    else -> timetableEntry.teacher
                 }
                 append(getString(R.string.gall_teacher, teacherText)).append("<br/>")
             }
 
             if (timetableEntry.room.isNotBlank() && timetableEntry.room != "UNKNOWN") {
-                val roomText = if (hasRoomChange) {
-                    "<s>${timetableEntry.room}</s> ➞ $newRoom"
-                } else {
-                    timetableEntry.room
+                val roomText = when {
+                    isCancelled -> "<s>${timetableEntry.room}</s>"
+                    hasRoomChange -> "<s>${timetableEntry.room}</s> ➞ $newRoom"
+                    else -> timetableEntry.room
                 }
                 append(getString(R.string.gall_room, roomText)).append("<br/>")
             }
 
-            if (calendarEntries.isNotEmpty()) { // just restrict it to one exam per lesson max (seems logical)
+            if (calendarEntries.isNotEmpty()) {
                 append("<br/>")
                 append(getString(R.string.gall_additional_information)).append("<br/>")
 
@@ -2443,10 +2451,30 @@ class GalleryFragment : Fragment() {
         val userOccasions = getUserSpecialOccasionsForDate(date).toMutableList()
         val occasionEditTexts = mutableListOf<EditText>()
 
-        fun addOccasionField(text: String = "") {
+        fun addOccasionField(text: String = "", animate: Boolean = false) {
+            if (occasionEditTexts.size >= 5) {
+                Toast.makeText(requireContext(), getString(R.string.gall_max_occasions_reached), Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            fun removeOccasionField(occasionLayout: LinearLayout, editText: EditText) {
+                occasionLayout.animate()
+                    .alpha(0f)
+                    .scaleY(0f)
+                    .setDuration(200)
+                    .setInterpolator(android.view.animation.AccelerateInterpolator())
+                    .withEndAction {
+                        occasionsContainer.removeView(occasionLayout)
+                        occasionEditTexts.remove(editText)
+                    }
+                    .start()
+            }
+
             val occasionLayout = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 4, 0, 4)
+                alpha = if (animate) 0f else 1f
+                scaleY = if (animate) 0f else 1f
             }
 
             val editText = EditText(requireContext()).apply {
@@ -2463,23 +2491,33 @@ class GalleryFragment : Fragment() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener {
-                    occasionsContainer.removeView(occasionLayout)
-                    occasionEditTexts.remove(editText)
+                    removeOccasionField(occasionLayout, editText)
                 }
             }
 
             occasionLayout.addView(editText)
             occasionLayout.addView(removeButton)
             occasionsContainer.addView(occasionLayout)
+
+            if (animate) {
+                occasionLayout.animate()
+                    .alpha(1f)
+                    .scaleY(1f)
+                    .setDuration(250)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
         }
 
         userOccasions.forEach { occasion ->
-            addOccasionField(occasion)
+            addOccasionField(occasion, false)
         }
 
         val addOccasionButton = Button(requireContext()).apply {
             text = getString(R.string.gall_add_event)
-            setOnClickListener { addOccasionField() }
+            setOnClickListener {
+                addOccasionField("", true)
+            }
         }
 
         container.addView(notesLabel)
@@ -3817,7 +3855,7 @@ class GalleryFragment : Fragment() {
             val notesLabel = TextView(requireContext()).apply {
                 text = getString(R.string.gall_personal_notes)
                 textSize = 14f
-                setTextColor("#1976D2".toColorInt())
+                setTextColor(getThemeColor(R.attr.settingsColorPrimary))
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 0, 0, 8)
             }

@@ -1226,6 +1226,7 @@
     <string name="gall_open_exam_details">Open exam details</string>
     <string name="gall_open_substitute_details">Open substitute details</string>
     <string name="gall_error_opening_page">Error opening page</string>
+    <string name="gall_max_occasions_reached">Maximum of 5 special occasions allowed per day</string>
 
     <!-- AUTOUPDATEWORKER.KT -->
     <string name="auto_update_notification_channel">Automatic Updates</string>

@@ -101,6 +101,8 @@
         <item name="homeworkTextPrimaryColor">@color/homework_text_primary_light</item>
         <item name="homeworkDetailDueDateTextColor">@color/homework_detail_due_date_text_light</item>
 
+        <item name="entryHighlightColor">@color/entry_highlight_color_light</item>
+
         <!-- dialog_homework_detail.xml -->
         <item name="homeworkDialogNotesBackgroundColor">@color/homework_dialog_notes_bg_light</item>
 
@@ -127,6 +129,9 @@
         <item name="homeworkCellBackgroundColor">@color/homework_light</item>
         <item name="examCellBackgroundColor">@color/exam_light</item>
         <item name="holidayVacationCellBackgroundColor">@color/holiday_vacation_light</item>
+        <item name="editModeUndoColor">@color/edit_mode_undo_light</item>
+        <item name="editModeSaveColor">@color/edit_mode_save_light</item>
+        <item name="editModeCancelColor">@color/edit_mode_cancel_light</item>
 
         <!-- side_nav_bar.xml -->
         <item name="navHeaderStartColor">#0f5293</item>

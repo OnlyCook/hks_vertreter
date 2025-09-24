@@ -1912,7 +1912,7 @@ class SlideshowFragment : Fragment() {
             (itemView.background as ColorDrawable).color
         } else null
 
-        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val highlightColor = getThemeColor(R.attr.entryHighlightColor)
         val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
         animator.duration = 2000
 
@@ -1943,9 +1943,15 @@ class SlideshowFragment : Fragment() {
         animator.start()
     }
 
+    private fun getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrRes, typedValue, true)
+        return ContextCompat.getColor(requireContext(), typedValue.resourceId)
+    }
+
     private fun highlightWithoutAnimation(itemView: View) {
         val originalBackground = itemView.background
-        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val highlightColor = getThemeColor(R.attr.entryHighlightColor)
 
         itemView.setBackgroundColor(highlightColor)
 

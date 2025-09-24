@@ -3134,7 +3134,7 @@ class ExamFragment : Fragment() {
             (itemView.background as ColorDrawable).color
         } else null
 
-        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val highlightColor = getThemeColor(R.attr.entryHighlightColor)
         val animator = android.animation.ValueAnimator.ofFloat(0f, 1f, 0f, 1f, 0f, 1f, 0f)
         animator.duration = 2000
 
@@ -3167,7 +3167,7 @@ class ExamFragment : Fragment() {
 
     private fun highlightWithoutAnimation(itemView: View) {
         val originalBackground = itemView.background
-        val highlightColor = resources.getColor(android.R.color.holo_blue_light)
+        val highlightColor = getThemeColor(R.attr.entryHighlightColor)
 
         itemView.setBackgroundColor(highlightColor)
 
