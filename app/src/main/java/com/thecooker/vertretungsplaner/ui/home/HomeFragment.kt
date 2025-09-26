@@ -108,7 +108,6 @@ class HomeFragment : Fragment() {
                 scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
                 isFromNavigationDrawer = arguments?.getBoolean("from_navigation_drawer", false) ?: false
-
                 isInSharedContentMode = sharedPreferences.getBoolean("skip_home_loading", false)
 
                 if (isInSharedContentMode) {
@@ -123,12 +122,11 @@ class HomeFragment : Fragment() {
                     loadColorBlindSettings()
 
                     if (isFirstStartup && !isFromNavigationDrawer) {
-                        showLoadingState()
-                        setLastLoadTime(0)
-                        hasShownOfflineMessage = false
-                        loadSubstitutePlan()
+                        L.d("HomeFragment", "First startup - using clean startup flow")
+                        performCleanStartup()
                         isFirstStartup = false
                     } else {
+                        L.d("HomeFragment", "Non-startup load")
                         binding.root.postDelayed({
                             if (isAdded && _binding != null) {
                                 startBackgroundDataLoad()
@@ -144,6 +142,99 @@ class HomeFragment : Fragment() {
         } catch (e: Exception) {
             L.e("HomeFragment", "Error in onCreateView", e)
             return createErrorView(inflater, container)
+        }
+    }
+
+    private fun performCleanStartup() {
+        L.d("HomeFragment", "Performing clean startup")
+
+        val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
+        if (klasse == getString(R.string.home_not_selected)) {
+            showError(getString(R.string.home_no_class_selected))
+            return
+        }
+
+        if (::classText.isInitialized) {
+            classText.text = getString(R.string.home_class_prefix, klasse)
+        }
+
+        if (::lastUpdateText.isInitialized) {
+            lastUpdateText.text = ""
+        }
+
+        showLoadingState()
+
+        setLastLoadTime(0)
+        hasShownOfflineMessage = false
+        currentJsonData = null
+
+        scope?.launch(Dispatchers.IO) {
+            try {
+                if (hasBasicConnectivity()) {
+                    L.d("HomeFragment", "Clean startup: Loading network data")
+                    loadNetworkDataClean(klasse!!)
+                } else {
+                    L.d("HomeFragment", "Clean startup: No connectivity, loading cached data")
+                    val hasCachedData = loadCachedDataInBackground(klasse!!, true)
+                    withContext(Dispatchers.Main) {
+                        if (!hasCachedData) {
+                            showOfflineNoDataMessage()
+                        } else {
+                            showOfflineMessageIfNeeded()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("HomeFragment", "Error in clean startup", e)
+                withContext(Dispatchers.Main) {
+                    showOfflineNoDataMessage()
+                }
+            }
+        }
+    }
+
+    private suspend fun loadNetworkDataClean(klasse: String) {
+        try {
+            L.d("HomeFragment", "Clean network load attempt")
+
+            val lastUpdate = fetchLastUpdateTime()
+            val substitutePlan = fetchSubstitutePlan(klasse)
+
+            saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
+            val filteredSubstitutePlan = filterPastDates(substitutePlan)
+
+            withContext(Dispatchers.Main) {
+                if (isAdded && _binding != null) {
+                    onConnectivityRestored()
+
+                    if (::lastUpdateText.isInitialized) {
+                        lastUpdateText.text = getString(R.string.home_last_update, lastUpdate)
+                    }
+
+                    contentLayout.removeAllViews()
+                    displaySubstitutePlan(filteredSubstitutePlan)
+                    currentJsonData = filteredSubstitutePlan
+
+                    setLastLoadTime(System.currentTimeMillis())
+                    setFirstAppLoadCompleted()
+
+                    L.d("HomeFragment", "Clean startup completed successfully")
+                }
+            }
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Clean network load failed", e)
+            val hasCachedData = loadCachedDataInBackground(klasse, true)
+            withContext(Dispatchers.Main) {
+                if (isAdded && _binding != null) {
+                    if (!hasCachedData) {
+                        showOfflineNoDataMessage()
+                    } else {
+                        view?.let {
+                            Snackbar.make(it, getString(R.string.home_network_error_using_cache), Snackbar.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -183,48 +274,31 @@ class HomeFragment : Fragment() {
 
         val hasBasicConn = hasBasicConnectivity()
 
-        if (isFirstAppLoad()) {
-            setLastLoadTime(0)
-            hasShownOfflineMessage = false
-            L.d("HomeFragment", "First app load - resetting cooldown to force fresh data")
-        }
-
         val willLoadFromNetwork = hasBasicConn && shouldLoadFromNetwork()
-
-        if (isFirstStartup) {
-            showLoadingState()
-        }
 
         setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
 
         scope?.launch(Dispatchers.IO) {
             try {
                 if (willLoadFromNetwork) {
-                    if (!isFirstStartup) {
-                        withContext(Dispatchers.Main) {
-                            showLoadingState()
-                        }
+                    withContext(Dispatchers.Main) {
+                        showLoadingState()
                     }
                     loadNetworkDataInBackground(klasse)
                 } else {
-                    if (isFirstStartup) {
-                        L.d("HomeFragment", "First startup - skipping cached data to prevent flickering, attempting network load anyway")
-                        loadNetworkDataInBackground(klasse)
-                    } else {
-                        val hasCachedData = loadCachedDataInBackground(klasse)
-                        if (!hasCachedData) {
-                            withContext(Dispatchers.Main) {
-                                if (!hasBasicConn) {
-                                    showOfflineNoDataMessage()
-                                } else {
-                                    showNoDataMessage()
-                                }
-                            }
-                        } else {
+                    val hasCachedData = loadCachedDataInBackground(klasse)
+                    if (!hasCachedData) {
+                        withContext(Dispatchers.Main) {
                             if (!hasBasicConn) {
-                                withContext(Dispatchers.Main) {
-                                    showOfflineMessageIfNeeded()
-                                }
+                                showOfflineNoDataMessage()
+                            } else {
+                                showNoDataMessage()
+                            }
+                        }
+                    } else {
+                        if (!hasBasicConn) {
+                            withContext(Dispatchers.Main) {
+                                showOfflineMessageIfNeeded()
                             }
                         }
                     }
@@ -234,17 +308,13 @@ class HomeFragment : Fragment() {
                 L.e("HomeFragment", "Error in background data load", e)
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
-                        if (!isFirstStartup) {
-                            scope?.launch(Dispatchers.IO) {
-                                val hasCachedData = loadCachedDataInBackground(klasse)
-                                if (!hasCachedData) {
-                                    withContext(Dispatchers.Main) {
-                                        showOfflineNoDataMessage()
-                                    }
+                        scope?.launch(Dispatchers.IO) {
+                            val hasCachedData = loadCachedDataInBackground(klasse)
+                            if (!hasCachedData) {
+                                withContext(Dispatchers.Main) {
+                                    showOfflineNoDataMessage()
                                 }
                             }
-                        } else {
-                            showOfflineNoDataMessage()
                         }
                     }
                 }
@@ -304,6 +374,11 @@ class HomeFragment : Fragment() {
         if (!::lastUpdateText.isInitialized) return
 
         try {
+            if (isFirstStartup) {
+                L.d("HomeFragment", "Skipping initial last update text during startup")
+                return
+            }
+
             val lastUpdateFile = File(requireContext().cacheDir, "last_update_$klasse.txt")
 
             if (isFirstAppLoad()) {
@@ -445,6 +520,8 @@ class HomeFragment : Fragment() {
 
                 saveSubstitutePlanToCache(klasse, substitutePlan.toString(), lastUpdate)
 
+                val filteredSubstitutePlan = filterPastDates(substitutePlan)
+
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
                         onConnectivityRestored()
@@ -455,8 +532,8 @@ class HomeFragment : Fragment() {
                         }
 
                         contentLayout.removeAllViews()
-                        displaySubstitutePlan(substitutePlan)
-                        currentJsonData = substitutePlan
+                        displaySubstitutePlan(filteredSubstitutePlan)
+                        currentJsonData = filteredSubstitutePlan
                         L.d("HomeFragment", "Displayed fresh network data")
 
                         setLastLoadTime(System.currentTimeMillis())
@@ -933,12 +1010,12 @@ class HomeFragment : Fragment() {
                         if (klasse != getString(R.string.home_not_selected) && ::classText.isInitialized) {
                             classText.text = getString(R.string.home_class_prefix, klasse)
                         }
-
-                        if (::lastUpdateText.isInitialized && klasse != getString(R.string.home_not_selected)) {
-                            val willLoadFromNetwork = hasBasicConnectivity() && shouldLoadFromNetwork()
-                            setInitialLastUpdateText(klasse!!, willLoadFromNetwork)
-                        }
                     }
+                }
+
+                if (isFirstStartup) {
+                    L.d("HomeFragment", "onResume: Skipping data load during startup")
+                    return
                 }
 
                 val hasConnectivity = hasBasicConnectivity()
@@ -1006,13 +1083,12 @@ class HomeFragment : Fragment() {
                             }
                         }
                     }
-
                     else -> {
                         L.d("HomeFragment", "Data preserved, cooldown active - no reload needed")
                         binding.root.post {
                             if (isAdded && _binding != null && currentJsonData != null) {
                                 displaySubstitutePlan(currentJsonData!!)
-                                if (::lastUpdateText.isInitialized) {
+                                if (::lastUpdateText.isInitialized && !hasConnectivity) {
                                     val klasse = sharedPreferences.getString(
                                         "selected_klasse",
                                         getString(R.string.home_not_selected)
@@ -1544,7 +1620,7 @@ class HomeFragment : Fragment() {
             cacheFile.writeText(jsonData)
             lastUpdateFile.writeText(lastUpdate)
 
-            L.d("HomeFragment", "Saved substitute plan to cache")
+            L.d("HomeFragment", "Saved substitute plan to cache with all entries intact")
         } catch (e: Exception) {
             L.e("HomeFragment", "Error saving to cache", e)
         }
@@ -1609,6 +1685,42 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun debugSubstituteData(jsonData: JSONObject) {
+        try {
+            L.d("HomeFragment", "=== SUBSTITUTE DATA DEBUG ===")
+            val dates = jsonData.optJSONArray("dates")
+            if (dates != null) {
+                L.d("HomeFragment", "Total dates in JSON: ${dates.length()}")
+                for (i in 0 until dates.length()) {
+                    val dateObj = dates.getJSONObject(i)
+                    val dateString = dateObj.getString("date")
+                    val entries = dateObj.getJSONArray("entries")
+                    L.d("HomeFragment", "Date: $dateString has ${entries.length()} entries")
+
+                    for (j in 0 until entries.length()) {
+                        val entry = entries.getJSONObject(j)
+                        val subject = entry.optString("fach", "")
+                        val lesson = entry.getInt("stunde")
+                        val lessonEnd = entry.optInt("stundebis", lesson)
+                        val type = entry.optString("text", "")
+
+                        if (type.contains("Exkursion", ignoreCase = true) ||
+                            type == "Entfällt wegen Exkursion, Praktikum oder Veranstaltung") {
+                            L.d("HomeFragment", "  *** EXCURSION ENTRY FOUND: subject='$subject', lesson=$lesson-$lessonEnd, type='$type'")
+                        } else {
+                            L.d("HomeFragment", "  Entry: subject='$subject', lesson=$lesson-$lessonEnd, type='$type'")
+                        }
+                    }
+                }
+            } else {
+                L.w("HomeFragment", "No dates array found in JSON data")
+            }
+            L.d("HomeFragment", "=== END SUBSTITUTE DATA DEBUG ===")
+        } catch (e: Exception) {
+            L.e("HomeFragment", "Error in debugSubstituteData", e)
+        }
+    }
+
     private fun displaySubstitutePlan(jsonData: JSONObject) {
         currentJsonData = jsonData
         if (!::contentLayout.isInitialized || !isAdded) {
@@ -1621,6 +1733,8 @@ class HomeFragment : Fragment() {
             showOfflineNoDataMessage()
             return
         }
+
+        //debugSubstitutePlan(jsonData)
 
         contentLayout.removeAllViews()
 
@@ -2921,12 +3035,18 @@ class HomeFragment : Fragment() {
                             set(Calendar.MILLISECOND, 0)
                         }
 
-                        // only keep dates that are today or in the future
                         if (entryDate.timeInMillis >= today.timeInMillis) {
                             filteredDates.put(dateObj)
+                            L.d("HomeFragment", "Keeping date: $dateString (${entryDate.time})")
+                        } else {
+                            L.d("HomeFragment", "Filtering out past date: $dateString (${entryDate.time})")
                         }
+                    } else {
+                        L.w("HomeFragment", "Could not parse date: $dateString, keeping it anyway")
+                        filteredDates.put(dateObj)
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    L.w("HomeFragment", "Error parsing date: $dateString, keeping it anyway", e)
                     filteredDates.put(dateObj)
                 }
             }

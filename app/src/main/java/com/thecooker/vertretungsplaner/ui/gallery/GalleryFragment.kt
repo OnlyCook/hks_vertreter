@@ -517,6 +517,8 @@ class GalleryFragment : Fragment() {
                 time = currentWeekStart.time
             }
 
+            cachedSubstituteData.clear()
+
             for (i in -2..9) {
                 val checkDate = Calendar.getInstance().apply {
                     time = calendar.time
@@ -525,10 +527,18 @@ class GalleryFragment : Fragment() {
 
                 val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(checkDate.time)
                 val substituteEntries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
+
                 cachedSubstituteData[dateStr] = substituteEntries
+
+                L.d("GalleryFragment", "Preloading date $dateStr: found ${substituteEntries.size} substitute entries")
+                if (substituteEntries.isNotEmpty()) {
+                    substituteEntries.forEach { entry ->
+                        L.d("GalleryFragment", "  Preloaded: ${entry.fach} ${entry.stunde}-${entry.stundeBis}: '${entry.art}'")
+                    }
+                }
             }
 
-            L.d("GalleryFragment", "Preloaded substitute data for ${cachedSubstituteData.size} days")
+            L.d("GalleryFragment", "Preloaded substitute data for ${cachedSubstituteData.size} days, total entries: ${cachedSubstituteData.values.sumOf { it.size }}")
         } catch (e: Exception) {
             L.e("GalleryFragment", "Error preloading substitute data", e)
         }
@@ -537,21 +547,25 @@ class GalleryFragment : Fragment() {
     private fun getCachedSubstituteEntries(date: Date): List<SubstituteRepository.SubstituteEntry> {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
 
-        if (isRealTimeUpdate) {
-            return cachedSubstituteData[dateStr] ?: emptyList()
+        L.d("GalleryFragment", "=== getCachedSubstituteEntries for $dateStr ===")
+        L.d("GalleryFragment", "cachedSubstituteData keys: ${cachedSubstituteData.keys}")
+        L.d("GalleryFragment", "cachedSubstituteData contains key: ${cachedSubstituteData.containsKey(dateStr)}")
+
+        val cached = cachedSubstituteData[dateStr]
+        if (cached != null) {
+            L.d("GalleryFragment", "Found cached data: ${cached.size} entries")
+            return cached
         }
 
-        if (isInitialDataLoaded) {
-            return cachedSubstituteData[dateStr] ?: emptyList()
-        }
-
+        L.d("GalleryFragment", "No cached data found, loading fresh for $dateStr")
         return try {
             val entries = SubstituteRepository.getSubstituteEntriesByDate(requireContext(), dateStr)
             cachedSubstituteData[dateStr] = entries
+            L.d("GalleryFragment", "Fresh load result: ${entries.size} entries")
             entries
         } catch (e: Exception) {
             L.w("GalleryFragment", "Error fetching substitute data for $dateStr", e)
-            cachedSubstituteData[dateStr] ?: emptyList()
+            emptyList()
         }
     }
 
@@ -3112,6 +3126,12 @@ class GalleryFragment : Fragment() {
         subject: String
     ): List<CalendarEntry> {
         val entries = mutableListOf<CalendarEntry>()
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.GERMANY).format(date)
+
+        if (dateStr == "2025-10-02") {
+            L.d("GalleryFragment", "=== DEBUGGING getCalendarEntriesForDayAndLesson ===")
+            L.d("GalleryFragment", "Date: $dateStr, Lesson: $lesson, Subject: '$subject'")
+        }
 
         // ferien check
         if (isDateInVacation(date)) {
@@ -3269,11 +3289,29 @@ class GalleryFragment : Fragment() {
 
         // add substitute entries (but handle room changes differently)
         val substituteEntries = getCachedSubstituteEntries(date)
+
+        if (dateStr == "2025-10-02") {
+            L.d("GalleryFragment", "Found ${substituteEntries.size} substitute entries for $dateStr")
+            substituteEntries.forEach { substitute ->
+                L.d("GalleryFragment", "  Substitute: ${substitute.fach} lesson ${substitute.stunde}-${substitute.stundeBis} type '${substitute.art}'")
+            }
+        }
+
         substituteEntries.forEach { substitute ->
             val startLesson = substitute.stunde
             val endLesson = substitute.stundeBis ?: substitute.stunde
 
+            if (dateStr == "2025-10-02") {
+                L.d("GalleryFragment", "Checking substitute: ${substitute.fach} lessons $startLesson-$endLesson vs current lesson $lesson, subject '$subject'")
+                L.d("GalleryFragment", "  Lesson match: ${lesson >= startLesson && lesson <= endLesson}")
+                L.d("GalleryFragment", "  Subject match: ${substitute.fach == subject}")
+            }
+
             if (lesson >= startLesson && lesson <= endLesson && substitute.fach == subject) {
+                if (dateStr == "2025-10-02") {
+                    L.d("GalleryFragment", "  *** MATCH FOUND! Adding substitute entry for ${substitute.fach}")
+                }
+
                 if (substitute.art.matches(Regex("Findet in Raum .* statt")) ||
                     substitute.art.matches(Regex("Takes place in room .*"))) {
                     entries.add(
@@ -3297,7 +3335,19 @@ class GalleryFragment : Fragment() {
                             colorPriorities["exam"] ?: 0
                         )
                     )
+
+                    if (dateStr == "2025-10-02") {
+                        L.d("GalleryFragment", "  Added substitute entry: $formattedText with background color $backgroundColor")
+                    }
                 }
+            }
+        }
+
+        if (dateStr == "2025-10-02") {
+            L.d("GalleryFragment", "=== END DEBUGGING getCalendarEntriesForDayAndLesson ===")
+            L.d("GalleryFragment", "Total entries created: ${entries.size}")
+            entries.forEach { entry ->
+                L.d("GalleryFragment", "  Entry: ${entry.type} - ${entry.content}")
             }
         }
 

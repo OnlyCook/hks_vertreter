@@ -62,6 +62,8 @@ class SlideshowFragment : Fragment() {
 
     private lateinit var searchBarHomework: EditText
 
+    private var currentSelectedLessonNumber: Int? = null
+
     // auto delete
     private val cleanupHandler = Handler(Looper.getMainLooper())
     private val cleanupRunnable = object : Runnable {
@@ -524,6 +526,7 @@ class SlideshowFragment : Fragment() {
 
         var selectedDate = editHomework?.dueDate ?: Date()
         var selectedLessonNumber: Int? = editHomework?.lessonNumber
+        currentSelectedLessonNumber = selectedLessonNumber
 
         sharedPreferences.getBoolean("has_scanned_document", false)
         val availableSubjects = getAvailableSubjects()
@@ -639,6 +642,7 @@ class SlideshowFragment : Fragment() {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (!switchAutoHomework.isChecked || !switchAutoHomework.isEnabled) {
                     selectedLessonNumber = if (position == 0) null else getLessonNumbers()[position - 1]
+                    currentSelectedLessonNumber = selectedLessonNumber
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -794,7 +798,8 @@ class SlideshowFragment : Fragment() {
                             onDateSelected(newDate, suggestedLesson)
                         }
                         .setNegativeButton(getString(R.string.slide_no)) { _, _ ->
-                            onDateSelected(newDate, null)
+                            val currentlySelectedLesson = getCurrentlySelectedLesson()
+                            onDateSelected(newDate, currentlySelectedLesson)
                         }
                         .show()
 
@@ -803,7 +808,8 @@ class SlideshowFragment : Fragment() {
                     alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
                     alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
                 } else {
-                    onDateSelected(newDate, null)
+                    val currentlySelectedLesson = getCurrentlySelectedLesson()
+                    onDateSelected(newDate, currentlySelectedLesson)
                 }
             },
             calendar.get(Calendar.YEAR),
@@ -827,6 +833,10 @@ class SlideshowFragment : Fragment() {
         }
 
         datePickerDialog.show()
+    }
+
+    private fun getCurrentlySelectedLesson(): Int? {
+        return currentSelectedLessonNumber
     }
 
     private fun getAvailableSubjects(): List<String> {
@@ -1222,7 +1232,7 @@ class SlideshowFragment : Fragment() {
             a.lessonNumber != null && b.lessonNumber != null -> {
                 a.lessonNumber!!.compareTo(b.lessonNumber!!)
             }
-            // both have due times -> sort by time
+            // both have due times -> sort by time (earlier times first)
             a.dueTime != null && b.dueTime != null -> {
                 a.dueTime!!.compareTo(b.dueTime!!)
             }
@@ -1231,10 +1241,10 @@ class SlideshowFragment : Fragment() {
             a.dueTime != null && b.lessonNumber != null -> 1
             // one has lesson number, one doesnt -> lesson number comes first (higher priority)
             a.lessonNumber != null && b.lessonNumber == null -> -1
-            b.lessonNumber != null -> 1
+            a.lessonNumber == null && b.lessonNumber != null -> 1
             // one has time, one doesnt -> time comes first (higher priority)
             a.dueTime != null && b.dueTime == null -> -1
-            b.dueTime != null -> 1
+            a.dueTime == null && b.dueTime != null -> 1
             // neither has time or lesson -> equal priority
             else -> 0
         }
@@ -1770,10 +1780,13 @@ class SlideshowFragment : Fragment() {
             }
         }
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.share_dialog_title))
             .setMessage(message)
-            .setPositiveButton(if (existingHomework != null) getString(R.string.share_overwrite) else getString(R.string.share_add)) { _, _ ->
+            .setPositiveButton(
+                if (existingHomework != null) getString(R.string.share_overwrite)
+                else getString(R.string.share_add)
+            ) { _, _ ->
                 if (existingHomework != null) {
                     existingHomework.content = sharedHomework.content
                     existingHomework.checklistItems = sharedHomework.checklistItems
@@ -1786,19 +1799,23 @@ class SlideshowFragment : Fragment() {
                 saveHomework()
                 updateHomeworkCount()
 
-                Toast.makeText(requireContext(),
+                Toast.makeText(
+                    requireContext(),
                     if (existingHomework != null) getString(R.string.share_homework_updated)
                     else getString(R.string.slide_homework_added),
-                    Toast.LENGTH_SHORT).show()
+                    Toast.LENGTH_SHORT
+                ).show()
             }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
-                // do nothing as was cancelled already
-            }
-            .setOnCancelListener {
-                // same here
-            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .setOnCancelListener { }
             .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
+
 
     private fun findExistingHomework(sharedHomework: HomeworkEntry): HomeworkEntry? {
         return homeworkList.find { existing ->

@@ -1,7 +1,7 @@
 package com.thecooker.vertretungsplaner.data
 
 import android.content.Context
-import android.util.Log
+import com.thecooker.vertretungsplaner.L
 import com.thecooker.vertretungsplaner.R
 import org.json.JSONObject
 import java.io.File
@@ -56,25 +56,50 @@ object SubstituteRepository {
 
                         for (j in 0 until dateEntries.length()) {
                             val entry = dateEntries.getJSONObject(j)
-                            entries.add(
-                                SubstituteEntry(
-                                    date = dateString,
-                                    stunde = entry.getInt("stunde"),
-                                    stundeBis = entry.optInt("stundebis", -1).takeIf { it != -1 },
-                                    fach = entry.optString("fach", ""),
-                                    raum = entry.optString("raum", ""),
-                                    art = entry.optString("text", ""),
-                                    originalText = entry.optString("text", "")
-                                )
+                            val stunde = entry.getInt("stunde")
+                            val stundeBisRaw = entry.optInt("stundebis", -1)
+
+                            val stundeBis = if (stundeBisRaw == -1 || stundeBisRaw == 0) {
+                                null
+                            } else {
+                                stundeBisRaw
+                            }
+
+                            val substituteEntry = SubstituteEntry(
+                                date = dateString,
+                                stunde = stunde,
+                                stundeBis = stundeBis,
+                                fach = entry.optString("fach", ""),
+                                raum = entry.optString("raum", ""),
+                                art = entry.optString("text", ""),
+                                originalText = entry.optString("text", "")
                             )
+
+                            entries.add(substituteEntry)
+
+                            L.d(TAG, "Loaded substitute entry: date=$dateString, subject=${substituteEntry.fach}, lesson=${substituteEntry.stunde}-${substituteEntry.stundeBis}, type='${substituteEntry.art}'")
                         }
                     }
+
+                    L.d(TAG, "Total substitute entries loaded: ${entries.size}")
                 }
+            } else {
+                L.w(TAG, "Cache file does not exist: substitute_plan_$klasse.json")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading cached substitute plan", e)
+            L.e(TAG, "Error loading cached substitute plan", e)
         }
 
         return entries
+    }
+
+    fun debugSubstituteEntries(context: Context, targetDate: String) {
+        val entries = getSubstituteEntriesByDate(context, targetDate)
+        L.d(TAG, "=== SUBSTITUTE REPOSITORY DEBUG for date $targetDate ===")
+        L.d(TAG, "Found ${entries.size} entries:")
+        entries.forEach { entry ->
+            L.d(TAG, "  Subject: ${entry.fach}, Lesson: ${entry.stunde}-${entry.stundeBis}, Type: '${entry.art}', Room: ${entry.raum}")
+        }
+        L.d(TAG, "=== END SUBSTITUTE REPOSITORY DEBUG ===")
     }
 }
