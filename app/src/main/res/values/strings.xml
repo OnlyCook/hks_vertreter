@@ -13,6 +13,7 @@
     <string name="menu_slideshow">Hausaufgaben</string>
     <string name="menu_klausuren">Klausuren</string>
     <string name="menu_noten">Noten</string>
+    <string name="menu_moodle">Moodle</string>
 
     <string name="january">Januar</string>
     <string name="february">Februar</string>
@@ -1360,5 +1361,51 @@
     <string name="time_hour_single">"1 Stunde"</string>
     <string name="time_hour_multiple">%d Stunden</string>
     <string name="time_check_interval_select">Prüfintervall auswählen</string>
+
+    <!-- MOODLEFRAGMENT.KT -->
+    <string name="moodle_search">Suchen</string>
+    <string name="moodle_dashboard">Dashboard</string>
+    <string name="moodle_notifications">Benachrichtigungen</string>
+    <string name="moodle_messages">Nachrichten</string>
+    <string name="moodle_back">Zurück</string>
+    <string name="moodle_forward">Vorwärts</string>
+    <string name="moodle_clear_search">Suche löschen</string>
+    <string name="moodle_submit_search">Suche abschicken</string>
+    <string name="moodle_search_hint">Kurse suchen…</string>
+    <string name="moodle_url_hint">course/view.php?id=123</string>
+    <string name="moodle_invalid_url">Ungültige URL - muss von moodle.kleyer.eu stammen</string>
+    <string name="moodle_search_failed">Suchfeld auf der Seite konnte nicht gefunden werden</string>
+    <string name="moodle_auto_login_title">Moodle Auto-Login</string>
+    <string name="moodle_auto_login_message">Anmeldedaten für automatisches Login speichern? Daten werden nur sicher auf Ihrem Gerät gespeichert.</string>
+    <string name="moodle_username_hint">Benutzername</string>
+    <string name="moodle_password_hint">Passwort</string>
+    <string name="moodle_save_credentials">Anmeldedaten sicher auf diesem Gerät speichern</string>
+    <string name="moodle_dont_show_again">Diesen Dialog nicht mehr anzeigen</string>
+    <string name="moodle_continue">Weiter</string>
+    <string name="moodle_cancel">Abbrechen</string>
+    <string name="moodle_profile">Profil</string>
+    <string name="moodle_grades">Noten</string>
+    <string name="moodle_calendar">Kalender</string>
+    <string name="moodle_files">Meine Dateien</string>
+    <string name="moodle_reports">Berichte</string>
+    <string name="moodle_settings">Einstellungen</string>
+    <string name="moodle_logout">Abmelden</string>
+    <string name="moodle_cache_cleared">Moodle-Cache geleert</string>
+    <string name="moodle_data_cleared">Alle Moodle-Daten gelöscht</string>
+    <string name="act_set_moodle_settings">Moodle-Einstellungen</string>
+    <string name="act_set_moodle_settings_desc">Moodle-Integration, Auto-Login und Seitenverhalten konfigurieren</string>
+    <string name="act_set_moodle_auto_dismiss">Bestätigungsdialog automatisch schließen</string>
+    <string name="act_set_moodle_debug_mode">Debug-Modus (volle Web-Steuerung)</string>
+    <string name="act_set_moodle_show_login_dialog">Login-Dialog anzeigen</string>
+    <string name="act_set_clear_cache">Cache leeren</string>
+    <string name="act_set_clear_data">Daten löschen</string>
+    <string-array name="moodle_search_types">
+        <item>Meine</item>
+        <item>Alle</item>
+    </string-array>
+    <string name="moodle_logged_out">Erfolgreich ausgeloggt</string>
+    <string name="moodle_login_failed">Anmeldung fehlgeschlagen. Bitte überprüfen Sie Ihren Benutzernamen und Ihr Passwort.</string>
+    <string name="moodle_login_form_not_found">Anmeldeformular nicht gefunden</string>
+    <string name="moodle_open_external">In externem Browser öffnen</string>
 
 </resources>

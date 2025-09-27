@@ -24,5 +24,9 @@
             android:id="@+id/nav_noten"
             android:icon="@drawable/ic_menu_noten"
             android:title="@string/menu_noten" />
+        <item
+            android:id="@+id/nav_moodle"
+            android:icon="@drawable/ic_moodle"
+            android:title="@string/menu_moodle" />
     </group>
 </menu>

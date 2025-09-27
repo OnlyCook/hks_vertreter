@@ -583,6 +583,8 @@ class BackupManager(private val context: Context) {
         val autoDetectLang = sharedPreferences.getBoolean("language_auto_detect", true)
         val savedLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
         val calendarColorLegend = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
+        val moodleDontShowLoginDialog = sharedPreferences.getBoolean("moodle_dont_show_login_dialog", true)
+        val moodleAutoDismissConfirm = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -612,6 +614,8 @@ class BackupManager(private val context: Context) {
             appendLine("LANGUAGE_AUTO_DETECT=$autoDetectLang")
             appendLine("SELECTED_LANGUAGE=$savedLanguage")
             appendLine("CALENDAR_COLOR_LEGEND=$calendarColorLegend")
+            appendLine("MOODLE_DONT_SHOW_LOGIN_DIALOG=$moodleDontShowLoginDialog")
+            appendLine("MOODLE_AUTO_DISMISS_CONFIRM=$moodleAutoDismissConfirm")
         }
     }
 
@@ -752,6 +756,16 @@ class BackupManager(private val context: Context) {
 
                     line.startsWith("CALENDAR_COLOR_LEGEND=") -> putBoolean(
                         "calendar_color_legend_enabled",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("MOODLE_DONT_SHOW_LOGIN_DIALOG=") -> putBoolean(
+                        "moodle_dont_show_login_dialog",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("MOODLE_AUTO_DISMISS_CONFIRM=") -> putBoolean(
+                        "moodle_auto_dismiss_confirm",
                         line.substringAfter("=").toBoolean()
                     )
                 }

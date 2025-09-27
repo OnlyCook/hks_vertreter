@@ -59,7 +59,7 @@ class MainActivity : BaseActivity() {
 
                 appBarConfiguration = AppBarConfiguration(
                     setOf(
-                        R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow, R.id.nav_klausuren, R.id.nav_noten
+                        R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow, R.id.nav_klausuren, R.id.nav_noten, R.id.nav_moodle
                     ), drawerLayout
                 )
 
@@ -114,6 +114,11 @@ class MainActivity : BaseActivity() {
                     }
                     R.id.nav_noten -> {
                         forceCleanNavigation(R.id.nav_noten)
+                        binding.drawerLayout.closeDrawers()
+                        return@setNavigationItemSelectedListener true
+                    }
+                    R.id.nav_moodle -> {
+                        forceCleanNavigation(R.id.nav_moodle)
                         binding.drawerLayout.closeDrawers()
                         return@setNavigationItemSelectedListener true
                     }
@@ -347,6 +352,12 @@ class MainActivity : BaseActivity() {
                     4 -> {
                         // Noten
                         navController.navigate(R.id.nav_noten, null, androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.nav_home, true)
+                            .build())
+                    }
+                    5 -> {
+                        // Moodle
+                        navController.navigate(R.id.nav_moodle, null, androidx.navigation.NavOptions.Builder()
                             .setPopUpTo(R.id.nav_home, true)
                             .build())
                     }

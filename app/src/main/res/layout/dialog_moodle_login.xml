@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/tvErrorMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/error_background"
+        android:padding="8dp"
+        android:text="@string/moodle_login_failed"
+        android:textColor="@android:color/holo_red_dark"
+        android:textSize="14sp"
+        android:visibility="gone"
+        android:layout_marginBottom="8dp" />
+
+    <EditText
+        android:id="@+id/etUsername"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/moodle_username_hint"
+        android:inputType="text"
+        android:layout_marginBottom="8dp" />
+
+    <EditText
+        android:id="@+id/etPassword"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/moodle_password_hint"
+        android:inputType="textPassword"
+        android:layout_marginBottom="16dp" />
+
+    <CheckBox
+        android:id="@+id/cbSaveCredentials"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_save_credentials" />
+
+    <CheckBox
+        android:id="@+id/cbDontShowAgain"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_dont_show_again" />
+
+</LinearLayout>

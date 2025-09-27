@@ -26,6 +26,7 @@ import android.view.View
 import com.thecooker.vertretungsplaner.utils.WorkScheduler
 import com.thecooker.vertretungsplaner.utils.TimePickerDialogHelper
 import android.app.TimePickerDialog
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Color
@@ -57,6 +58,11 @@ import androidx.core.graphics.toColorInt
 import android.widget.CheckBox
 import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import com.thecooker.vertretungsplaner.ui.moodle.MoodleFragment
+import java.io.File
 
 class SettingsActivity : BaseActivity() {
 
@@ -158,7 +164,16 @@ class SettingsActivity : BaseActivity() {
     // class advancement
     private lateinit var btnAdvanceClass: Button
 
+    // calendar
     private lateinit var switchCalendarColorLegend: Switch
+
+    // moodle
+    private lateinit var switchAutoDismissConfirm: Switch
+    private lateinit var switchDebugMode: Switch
+    private lateinit var switchShowLoginDialog: Switch
+    private lateinit var btnClearMoodleCache: Button
+    private lateinit var btnClearMoodleData: Button
+    private lateinit var moodleSettingsReceiver: BroadcastReceiver
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
@@ -204,6 +219,7 @@ class SettingsActivity : BaseActivity() {
         setupFilterLift()
         setupLanguageSettings()
         setupAppInfoSection()
+        initMoodleSettings()
 
         isInitializing = false
     }
@@ -3732,6 +3748,8 @@ class SettingsActivity : BaseActivity() {
         settingsToPreserve["calendar_real_time_enabled"] = sharedPreferences.getBoolean("calendar_real_time_enabled", true)
         settingsToPreserve["calendar_include_weekends_dayview"] = sharedPreferences.getBoolean("calendar_include_weekends_dayview", false)
         settingsToPreserve["left_filter_lift"] = sharedPreferences.getBoolean("left_filter_lift", false)
+        settingsToPreserve["moodle_dont_show_login_dialog"] = sharedPreferences.getBoolean("moodle_dont_show_login_dialog", true)
+        settingsToPreserve["moodle_auto_dismiss_confirm"] = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
 
         sharedPreferences.edit { clear() }
 
@@ -3852,6 +3870,119 @@ class SettingsActivity : BaseActivity() {
     private fun setupAppInfoSection() {
         isAppInfoExpanded = false
         updateAppInfoSectionUI()
+    }
+
+    private fun initMoodleSettings() {
+        switchAutoDismissConfirm = findViewById(R.id.switchAutoDismissConfirm)
+        switchShowLoginDialog = findViewById(R.id.switchShowLoginDialog)
+        btnClearMoodleCache = findViewById(R.id.btnClearMoodleCache)
+        btnClearMoodleData = findViewById(R.id.btnClearMoodleData)
+
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+
+        if (BuildConfig.DEBUG) {
+            val debugModeLayout = findViewById<LinearLayout>(R.id.debugModeLayout)
+            switchDebugMode = findViewById(R.id.switchDebugMode)
+            debugModeLayout.visibility = View.VISIBLE
+
+            switchDebugMode.isChecked = sharedPreferences.getBoolean("moodle_debug_mode", false)
+            switchDebugMode.setOnCheckedChangeListener { _, isChecked ->
+                sharedPreferences.edit { putBoolean("moodle_debug_mode", isChecked) }
+                if (isChecked) {
+                    val dialog = AlertDialog.Builder(this)
+                        .setTitle("Debug Mode Warning")
+                        .setMessage("Debug mode enables full web controls and may pose security risks. Only enable if you understand the implications.")
+                        .setPositiveButton("I Understand", null)
+                        .show()
+
+                    val buttonColor = this.getThemeColor(R.attr.dialogSectionButtonColor)
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+                }
+            }
+        }
+
+        switchAutoDismissConfirm.isChecked = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
+        val dontShowDialog = sharedPreferences.getBoolean("moodle_dont_show_login_dialog", false)
+        switchShowLoginDialog.isChecked = !dontShowDialog
+
+        switchAutoDismissConfirm.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit { putBoolean("moodle_auto_dismiss_confirm", isChecked) }
+        }
+
+        switchShowLoginDialog.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit { putBoolean("moodle_dont_show_login_dialog", !isChecked) }
+        }
+
+        btnClearMoodleCache.setOnClickListener {
+            val moodleFragment = getMoodleFragment()
+            moodleFragment?.clearMoodleCache() ?: run {
+                clearMoodleCacheManually()
+            }
+        }
+
+        btnClearMoodleData.setOnClickListener {
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Clear All Moodle Data")
+                .setMessage("This will clear all cached data, saved credentials, and settings. Are you sure?")
+                .setPositiveButton("Clear") { _, _ ->
+                    val moodleFragment = getMoodleFragment()
+                    moodleFragment?.clearMoodleData() ?: run {
+                        clearMoodleDataManually()
+                    }
+                    switchAutoDismissConfirm.isChecked = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
+                    switchShowLoginDialog.isChecked = !sharedPreferences.getBoolean("moodle_dont_show_login_dialog", false)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+
+            val buttonColor = this.getThemeColor(R.attr.dialogSectionButtonColor)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+        }
+    }
+
+    private fun getMoodleFragment(): MoodleFragment? {
+        // try to get current fragment though aint no way i am implementing this
+        return null
+    }
+
+    private fun clearMoodleCacheManually() {
+        val webViewDir = File(applicationInfo.dataDir, "app_webview")
+        if (webViewDir.exists()) {
+            webViewDir.deleteRecursively()
+        }
+        Toast.makeText(this, "Moodle cache cleared", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearMoodleDataManually() {
+        clearMoodleCacheManually()
+
+        try {
+            val masterKey = MasterKey.Builder(this)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+
+            val encryptedPrefs = EncryptedSharedPreferences.create(
+                this,
+                "moodle_credentials",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            encryptedPrefs.edit { clear() }
+        } catch (_: Exception) {
+        }
+
+        sharedPreferences.edit {
+            remove("moodle_dont_show_login_dialog")
+                .remove("moodle_auto_dismiss_confirm")
+                .remove("moodle_debug_mode")
+        }
+
+        Toast.makeText(this, "All Moodle data cleared", Toast.LENGTH_SHORT).show()
     }
 }
 
