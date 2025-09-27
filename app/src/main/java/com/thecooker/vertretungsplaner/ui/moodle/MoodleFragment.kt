@@ -56,9 +56,13 @@ class MoodleFragment : Fragment() {
     private lateinit var btnClearSearch: ImageButton
     private lateinit var btnSubmitSearch: ImageButton
     private lateinit var spinnerSearchType: Spinner
+    private lateinit var tvNotificationCount: TextView
+    private lateinit var tvMessageCount: TextView
 
     private lateinit var sharedPrefs: SharedPreferences
     private lateinit var encryptedPrefs: SharedPreferences
+
+    private var isPageFullyLoaded = false
 
     private val moodleBaseUrl = "https://moodle.kleyer.eu"
     private val loginUrl = "$moodleBaseUrl/login/index.php"
@@ -149,6 +153,8 @@ class MoodleFragment : Fragment() {
         btnSubmitSearch = root.findViewById(R.id.btnSubmitSearch)
         btnOpenInBrowser = root.findViewById(R.id.btnOpenInBrowser)
         spinnerSearchType = root.findViewById(R.id.spinnerSearchType)
+        tvNotificationCount = root.findViewById(R.id.tvNotificationCount)
+        tvMessageCount = root.findViewById(R.id.tvMessageCount)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -201,6 +207,7 @@ class MoodleFragment : Fragment() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+                isPageFullyLoaded = true
 
                 if (url?.contains("logout.php") == true) {
                     handleLogout()
@@ -211,16 +218,24 @@ class MoodleFragment : Fragment() {
                 showExtendedHeaderInitially()
                 url?.let { updateUrlBar(it) }
 
-                if (url == loginUrl || url?.contains("login/index.php") == true) {
-                    isConfirmDialogPage { isConfirmDialog ->
-                        if (isConfirmDialog) {
-                            checkConfirmDialog()
-                        } else {
-                            checkLoginFailure { loginFailed ->
-                                hasLoginFailed = loginFailed
+                Handler(Looper.getMainLooper()).postDelayed({
+                    updateCounters()
+                }, 500)
 
-                                if (!isLoginDialogShown) {
-                                    checkAutoLogin()
+                if (url == loginUrl || url?.contains("login/index.php") == true) {
+                    waitForPageReady { pageReady ->
+                        if (pageReady) {
+                            isConfirmDialogPage { isConfirmDialog ->
+                                if (isConfirmDialog) {
+                                    checkConfirmDialog()
+                                } else {
+                                    checkLoginFailure { loginFailed ->
+                                        hasLoginFailed = loginFailed
+
+                                        if (!isLoginDialogShown) {
+                                            checkAutoLogin()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -234,6 +249,7 @@ class MoodleFragment : Fragment() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 progressBar.visibility = View.VISIBLE
+                isPageFullyLoaded = false
             }
         }
 
@@ -290,6 +306,30 @@ class MoodleFragment : Fragment() {
             if (scrollY > scrollThreshold && isAtTop) {
                 isAtTop = false
                 updateExtendedHeaderVisibility()
+            }
+        }
+    }
+
+    private fun waitForPageReady(maxAttempts: Int = 20, attempt: Int = 0, callback: (Boolean) -> Unit) {
+        if (attempt >= maxAttempts) {
+            callback(false)
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            return document.readyState === 'complete' && 
+                   document.querySelector('body') !== null;
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                callback(true)
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForPageReady(maxAttempts, attempt + 1, callback)
+                }, 200)
             }
         }
     }
@@ -449,21 +489,173 @@ class MoodleFragment : Fragment() {
 
     private fun toggleSearchBar() {
         searchBarVisible = !searchBarVisible
-        searchLayout.visibility = if (searchBarVisible) View.VISIBLE else View.GONE
 
-        if (searchBarVisible) {
-            searchBarMoodle.requestFocus()
-            updateExtendedHeaderVisibility()
+        val animationsEnabled = android.provider.Settings.Global.getFloat(
+            requireContext().contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            if (searchBarVisible) {
+                searchLayout.visibility = View.VISIBLE
+
+                searchLayout.measure(
+                    View.MeasureSpec.makeMeasureSpec(searchLayout.parent.let { (it as View).width }, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val targetHeight = searchLayout.measuredHeight
+
+                val layoutParams = searchLayout.layoutParams
+                layoutParams.height = 0
+                searchLayout.layoutParams = layoutParams
+
+                android.animation.ValueAnimator.ofInt(0, targetHeight).apply {
+                    duration = 250
+                    interpolator = android.view.animation.DecelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        searchLayout.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        searchLayout.layoutParams = layoutParams
+                    }
+
+                    start()
+                }
+
+                searchBarMoodle.requestFocus()
+            } else {
+                val currentHeight = searchLayout.height
+                val layoutParams = searchLayout.layoutParams
+
+                android.animation.ValueAnimator.ofInt(currentHeight, 0).apply {
+                    duration = 200
+                    interpolator = android.view.animation.AccelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        searchLayout.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        searchLayout.visibility = View.GONE
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        searchLayout.layoutParams = layoutParams
+                    }
+
+                    start()
+                }
+
+                searchBarMoodle.clearFocus()
+                searchBarMoodle.setText("")
+            }
         } else {
-            searchBarMoodle.clearFocus()
-            searchBarMoodle.setText("")
-            updateExtendedHeaderVisibility()
+            searchLayout.visibility = if (searchBarVisible) View.VISIBLE else View.GONE
+            val layoutParams = searchLayout.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            searchLayout.layoutParams = layoutParams
+
+            if (searchBarVisible) {
+                searchBarMoodle.requestFocus()
+            } else {
+                searchBarMoodle.clearFocus()
+                searchBarMoodle.setText("")
+            }
         }
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            updateExtendedHeaderVisibility()
+        }, if (animationsEnabled) 50 else 0)
     }
 
     private fun updateExtendedHeaderVisibility() {
         val shouldShow = isAtTop && !searchBarVisible
-        extendedHeaderLayout.visibility = if (shouldShow) View.VISIBLE else View.GONE
+        val currentVisibility = extendedHeaderLayout.visibility
+
+        if ((shouldShow && currentVisibility == View.VISIBLE) ||
+            (!shouldShow && currentVisibility == View.GONE)) {
+            return
+        }
+
+        val animationsEnabled = android.provider.Settings.Global.getFloat(
+            requireContext().contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            if (shouldShow) {
+                extendedHeaderLayout.visibility = View.VISIBLE
+
+                extendedHeaderLayout.measure(
+                    View.MeasureSpec.makeMeasureSpec(extendedHeaderLayout.parent.let { (it as View).width }, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val targetHeight = extendedHeaderLayout.measuredHeight
+
+                val layoutParams = extendedHeaderLayout.layoutParams
+                layoutParams.height = 0
+                extendedHeaderLayout.layoutParams = layoutParams
+
+                android.animation.ValueAnimator.ofInt(0, targetHeight).apply {
+                    duration = 250
+                    interpolator = android.view.animation.DecelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        extendedHeaderLayout.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        extendedHeaderLayout.layoutParams = layoutParams
+                    }
+
+                    start()
+                }
+
+            } else {
+                val currentHeight = extendedHeaderLayout.height
+                val layoutParams = extendedHeaderLayout.layoutParams
+
+                android.animation.ValueAnimator.ofInt(currentHeight, 0).apply {
+                    duration = 200
+                    interpolator = android.view.animation.AccelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        extendedHeaderLayout.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        extendedHeaderLayout.visibility = View.GONE
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        extendedHeaderLayout.layoutParams = layoutParams
+                    }
+
+                    start()
+                }
+            }
+        } else {
+            extendedHeaderLayout.visibility = if (shouldShow) View.VISIBLE else View.GONE
+            val layoutParams = extendedHeaderLayout.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            extendedHeaderLayout.layoutParams = layoutParams
+        }
+    }
+
+    private inline fun android.animation.ValueAnimator.doOnEnd(crossinline action: () -> Unit) {
+        addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                action()
+            }
+        })
     }
 
     private fun updateUrlBar(url: String) {
@@ -503,17 +695,74 @@ class MoodleFragment : Fragment() {
 
         val searchType = spinnerSearchType.selectedItemPosition
         val searchUrl = when (searchType) {
-            0 -> "$moodleBaseUrl/my/courses.php" // My Courses
-            1 -> "$moodleBaseUrl/course/index.php" // All Courses
+            0 -> "$moodleBaseUrl/my/courses.php" // My courses
+            1 -> "$moodleBaseUrl/course/index.php" // All courses
             else -> "$moodleBaseUrl/my/courses.php"
         }
 
         loadUrlInBackground(searchUrl)
 
-        // Wait for page to load then inject search
-        Handler(Looper.getMainLooper()).postDelayed({
+        waitForSearchElementsReady(searchType) {
             injectSearchQuery(query, searchType)
-        }, 2000)
+        }
+    }
+
+    private fun waitForSearchElementsReady(searchType: Int, maxAttempts: Int = 20, attempt: Int = 0, callback: () -> Unit) {
+        if (attempt >= maxAttempts) {
+            callback()
+            return
+        }
+
+        val searchFieldXpath = when (searchType) {
+            0 -> "/html/body/div[1]/div[2]/div/div[1]/div/div/section/section/div/div/div[1]/div[1]/div/div[2]/div/div/input"
+            1 -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div[1]/div/div[2]/div/form/div/input"
+            else -> "/html/body/div[1]/div[2]/div/div[1]/div/div/section/section/div/div/div[1]/div[1]/div/div[2]/div/div/input"
+        }
+
+        val jsCode = """
+        (function() {
+            var searchField = document.evaluate('$searchFieldXpath', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            return searchField !== null && searchField.offsetParent !== null;
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    callback()
+                }, 500)
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForSearchElementsReady(searchType, maxAttempts, attempt + 1, callback)
+                }, 300)
+            }
+        }
+    }
+
+    private fun waitForPageLoadComplete(maxAttempts: Int = 15, attempt: Int = 0, callback: () -> Unit) {
+        if (attempt >= maxAttempts) {
+            callback()
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            return document.readyState === 'complete' && 
+                   document.querySelector('input') !== null;
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    callback()
+                }, 300)
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForPageLoadComplete(maxAttempts, attempt + 1, callback)
+                }, 250)
+            }
+        }
     }
 
     private fun injectSearchQuery(query: String, searchType: Int) {
@@ -559,37 +808,38 @@ class MoodleFragment : Fragment() {
         val shouldAutoDismiss = sharedPrefs.getBoolean("moodle_auto_dismiss_confirm", true)
 
         if (!shouldAutoDismiss) {
-            // If auto-dismiss is disabled, don't show login dialog either
             isLoginDialogShown = true
             return
         }
 
-        val jsCode = """
-        (function() {
-            try {
-                var confirmHeader = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
-                    var cancelButton = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    if (cancelButton) {
-                        cancelButton.click();
-                        return true;
+        waitForPageReady { pageReady ->
+            if (pageReady) {
+                val jsCode = """
+            (function() {
+                try {
+                    var confirmHeader = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
+                        var cancelButton = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                        if (cancelButton) {
+                            cancelButton.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                } catch(e) {
+                    return false;
+                }
+            })();
+        """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (result == "true") {
+                        isLoginDialogShown = true
+                        Toast.makeText(requireContext(), "Session termination cancelled", Toast.LENGTH_SHORT).show()
                     }
                 }
-                return false;
-            } catch(e) {
-                return false;
             }
-        })();
-    """.trimIndent()
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            webView.evaluateJavascript(jsCode) { result ->
-                if (result == "true") {
-                    isLoginDialogShown = true
-                    Toast.makeText(requireContext(), "Session termination cancelled", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }, 1000)
+        }
     }
 
     private fun isUserLoggedIn(callback: (Boolean) -> Unit) {
@@ -790,7 +1040,7 @@ class MoodleFragment : Fragment() {
             setIcon(R.drawable.ic_star)
         }
         popup.menu.add(0, 3, 0, getString(R.string.moodle_calendar)).apply {
-            setIcon(R.drawable.ic_today)
+            setIcon(R.drawable.ic_menu_gallery)
         }
         popup.menu.add(0, 4, 0, getString(R.string.moodle_files)).apply {
             setIcon(R.drawable.ic_folder)
@@ -1001,6 +1251,73 @@ class MoodleFragment : Fragment() {
             ContextCompat.getColor(this, typedValue.resourceId)
         } else {
             typedValue.data
+        }
+    }
+
+    private fun updateCounters() {
+        if (!isPageFullyLoaded) return
+
+        val currentUrl = webView.url ?: ""
+        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+        if (isOnLoginPage) {
+            tvNotificationCount.visibility = View.GONE
+            tvMessageCount.visibility = View.GONE
+            return
+        }
+
+        val notificationCountJs = """
+        (function() {
+            try {
+                var notificationElement = document.evaluate('/html/body/div[1]/nav/div/div/div[2]/div[1]/div', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (notificationElement && notificationElement.textContent) {
+                    var count = notificationElement.textContent.trim().match(/\d+/);
+                    return count ? count[0] : '0';
+                }
+                return '0';
+            } catch(e) {
+                return '0';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(notificationCountJs) { result ->
+            val count = result.replace("\"", "").toIntOrNull() ?: 0
+            activity?.runOnUiThread {
+                if (count > 0) {
+                    tvNotificationCount.text = if (count > 99) "99+" else count.toString()
+                    tvNotificationCount.visibility = View.VISIBLE
+                } else {
+                    tvNotificationCount.visibility = View.GONE
+                }
+            }
+        }
+
+        val messageCountJs = """
+        (function() {
+            try {
+                var messageElement = document.evaluate('/html/body/div[1]/nav/div/div/div[3]/a/div/span[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (messageElement && messageElement.textContent) {
+                    var count = messageElement.textContent.trim().match(/\d+/);
+                    return count ? count[0] : '0';
+                }
+                return '0';
+            } catch(e) {
+                return '0';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(messageCountJs) { result ->
+            val count = result.replace("\"", "").toIntOrNull() ?: 0
+            activity?.runOnUiThread {
+                if (count > 0) {
+                    tvMessageCount.text = if (count > 99) "99+" else count.toString()
+                    tvMessageCount.visibility = View.VISIBLE
+                } else {
+                    tvMessageCount.visibility = View.GONE
+                }
+            }
         }
     }
 

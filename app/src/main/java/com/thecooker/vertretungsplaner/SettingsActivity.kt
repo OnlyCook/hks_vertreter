@@ -1961,7 +1961,8 @@ class SettingsActivity : BaseActivity() {
             getString(R.string.set_act_substitute_plan_recommended),
             getString(R.string.act_set_homework),
             getString(R.string.act_set_exams),
-            getString(R.string.dlg_edit_sub_grades)
+            getString(R.string.dlg_edit_sub_grades),
+            getString(R.string.menu_moodle)
         )
         var currentSelection = sharedPreferences.getInt("startup_page_index", 1)
 

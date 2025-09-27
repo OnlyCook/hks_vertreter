@@ -14,7 +14,8 @@
         android:orientation="horizontal"
         android:padding="12dp"
         android:background="?attr/homeworkFragmentBackgroundColor"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:elevation="4dp">
 
         <ImageButton
             android:id="@+id/btnSearch"
@@ -43,26 +44,66 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <ImageButton
-            android:id="@+id/btnNotifications"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_notifications"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/moodle_notifications" />
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <ImageButton
+                android:id="@+id/btnNotifications"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_notifications"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/moodle_notifications" />
+
+            <TextView
+                android:id="@+id/tvNotificationCount"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="6dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/badge_background"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
         <Space
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <ImageButton
-            android:id="@+id/btnMessages"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_message"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/moodle_messages" />
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <ImageButton
+                android:id="@+id/btnMessages"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_message"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/moodle_messages" />
+
+            <TextView
+                android:id="@+id/tvMessageCount"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="6dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/badge_background"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
         <Space
             android:layout_width="0dp"
@@ -82,73 +123,7 @@
 
     </LinearLayout>
 
-    <!-- Extended header with navigation controls (only visible at top) -->
-    <LinearLayout
-        android:id="@+id/extendedHeaderLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:background="?attr/homeworkFragmentBackgroundColor"
-        android:gravity="center_vertical"
-        android:visibility="gone">
-
-        <ImageButton
-            android:id="@+id/btnBack"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@drawable/ic_arrow_back"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/moodle_back"
-            android:layout_marginEnd="8dp" />
-
-        <RelativeLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1">
-
-            <EditText
-                android:id="@+id/urlBar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/moodle_url_hint"
-                android:inputType="textUri"
-                android:padding="8dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="40dp"
-                android:background="@drawable/subtle_search_background"
-                android:textSize="14sp"
-                android:textColor="?attr/textPrimaryColor"
-                android:textColorHint="?attr/textSecondaryColor"
-                android:maxLines="1"
-                android:imeOptions="actionGo" />
-
-            <ImageButton
-                android:id="@+id/btnOpenInBrowser"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
-                android:layout_marginEnd="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_output"
-                android:contentDescription="@string/moodle_open_external"
-                android:scaleType="centerInside" />
-
-        </RelativeLayout>
-
-        <ImageButton
-            android:id="@+id/btnForward"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@drawable/ic_arrow_forward"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/moodle_forward"
-            android:layout_marginStart="8dp" />
-
-    </LinearLayout>
-
-    <!-- Search bar with controls (initially hidden) -->
+    <!-- Search bar with controls (initially hidden)-->
     <LinearLayout
         android:id="@+id/searchLayout"
         android:layout_width="match_parent"
@@ -156,7 +131,8 @@
         android:orientation="horizontal"
         android:padding="12dp"
         android:background="?attr/homeworkFragmentBackgroundColor"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:elevation="3dp">
 
         <RelativeLayout
             android:layout_width="0dp"
@@ -214,6 +190,73 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:entries="@array/moodle_search_types" />
+
+    </LinearLayout>
+
+    <!-- Extended header with navigation controls (only visible at top) -->
+    <LinearLayout
+        android:id="@+id/extendedHeaderLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="?attr/homeworkFragmentBackgroundColor"
+        android:gravity="center_vertical"
+        android:visibility="gone"
+        android:elevation="2dp">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_arrow_back"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/moodle_back"
+            android:layout_marginEnd="8dp" />
+
+        <RelativeLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <EditText
+                android:id="@+id/urlBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/moodle_url_hint"
+                android:inputType="textUri"
+                android:padding="8dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="40dp"
+                android:background="@drawable/subtle_search_background"
+                android:textSize="14sp"
+                android:textColor="?attr/textPrimaryColor"
+                android:textColorHint="?attr/textSecondaryColor"
+                android:maxLines="1"
+                android:imeOptions="actionGo" />
+
+            <ImageButton
+                android:id="@+id/btnOpenInBrowser"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_output"
+                android:contentDescription="@string/moodle_open_external"
+                android:scaleType="centerInside" />
+
+        </RelativeLayout>
+
+        <ImageButton
+            android:id="@+id/btnForward"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_arrow_forward"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/moodle_forward"
+            android:layout_marginStart="8dp" />
 
     </LinearLayout>
 
