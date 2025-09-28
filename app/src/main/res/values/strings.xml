@@ -181,8 +181,8 @@
     <string name="act_set_liability">Haftungsausschluss</string>
     <string name="act_set_liability_details">Der Entwickler übernimmt keine Haftung für die Richtigkeit der angezeigten Informationen. Die App dient nur zur Information. Verbindliche Auskünfte erhältst du direkt von der Schule.</string>
     <string name="act_set_app_version">App-Version</string>
-    <string name="act_set_loading">Lädt...</string>
-    <string name="settings_search_hint">Einstellungen durchsuchen...</string>
+    <string name="act_set_loading">Lädt…</string>
+    <string name="settings_search_hint">Einstellungen durchsuchen…</string>
     <string name="settings_no_results">Keine passenden Einstellungen gefunden</string>
     <string name="act_set_show_app_info">App-Informationen anzeigen</string>
     <string name="act_set_hide_app_info">App-Informationen ausblenden</string>
@@ -199,7 +199,7 @@
     <string name="act_set_complete_setup">Einrichtung abschließen</string>
 
     <!-- ACTIVITY_SUBJECT_SELECTION.XML -->
-    <string name="act_sub_sel_search_hint">Fächer suchen...</string>
+    <string name="act_sub_sel_search_hint">Fächer suchen…</string>
     <string name="act_sub_sel_add_button">＋</string>
     <string name="act_sub_sel_choose_subjects">Wähle deine Fächer aus:</string>
     <string name="act_sub_sel_subjects_text"> Fächer</string>
@@ -214,9 +214,9 @@
     <string name="dia_add_exam_date_label">Klausurdatum:</string>
     <string name="dia_add_exam_date_button">Datum wählen</string>
     <string name="dia_add_exam_mark_label">Klausurnote:</string>
-    <string name="dia_add_exam_mark_hint">0-15 Punkte</string>
+    <string name="dia_add_exam_mark_hint">0–15 Punkte</string>
     <string name="dia_add_exam_note_label">Notiz (optional):</string>
-    <string name="dia_add_exam_note_hint">Zusätzliche Informationen zur Klausur...</string>
+    <string name="dia_add_exam_note_hint">Zusätzliche Informationen zur Klausur…</string>
 
     <!-- DIALOG_ADD_HOMEWORK.XML -->
     <string name="dia_add_hw_subject_label">Fach:</string>
@@ -226,7 +226,7 @@
     <string name="dia_add_hw_lesson_label">Stunde (optional):</string>
     <string name="dia_add_hw_date_button">Datum wählen</string>
     <string name="dia_add_hw_content_label">Hausaufgaben-Inhalt:</string>
-    <string name="dia_add_hw_content_hint">Beschreibung der Hausaufgabe...\n- Aufgabe 1\n- Aufgabe 2\nHinweis: Zusätzliche Informationen</string>
+    <string name="dia_add_hw_content_hint">Beschreibung der Hausaufgabe…\n- Aufgabe 1\n- Aufgabe 2\nHinweis: Zusätzliche Informationen</string>
     <string name="dia_add_hw_tip">Tipp: Beginne Zeilen mit \'-\' für Checklisten. Du kannst Text und Checklisten mischen.</string>
 
     <!-- DIALOG_ADD_SUBJECT_MANUAL.XML -->
@@ -239,7 +239,7 @@
     <string name="dia_add_sub_manual_add_room_btn">+ Raum hinzufügen</string>
 
     <!-- DIALOG_BACKUP_PROGRESS.XML -->
-    <string name="dia_bak_prog_title">Sicherung wird erstellt...</string>
+    <string name="dia_bak_prog_title">Sicherung wird erstellt…</string>
     <string name="dia_bak_prog_edit">Bearbeiten</string>
     <string name="dia_bak_prog_details">Details</string>
     <string name="dia_bak_prog_cancel">Abbrechen</string>
@@ -252,7 +252,7 @@
     <string name="dlg_edit_sub_exam_subject_settings">Prüfungsfach-Einstellungen</string>
     <string name="dlg_edit_sub_choose_exam_subject">Als Prüfungsfach wählen</string>
     <string name="dlg_edit_sub_exam_result">Prüfungsergebnis (4x gewichtet):</string>
-    <string name="dlg_edit_sub_exam_result_hint">z.B. 12 (Punkte 0-15)</string>
+    <string name="dlg_edit_sub_exam_result_hint">z.B. 12 (Punkte 0–15)</string>
     <string name="dlg_edit_sub_half_years_selection">Halbjahre-Auswahl</string>
     <string name="dlg_edit_sub_half_years_count">2 beste Halbjahre zählen</string>
     <string name="dlg_edit_sub_oral_grade">Mündliche Note (aktuelles Halbjahr)</string>
@@ -260,7 +260,7 @@
     <string name="dlg_edit_sub_points">Punkte</string>
     <string name="dlg_edit_sub_exact">Exakt</string>
     <string name="dlg_edit_sub_range">Bereich</string>
-    <string name="dlg_edit_sub_oral_grade_hint">z.B. 11 (Punkte 0-15)</string>
+    <string name="dlg_edit_sub_oral_grade_hint">z.B. 11 (Punkte 0–15)</string>
     <string name="dlg_edit_sub_ratio">Verhältnis Mündlich : Schriftlich</string>
     <string name="dlg_edit_sub_ratio_display">Verhältnis: 50% : 50%</string>
     <string name="dlg_edit_sub_oral">Mündlich:</string>
@@ -315,22 +315,22 @@
     <string name="dia_sub_det_exam_grades_label">Klausurnoten:</string>
 
     <!-- FRAGMENT_EXAM.XML -->
-    <string name="frag_exam_search_hint">Nach Fach suchen...</string>
+    <string name="frag_exam_search_hint">Nach Fach suchen…</string>
     <string name="frag_exam_your_exams">Deine Klausuren:</string>
     <string name="frag_exam_count_format">%d / %d Klausuren</string>
 
     <!-- FRAGMENT_GALLERY.XML -->
-    <string name="frag_gal_search_hint">Suche im Kalender...</string>
+    <string name="frag_gal_search_hint">Suche im Kalender…</string>
     <string name="frag_gal_btn_edit">W</string>
     <string name="frag_gal_btn_edit_day">T</string>
-    <string name="frag_gal_week_loading">Kalenderwoche wird geladen...</string>
+    <string name="frag_gal_week_loading">Kalenderwoche wird geladen…</string>
     <string name="frag_gal_btn_undo">Undo</string>
     <string name="frag_gal_btn_redo">Redo</string>
     <string name="frag_gal_btn_cancel">Abbrechen</string>
     <string name="frag_gal_btn_save">Speichern</string>
 
     <!-- FRAGMENT_GRADES.XML -->
-    <string name="frag_grades_search_hint">Nach Fach oder Lehrer suchen...</string>
+    <string name="frag_grades_search_hint">Nach Fach oder Lehrer suchen…</string>
     <string name="frag_grades_your_grades">Deine Noten:</string>
     <string name="frag_grades_grade_count">0 / 0 Fächer benotet</string>
     <string name="frag_grades_final_grade">Gesamtnote: -</string>
@@ -340,7 +340,7 @@
     <string name="frag_grades_keep_button">Beibehalten</string>
 
     <!-- FRAGMENT_SLIDESHOW.XML -->
-    <string name="frag_slide_search_subject_hint">Nach Fach suchen...</string>
+    <string name="frag_slide_search_subject_hint">Nach Fach suchen…</string>
     <string name="frag_slide_your_homework">Deine Hausaufgaben:</string>
     <string name="frag_slide_homework_count">%d / %d Hausaufgaben</string>
 
@@ -435,7 +435,7 @@
     <string name="set_act_restart_message">Um alle Änderungen korrekt zu laden, wird ein App-Neustart empfohlen. Soll die App jetzt neu gestartet werden?</string>
     <string name="set_act_restart_now">Jetzt neustarten</string>
     <string name="set_act_restart_later">Später</string>
-    <string name="set_act_settings_saved">Einstellungen gespeichert. App wird neu gestartet...</string>
+    <string name="set_act_settings_saved">Einstellungen gespeichert. App wird neu gestartet…</string>
     <string name="set_act_no_email_app">Keine E-Mail-App gefunden. Bitte kopiere die E-Mail-Adresse manuell: theactualcooker@gmail.com</string>
     <string name="set_act_not_selected">Nicht ausgewählt</string>
     <string name="set_act_educational_program">Bildungsgang</string>
@@ -528,7 +528,7 @@
     <string name="set_act_two_weeks_before">2 Wochen vorher</string>
     <string name="set_act_three_weeks_before">3 Wochen vorher</string>
     <string name="set_act_choose_email_app">E-Mail-App auswählen</string>
-    <string name="set_act_settings_saved_restarting">Einstellungen gespeichert. App wird neu gestartet...</string>
+    <string name="set_act_settings_saved_restarting">Einstellungen gespeichert. App wird neu gestartet…</string>
     <string name="set_act_unknown_error_while_recovering">Unbekannter Fehler beim Wiederherstellen</string>
     <string name="set_act_calendar_data">Kalender-Daten</string>
     <string name="set_act_app_settings">App-Einstellungen</string>
@@ -684,7 +684,7 @@
     <string name="sub_repo_not_selected">Nicht ausgewählt</string>
 
     <!-- SLIDESHOWFRAGMENT.KT -->
-    <string name="slide_homework_loading">Hausaufgaben werden geladen...</string>
+    <string name="slide_homework_loading">Hausaufgaben werden geladen…</string>
     <string name="slide_time_in_hours">fällig in %dh</string>
     <string name="slide_time_in_minutes">fällig in %dmin</string>
     <string name="slide_due_now">jetzt fällig</string>
@@ -761,7 +761,7 @@
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Nicht ausgewählt</string>
-    <string name="home_loading_plan">Lade Vertretungsplan...</string>
+    <string name="home_loading_plan">Lade Vertretungsplan…</string>
     <string name="home_class_prefix">Klasse: %s</string>
     <string name="home_last_update">Stand: %s</string>
     <string name="home_last_update_offline">Stand: %s (Offline)</string>
@@ -808,7 +808,7 @@
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">Du musst zuerst deinen Stundenplan scannen, um deine Noten zu sehen.</string>
-    <string name="grades_loading">Noten werden geladen...</string>
+    <string name="grades_loading">Noten werden geladen…</string>
     <string name="grades_count">%d / %d Fächer benotet</string>
     <string name="grades_overall">Gesamtnote: %s</string>
     <string name="grades_overall_with_courses">Gesamtnote: %s (%d/44 Kurse)</string>
@@ -821,10 +821,10 @@
     <string name="grades_hide_text">Textdaten ausblenden</string>
     <string name="grades_close">Schließen</string>
     <string name="grades_edit_title">%s bearbeiten</string>
-    <string name="grades_edit_points_hint">z.B. 11 (Punkte 0-15)</string>
-    <string name="grades_edit_grade_hint">z.B. 2.5 (Note 1.0-6.0)</string>
-    <string name="grades_edit_exam_points_hint">z.B. 12 (Punkte 0-15)</string>
-    <string name="grades_edit_exam_grade_hint">z.B. 2.3 (Note 1.0-6.0)</string>
+    <string name="grades_edit_points_hint">z.B. 11 (Punkte 0–15)</string>
+    <string name="grades_edit_grade_hint">z.B. 2.5 (Note 1.0–6.0)</string>
+    <string name="grades_edit_exam_points_hint">z.B. 12 (Punkte 0–15)</string>
+    <string name="grades_edit_exam_grade_hint">z.B. 2.3 (Note 1.0–6.0)</string>
     <string name="grades_max_exam_subjects">Maximal 5 Prüfungsfächer erlaubt</string>
     <string name="grades_ratio_format">Verhältnis: %d%% : %d%%</string>
     <string name="grades_points_range">≈ %d-%d Punkte</string>
@@ -839,7 +839,7 @@
     <string name="grades_new_halfyear_started">Neues Halbjahr (%d) begonnen</string>
     <string name="grades_set_goal_title">Ziel-Note setzen</string>
     <string name="grades_set_goal_message">Deine Ziel-Note für dieses Halbjahr:</string>
-    <string name="grades_set_goal_hint">1.0 - 6.0</string>
+    <string name="grades_set_goal_hint">1.0 – 6.0</string>
     <string name="grades_set_goal_saved">Ziel-Note gespeichert</string>
     <string name="grades_set_goal_invalid_range">Bitte gib eine Note zwischen 1.0 und 6.0 ein</string>
     <string name="grades_set_goal_invalid_input">Ungültige Eingabe</string>
@@ -914,7 +914,7 @@
     <string name="gra_gra_month_num">M%d</string>
 
     <!-- EXAMFRAGMENT.KT -->
-    <string name="exam_loading">Klausuren werden geladen...</string>
+    <string name="exam_loading">Klausuren werden geladen…</string>
     <string name="exam_add">Klausur hinzufügen</string>
     <string name="exam_edit">Klausur bearbeiten</string>
     <string name="exam_save">Speichern</string>
@@ -1062,7 +1062,7 @@
     <string name="exam_loading_error">Fehler beim Laden der Klausuren</string>
 
     <!-- GALLERYFRAGMENT.KT -->
-    <string name="gall_calendar_loading">Kalender wird geladen...</string>
+    <string name="gall_calendar_loading">Kalender wird geladen…</string>
     <string name="gall_error_tap_to_retry">Fehler beim Laden des Kalenders.\nTippe hier um es erneut zu versuchen.</string>
     <string name="gall_holiday">Feiertag</string>
     <string name="gall_free_from_4">Frei ab 4. Std.</string>
@@ -1082,7 +1082,7 @@
     <string name="gall_special_events">Besondere Ereignisse:</string>
     <string name="gall_add_event">+ Ereignis hinzufügen</string>
     <string name="gall_edit_day">Tag bearbeiten - %s</string>
-    <string name="gall_notes_hint">Persönliche Notizen für diesen Tag...</string>
+    <string name="gall_notes_hint">Persönliche Notizen für diesen Tag…</string>
     <string name="gall_save">Speichern</string>
     <string name="gall_cancel">Abbrechen</string>
     <string name="gall_reset">Zurücksetzen</string>
@@ -1119,7 +1119,7 @@
     <string name="gall_clear_all_confirm">Bist du sicher, dass du alle Ferien löschen möchtest?</string>
     <string name="gall_vacations_cleared">Alle Ferien gelöscht (%d Wochen entfernt)</string>
     <string name="gall_loading_vacation_data">Feriendaten laden</string>
-    <string name="gall_loading_vacation_kultus">Lade Ferientermine von kultus.hessen.de...</string>
+    <string name="gall_loading_vacation_kultus">Lade Ferientermine von kultus.hessen.de…</string>
     <string name="gall_auto_mark_vacation">Ferien automatisch markieren</string>
     <string name="gall_load_from_kultus">Lädt offizielle Ferientermine von kultus.hessen.de</string>
     <string name="gall_select_school_year">Schuljahr auswählen:</string>
@@ -1336,8 +1336,8 @@
     <string name="sec_sel_please_select_at_least_one_section">Bitte wählen Sie mindestens einen Bereich aus</string>
 
     <!-- BACKUPPROGRESSDIALOG.KT -->
-    <string name="bac_pro_backup_is_being_created">Sicherung wird erstellt...</string>
-    <string name="bac_pro_backup_is_being_restored">Sicherung wird wiederhergestellt...</string>
+    <string name="bac_pro_backup_is_being_created">Sicherung wird erstellt…</string>
+    <string name="bac_pro_backup_is_being_restored">Sicherung wird wiederhergestellt…</string>
     <string name="bac_pro_timetable_data">Stundenplan-Daten</string>
     <string name="bac_pro_calendar_data">Kalender-Daten</string>
     <string name="bac_pro_homework_data">Hausaufgaben</string>
@@ -1407,5 +1407,26 @@
     <string name="moodle_login_failed">Anmeldung fehlgeschlagen. Bitte überprüfen Sie Ihren Benutzernamen und Ihr Passwort.</string>
     <string name="moodle_login_form_not_found">Anmeldeformular nicht gefunden</string>
     <string name="moodle_open_external">In externem Browser öffnen</string>
+    <string name="moodle_invalid_credentials">Ungültige Anmeldedaten. Versuchen Sie es nochmal!</string>
+    <string name="moodle_searching_title">Moodle wird durchsucht…</string>
+    <string name="moodle_searching_for">Suche nach: %1$s</string>
+    <string name="moodle_loading_courses">Kurse werden geladen…</string>
+    <string name="moodle_searching_course">Suche nach Kurs…</string>
+    <string name="moodle_filling_search">Suchfeld wird ausgefüllt…</string>
+    <string name="moodle_waiting_results">Warte auf Suchergebnisse…</string>
+    <string name="moodle_opening_course">Kurs wird geöffnet…</string>
+    <string name="moodle_searching_assignment">Suche nach Aufgabe…</string>
+    <string name="moodle_looking_for">Suche nach: %1$s</string>
+    <string name="moodle_search_complete">Abgeschlossen!</string>
+    <string name="moodle_search_cancelled">Suche abgebrochen</string>
+    <string name="moodle_found_entry">Gefunden: %1$s</string>
+    <string name="moodle_entry_not_found">Eintrag \'%1$s\' wurde auf der Kursseite nicht gefunden</string>
+    <string name="moodle_no_matching_courses">Keine passenden Kurse für Kategorie gefunden: %1$s</string>
+    <string name="moodle_search_course_failed">Kurssuche fehlgeschlagen</string>
+    <string name="moodle_search_not_available">Suche nicht verfügbar</string>
+    <string name="moodle_search_results_not_loaded">Suchergebnisse nicht geladen</string>
+    <string name="moodle_preparing_search">Suche wird vorbereitet…</string>
+    <string name="moodle_page_not_ready">Seite nicht bereit für Suche</string>
+    <string name="moodle_page_loaded_resetting">Seite geladen, Suche wird zurückgesetzt…</string>
 
 </resources>

@@ -18,11 +18,11 @@
             android:title="@string/menu_slideshow" />
         <item
             android:id="@+id/nav_klausuren"
-            android:icon="@drawable/ic_star"
+            android:icon="@drawable/ic_menu_klausuren"
             android:title="@string/menu_klausuren" />
         <item
             android:id="@+id/nav_noten"
-            android:icon="@drawable/ic_menu_noten"
+            android:icon="@drawable/ic_star"
             android:title="@string/menu_noten" />
         <item
             android:id="@+id/nav_moodle"

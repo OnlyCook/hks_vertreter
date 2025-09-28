@@ -181,8 +181,8 @@
     <string name="act_set_liability">Liability Disclaimer</string>
     <string name="act_set_liability_details">The developer assumes no liability for the accuracy of the information displayed. The app is for information purposes only. For binding information, contact the school directly.</string>
     <string name="act_set_app_version">App Version</string>
-    <string name="act_set_loading">Loading...</string>
-    <string name="settings_search_hint">Search settings...</string>
+    <string name="act_set_loading">Loading…</string>
+    <string name="settings_search_hint">Search settings…</string>
     <string name="settings_no_results">No matching settings found</string>
 
     <!-- ACTIVITY_SETUP.XML -->
@@ -197,7 +197,7 @@
     <string name="act_set_complete_setup">Complete Setup</string>
 
     <!-- ACTIVITY_SUBJECT_SELECTION.XML -->
-    <string name="act_sub_sel_search_hint">Search subjects...</string>
+    <string name="act_sub_sel_search_hint">Search subjects…</string>
     <string name="act_sub_sel_add_button">＋</string>
     <string name="act_sub_sel_choose_subjects">Choose your subjects:</string>
     <string name="act_sub_sel_subjects_text"> subjects</string>
@@ -212,9 +212,9 @@
     <string name="dia_add_exam_date_label">Exam date:</string>
     <string name="dia_add_exam_date_button">Choose date</string>
     <string name="dia_add_exam_mark_label">Exam grade:</string>
-    <string name="dia_add_exam_mark_hint">0-15 points</string>
+    <string name="dia_add_exam_mark_hint">0–15 points</string>
     <string name="dia_add_exam_note_label">Note (optional):</string>
-    <string name="dia_add_exam_note_hint">Additional information about the exam...</string>
+    <string name="dia_add_exam_note_hint">Additional information about the exam…</string>
 
     <!-- DIALOG_ADD_HOMEWORK.XML -->
     <string name="dia_add_hw_subject_label">Subject:</string>
@@ -224,7 +224,7 @@
     <string name="dia_add_hw_lesson_label">Period (optional):</string>
     <string name="dia_add_hw_date_button">Choose date</string>
     <string name="dia_add_hw_content_label">Homework content:</string>
-    <string name="dia_add_hw_content_hint">Homework description...\n- Task 1\n- Task 2\nNote: Additional information</string>
+    <string name="dia_add_hw_content_hint">Homework description…\n- Task 1\n- Task 2\nNote: Additional information</string>
     <string name="dia_add_hw_tip">Tip: Start lines with \'-\' for checklists. You can mix text and checklists.</string>
 
     <!-- DIALOG_ADD_SUBJECT_MANUAL.XML -->
@@ -237,7 +237,7 @@
     <string name="dia_add_sub_manual_add_room_btn">+ Add room</string>
 
     <!-- DIALOG_BACKUP_PROGRESS.XML -->
-    <string name="dia_bak_prog_title">Creating backup...</string>
+    <string name="dia_bak_prog_title">Creating backup…</string>
     <string name="dia_bak_prog_edit">Edit</string>
     <string name="dia_bak_prog_details">Details</string>
     <string name="dia_bak_prog_cancel">Cancel</string>
@@ -250,7 +250,7 @@
     <string name="dlg_edit_sub_exam_subject_settings">Exam Subject Settings</string>
     <string name="dlg_edit_sub_choose_exam_subject">Choose as exam subject</string>
     <string name="dlg_edit_sub_exam_result">Exam result (4x weighted):</string>
-    <string name="dlg_edit_sub_exam_result_hint">e.g. 12 (points 0-15)</string>
+    <string name="dlg_edit_sub_exam_result_hint">e.g. 12 (points 0–15)</string>
     <string name="dlg_edit_sub_half_years_selection">Semester Selection</string>
     <string name="dlg_edit_sub_half_years_count">Best 2 semesters count</string>
     <string name="dlg_edit_sub_oral_grade">Oral grade (current semester)</string>
@@ -258,7 +258,7 @@
     <string name="dlg_edit_sub_points">Points</string>
     <string name="dlg_edit_sub_exact">Exact</string>
     <string name="dlg_edit_sub_range">Range</string>
-    <string name="dlg_edit_sub_oral_grade_hint">e.g. 11 (points 0-15)</string>
+    <string name="dlg_edit_sub_oral_grade_hint">e.g. 11 (points 0–15)</string>
     <string name="dlg_edit_sub_ratio">Ratio Oral : Written</string>
     <string name="dlg_edit_sub_ratio_display">Ratio: 50% : 50%</string>
     <string name="dlg_edit_sub_oral">Oral:</string>
@@ -313,22 +313,22 @@
     <string name="dia_sub_det_exam_grades_label">Exam grades:</string>
 
     <!-- FRAGMENT_EXAM.XML -->
-    <string name="frag_exam_search_hint">Search by subject...</string>
+    <string name="frag_exam_search_hint">Search by subject…</string>
     <string name="frag_exam_your_exams">Your exams:</string>
     <string name="frag_exam_count_format">%d / %d exams</string>
 
     <!-- FRAGMENT_GALLERY.XML -->
-    <string name="frag_gal_search_hint">Search in calendar...</string>
+    <string name="frag_gal_search_hint">Search in calendar…</string>
     <string name="frag_gal_btn_edit">W</string>
     <string name="frag_gal_btn_edit_day">D</string>
-    <string name="frag_gal_week_loading">Loading calendar week...</string>
+    <string name="frag_gal_week_loading">Loading calendar week…</string>
     <string name="frag_gal_btn_undo">Undo</string>
     <string name="frag_gal_btn_redo">Redo</string>
     <string name="frag_gal_btn_cancel">Cancel</string>
     <string name="frag_gal_btn_save">Save</string>
 
     <!-- FRAGMENT_GRADES.XML -->
-    <string name="frag_grades_search_hint">Search by subject or teacher...</string>
+    <string name="frag_grades_search_hint">Search by subject or teacher…</string>
     <string name="frag_grades_your_grades">Your grades:</string>
     <string name="frag_grades_grade_count">0 / 0 subjects graded</string>
     <string name="frag_grades_final_grade">Overall grade: -</string>
@@ -338,7 +338,7 @@
     <string name="frag_grades_keep_button">Keep</string>
 
     <!-- FRAGMENT_SLIDESHOW.XML -->
-    <string name="frag_slide_search_subject_hint">Search by subject...</string>
+    <string name="frag_slide_search_subject_hint">Search by subject…</string>
     <string name="frag_slide_your_homework">Your homework:</string>
     <string name="frag_slide_homework_count">%d / %d homework</string>
 
@@ -433,7 +433,7 @@
     <string name="set_act_restart_message">To load all changes correctly, an app restart is recommended. Restart the app now?</string>
     <string name="set_act_restart_now">Restart now</string>
     <string name="set_act_restart_later">Later</string>
-    <string name="set_act_settings_saved">Settings saved. App is restarting...</string>
+    <string name="set_act_settings_saved">Settings saved. App is restarting…</string>
     <string name="set_act_no_email_app">No email app found. Please copy the email address manually: theactualcooker@gmail.com</string>
     <string name="set_act_not_selected">Not selected</string>
     <string name="set_act_educational_program">Education program</string>
@@ -526,7 +526,7 @@
     <string name="set_act_two_weeks_before">2 weeks before</string>
     <string name="set_act_three_weeks_before">3 weeks before</string>
     <string name="set_act_choose_email_app">Choose email app</string>
-    <string name="set_act_settings_saved_restarting">Settings saved. App is restarting...</string>
+    <string name="set_act_settings_saved_restarting">Settings saved. App is restarting…</string>
     <string name="set_act_unknown_error_while_recovering">Unknown error while restoring</string>
     <string name="set_act_calendar_data">Calendar data</string>
     <string name="set_act_app_settings">App settings</string>
@@ -661,7 +661,7 @@
     <string name="setup_selection_saved">Selection saved: %s - %s</string>
     <string name="setup_no_email_app_found">No email app found</string>
     <string name="setup_loading_classes">Loading Classes</string>
-    <string name="setup_loading_classes_message">Fetching latest class data from server...</string>
+    <string name="setup_loading_classes_message">Fetching latest class data from server…</string>
     <string name="setup_fetch_error_title">Connection Error</string>
     <string name="setup_fetch_error_message">Could not fetch class data from server. You can use the offline data, but please note it is not actively maintained, or try again.</string>
     <string name="setup_use_offline_data">Use Offline Data</string>
@@ -684,7 +684,7 @@
     <string name="sub_repo_not_selected">Not selected</string>
 
     <!-- SLIDESHOWFRAGMENT.KT -->
-    <string name="slide_homework_loading">Loading homework...</string>
+    <string name="slide_homework_loading">Loading homework…</string>
     <string name="slide_time_in_hours">due in %dh</string>
     <string name="slide_time_in_minutes">due in %dm</string>
     <string name="slide_due_now">due now</string>
@@ -761,7 +761,7 @@
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Not selected</string>
-    <string name="home_loading_plan">Loading substitute plan...</string>
+    <string name="home_loading_plan">Loading substitute plan…</string>
     <string name="home_class_prefix">Class: %s</string>
     <string name="home_last_update">Last update: %s</string>
     <string name="home_last_update_offline">Last update: %s (Offline)</string>
@@ -808,7 +808,7 @@
 
     <!-- GRADESFRAGMENT.KT -->
     <string name="grades_scan_timetable_first">You must first scan your timetable to see your grades.</string>
-    <string name="grades_loading">Loading grades...</string>
+    <string name="grades_loading">Loading grades…</string>
     <string name="grades_count">%d / %d subjects graded</string>
     <string name="grades_overall">Overall grade: %s</string>
     <string name="grades_overall_with_courses">Overall grade: %s (%d/44 courses)</string>
@@ -821,10 +821,10 @@
     <string name="grades_hide_text">Hide text data</string>
     <string name="grades_close">Close</string>
     <string name="grades_edit_title">Edit %s</string>
-    <string name="grades_edit_points_hint">e.g. 11 (points 0-15)</string>
-    <string name="grades_edit_grade_hint">e.g. 2.5 (grade 1.0-6.0)</string>
-    <string name="grades_edit_exam_points_hint">e.g. 12 (points 0-15)</string>
-    <string name="grades_edit_exam_grade_hint">e.g. 2.3 (grade 1.0-6.0)</string>
+    <string name="grades_edit_points_hint">e.g. 11 (points 0–15)</string>
+    <string name="grades_edit_grade_hint">e.g. 2.5 (grade 1.0–6.0)</string>
+    <string name="grades_edit_exam_points_hint">e.g. 12 (points 0–15)</string>
+    <string name="grades_edit_exam_grade_hint">e.g. 2.3 (grade 1.0–6.0)</string>
     <string name="grades_max_exam_subjects">Maximum 5 exam subjects allowed</string>
     <string name="grades_ratio_format">Ratio: %d%% : %d%%</string>
     <string name="grades_points_range">≈ %d-%d points</string>
@@ -839,7 +839,7 @@
     <string name="grades_new_halfyear_started">New semester (%d) started</string>
     <string name="grades_set_goal_title">Set target grade</string>
     <string name="grades_set_goal_message">Your target grade for this semester:</string>
-    <string name="grades_set_goal_hint">1.0 - 6.0</string>
+    <string name="grades_set_goal_hint">1.0 – 6.0</string>
     <string name="grades_set_goal_saved">Target grade saved</string>
     <string name="grades_set_goal_invalid_range">Please enter a grade between 1.0 and 6.0</string>
     <string name="grades_set_goal_invalid_input">Invalid input</string>
@@ -914,7 +914,7 @@
     <string name="gra_gra_month_num">M%d</string>
 
     <!-- EXAMFRAGMENT.KT -->
-    <string name="exam_loading">Loading exams...</string>
+    <string name="exam_loading">Loading exams…</string>
     <string name="exam_add">Add exam</string>
     <string name="exam_edit">Edit exam</string>
     <string name="exam_save">Save</string>
@@ -1062,7 +1062,7 @@
     <string name="exam_loading_error">Error loading exams</string>
 
     <!-- GALLERYFRAGMENT.KT -->
-    <string name="gall_calendar_loading">Loading calendar...</string>
+    <string name="gall_calendar_loading">Loading calendar…</string>
     <string name="gall_error_tap_to_retry">Error loading calendar.\nTap here to try again.</string>
     <string name="gall_holiday">Holiday</string>
     <string name="gall_free_from_4">Free from 4th period</string>
@@ -1082,7 +1082,7 @@
     <string name="gall_special_events">Special events:</string>
     <string name="gall_add_event">+ Add event</string>
     <string name="gall_edit_day">Edit day - %s</string>
-    <string name="gall_notes_hint">Personal notes for this day...</string>
+    <string name="gall_notes_hint">Personal notes for this day…</string>
     <string name="gall_save">Save</string>
     <string name="gall_cancel">Cancel</string>
     <string name="gall_reset">Reset</string>
@@ -1119,7 +1119,7 @@
     <string name="gall_clear_all_confirm">Are you sure you want to delete all vacations?</string>
     <string name="gall_vacations_cleared">All vacations deleted (%d weeks removed)</string>
     <string name="gall_loading_vacation_data">Loading vacation data</string>
-    <string name="gall_loading_vacation_kultus">Loading vacation dates from kultus.hessen.de...</string>
+    <string name="gall_loading_vacation_kultus">Loading vacation dates from kultus.hessen.de…</string>
     <string name="gall_auto_mark_vacation">Mark vacations automatically</string>
     <string name="gall_load_from_kultus">Loads official vacation dates from kultus.hessen.de</string>
     <string name="gall_select_school_year">Select school year:</string>
@@ -1370,7 +1370,7 @@
     <string name="moodle_forward">Forward</string>
     <string name="moodle_clear_search">Clear search</string>
     <string name="moodle_submit_search">Submit search</string>
-    <string name="moodle_search_hint">Search courses...</string>
+    <string name="moodle_search_hint">Search courses…</string>
     <string name="moodle_url_hint">course/view.php?id=123</string>
     <string name="moodle_invalid_url">Invalid URL - must be from moodle.kleyer.eu</string>
     <string name="moodle_search_failed">Could not find search field on page</string>
@@ -1406,5 +1406,26 @@
     <string name="moodle_login_failed">Login failed. Please check your username and password.</string>
     <string name="moodle_login_form_not_found">Could not find login form elements</string>
     <string name="moodle_open_external">Open in external browser</string>
+    <string name="moodle_invalid_credentials">Invalid login credentials. Please try again!</string>
+    <string name="moodle_searching_title">Searching Moodle…</string>
+    <string name="moodle_searching_for">Searching for: %1$s</string>
+    <string name="moodle_loading_courses">Loading courses…</string>
+    <string name="moodle_searching_course">Searching for course…</string>
+    <string name="moodle_filling_search">Filling search field…</string>
+    <string name="moodle_waiting_results">Waiting for search results…</string>
+    <string name="moodle_opening_course">Opening course…</string>
+    <string name="moodle_searching_assignment">Searching for assignment…</string>
+    <string name="moodle_looking_for">Looking for: %1$s</string>
+    <string name="moodle_search_complete">Complete!</string>
+    <string name="moodle_search_cancelled">Search cancelled</string>
+    <string name="moodle_found_entry">Found: %1$s</string>
+    <string name="moodle_entry_not_found">Entry \'%1$s\' not found on course page</string>
+    <string name="moodle_no_matching_courses">No matching courses found for category: %1$s</string>
+    <string name="moodle_search_course_failed">Failed to search for course</string>
+    <string name="moodle_search_not_available">Search not available</string>
+    <string name="moodle_search_results_not_loaded">Search results not loaded</string>
+    <string name="moodle_preparing_search">Preparing search…</string>
+    <string name="moodle_page_not_ready">Page not ready for search</string>
+    <string name="moodle_page_loaded_resetting">Page loaded, resetting search…</string>
 
 </resources>

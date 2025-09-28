@@ -1025,6 +1025,10 @@ class BackupManager(private val context: Context) {
             exportUserDayData(sb)
             sb.appendLine("")
 
+            sb.appendLine("# Moodle Kalender Daten:")
+            exportMoodleCalendarData(sb)
+            sb.appendLine("")
+
             sb.appendLine("# Alternative Räume Verwendung:")
             val alternativeRoomUsage = extractAlternativeRoomUsage()
             alternativeRoomUsage.forEach { (key, room) ->
@@ -1105,6 +1109,10 @@ class BackupManager(private val context: Context) {
             sb.appendLine("# Alternative Rooms Usage Data:")
             val alternativeRoomUsageJson = Gson().toJson(alternativeRoomUsage)
             sb.appendLine("ALTERNATIVE_ROOMS_USAGE_DATA=$alternativeRoomUsageJson")
+
+            sb.appendLine("# Moodle Calendar Data:")
+            val moodleCalendarJson = exportMoodleCalendarDataAsJson()
+            sb.appendLine("MOODLE_CALENDAR_DATA=$moodleCalendarJson")
 
             sb.toString()
         } catch (e: Exception) {
@@ -1187,6 +1195,69 @@ class BackupManager(private val context: Context) {
         return Gson().toJson(userDayData)
     }
 
+    private data class MoodleCalendarExportEntry(
+        val date: String,
+        val dayOfWeek: String,
+        val month: Int,
+        val year: Int,
+        val content: String,
+        val specialNote: String
+    )
+
+    private fun exportMoodleCalendarDataAsJson(): String {
+        return try {
+            val calendarManager = CalendarDataManager.getInstance(context)
+            val moodleEntries = calendarManager.getMoodleCalendarEntries()
+
+            val exportData = moodleEntries.map { entry ->
+                MoodleCalendarExportEntry(
+                    date = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(entry.date),
+                    dayOfWeek = entry.dayOfWeek,
+                    month = entry.month,
+                    year = entry.year,
+                    content = entry.content,
+                    specialNote = entry.specialNote
+                )
+            }
+
+            Gson().toJson(exportData)
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting Moodle calendar data as JSON", e)
+            "[]"
+        }
+    }
+
+    private fun exportMoodleCalendarData(sb: StringBuilder) {
+        try {
+            val calendarManager = CalendarDataManager.getInstance(context)
+            val moodleEntries = calendarManager.getMoodleCalendarEntries()
+
+            if (moodleEntries.isEmpty()) {
+                sb.appendLine("# Keine Moodle Kalender Einträge gefunden")
+                return
+            }
+
+            sb.appendLine("# Gefunden: ${moodleEntries.size} Moodle Kalender Einträge")
+
+            val uids = calendarManager.getMoodleEventUIDs()
+            if (uids.isNotEmpty()) {
+                sb.appendLine("# Moodle UIDs: ${uids.joinToString(", ")}")
+            }
+
+            moodleEntries.forEach { entry ->
+                val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(entry.date)
+                sb.appendLine("$dateStr: ${entry.specialNote}")
+                if (entry.content.isNotEmpty()) {
+                    sb.appendLine("  Inhalt: ${entry.content.replace("\n", " | ")}")
+                }
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error exporting Moodle calendar data", e)
+            sb.appendLine("# Error exporting Moodle calendar data: ${e.message}")
+        }
+    }
+
     fun importCalendarData(content: String) {
         try {
             val lines = content.split("\n")
@@ -1194,6 +1265,7 @@ class BackupManager(private val context: Context) {
             var vacationImported = false
             var userDayDataImported = false
             var alternativeRoomUsageImported = false
+            var moodleCalendarImported = false
 
             for (line in lines) {
                 when {
@@ -1287,18 +1359,82 @@ class BackupManager(private val context: Context) {
                             L.e(TAG, "Error importing alternative room usage data", e)
                         }
                     }
+                    line.startsWith("MOODLE_CALENDAR_DATA=") -> {
+                        val jsonData = line.substringAfter("MOODLE_CALENDAR_DATA=")
+                        try {
+                            importMoodleCalendarData(jsonData)
+                            moodleCalendarImported = true
+                            L.d(TAG, "Moodle calendar data imported successfully")
+                        } catch (e: Exception) {
+                            L.e(TAG, "Error importing Moodle calendar data", e)
+                        }
+                    }
                 }
             }
 
-            if (!timetableImported && !vacationImported && !userDayDataImported && !alternativeRoomUsageImported) {
+            if (!timetableImported && !vacationImported && !userDayDataImported && !alternativeRoomUsageImported && !moodleCalendarImported) {
                 throw Exception(context.getString(R.string.backup_no_calendar_data))
             }
 
-            L.d(TAG, "Import completed - Timetable: $timetableImported, Vacation: $vacationImported, UserData: $userDayDataImported, AltRoomUsage: $alternativeRoomUsageImported")
+            L.d(TAG, "Import completed - Timetable: $timetableImported, Vacation: $vacationImported, UserData: $userDayDataImported, AltRoomUsage: $alternativeRoomUsageImported, MoodleCalendar: $moodleCalendarImported")
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing calendar data", e)
             throw Exception(context.getString(R.string.backup_calendar_import_failed, e.message ?: ""))
+        }
+    }
+
+    private fun importMoodleCalendarData(jsonData: String) {
+        try {
+            val type = object : TypeToken<List<MoodleCalendarExportEntry>>() {}.type
+            val importedMoodleEntries: List<MoodleCalendarExportEntry> = Gson().fromJson(jsonData, type) ?: emptyList()
+
+            if (importedMoodleEntries.isEmpty()) {
+                L.d(TAG, "No Moodle calendar entries to import")
+                return
+            }
+
+            val calendarManager = CalendarDataManager.getInstance(context)
+
+            calendarManager.clearMoodleCalendarData()
+
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+            var importedCount = 0
+
+            for (entry in importedMoodleEntries) {
+                try {
+                    val date = dateFormat.parse(entry.date) ?: continue
+
+                    val dayInfo = CalendarDataManager.CalendarDayInfo(
+                        date = date,
+                        dayOfWeek = entry.dayOfWeek,
+                        month = entry.month,
+                        year = entry.year,
+                        content = entry.content,
+                        exams = emptyList(),
+                        isSpecialDay = true,
+                        specialNote = entry.specialNote
+                    )
+
+                    calendarManager.addCalendarDay(dayInfo)
+                    importedCount++
+
+                } catch (e: Exception) {
+                    L.w(TAG, "Error importing Moodle calendar entry: ${entry.date}", e)
+                }
+            }
+
+            calendarManager.saveCalendarData()
+            L.d(TAG, "Successfully imported $importedCount Moodle calendar entries")
+
+            val uids = calendarManager.getMoodleEventUIDs()
+            if (uids.isNotEmpty()) {
+                L.d(TAG, "Imported Moodle UIDs: ${uids.joinToString(", ")}")
+            }
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error importing Moodle calendar data", e)
+            throw e
         }
     }
 

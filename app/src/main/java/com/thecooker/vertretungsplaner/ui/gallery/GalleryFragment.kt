@@ -1759,13 +1759,11 @@ class GalleryFragment : Fragment() {
         }
 
         val dayDate = SimpleDateFormat("dd.MM", Locale.GERMANY).format(currentDay.time)
+        val displaySymbol = getDisplaySymbol(currentDay.time)
+        val dayNameWithSymbol = if (displaySymbol.isNotEmpty()) "$dayName$displaySymbol" else dayName
 
-        val hasSpecialContent = hasNotesForDay(currentDay.time) || shouldShowAsterisk(currentDay.time)
-        val dayNameWithAsterisk = if (hasSpecialContent) "$dayName*" else dayName
+        val dayHeader = createStyledCell("$dayNameWithSymbol\n$dayDate", isHeader = true, isDayView = true)
 
-        val dayHeader = createStyledCell("$dayNameWithAsterisk\n$dayDate", isHeader = true, isDayView = true)
-
-        // check for today and override styling after createStyledCell
         val today = Calendar.getInstance()
         val isToday = isSameDay(currentDay.time, today.time)
 
@@ -2413,9 +2411,11 @@ class GalleryFragment : Fragment() {
 
                 setTextColor(if (isToday) Color.BLACK else Color.WHITE)
 
-                var displayText = weekdaysShort[i]
-                if (shouldShowAsterisk(currentWeekDay.time)) {
-                    displayText += "*"
+                val displaySymbol = getDisplaySymbol(currentWeekDay.time)
+                val displayText = if (displaySymbol.isNotEmpty()) {
+                    "${weekdaysShort[i]}$displaySymbol"
+                } else {
+                    weekdaysShort[i]
                 }
 
                 text = displayText
@@ -2587,13 +2587,28 @@ class GalleryFragment : Fragment() {
         val userNotes = getUserNotesForDate(date)
         val userSpecialOccasions = getUserSpecialOccasionsForDate(date)
 
-        if (userNotes.isNotBlank() || userSpecialOccasions.isNotEmpty()) {
-            return true
-        }
+        val hasNonMoodleSpecialContent = userNotes.isNotBlank() || userSpecialOccasions.isNotEmpty() ||
+                (calendarInfo?.isSpecialDay == true && calendarInfo.specialNote.isNotBlank() &&
+                        !calendarInfo.specialNote.contains("Moodle:"))
 
-        return calendarInfo?.let { info ->
-            info.isSpecialDay && info.specialNote.isNotBlank()
-        } ?: false
+        return hasNonMoodleSpecialContent
+    }
+
+    private fun shouldShowTilde(date: Date): Boolean {
+        val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
+        return calendarInfo?.specialNote?.contains("Moodle:") == true
+    }
+
+    private fun getDisplaySymbol(date: Date): String {
+        val hasAsterisk = shouldShowAsterisk(date)
+        val hasTilde = shouldShowTilde(date)
+
+        return when {
+            hasAsterisk && hasTilde -> "*~"
+            hasAsterisk -> "*"
+            hasTilde -> "~"
+            else -> ""
+        }
     }
 
     private fun getUserNotesForDate(date: Date): String {
@@ -3955,25 +3970,77 @@ class GalleryFragment : Fragment() {
         }
 
         // calendar manager special occasions
-        calendarInfo?.specialNote?.let { note ->
-            if (note.isNotBlank()) {
-                val calendarNotesText = TextView(requireContext()).apply {
-                    text = getString(R.string.gall_spcieal_occasions_exam_schedule)
-                    textSize = 16f
-                    setTextColor(getThemeColor(R.attr.textPrimaryColor))
-                    setTypeface(null, Typeface.BOLD)
-                    setPadding(0, 0, 0, 8)
-                }
-                container.addView(calendarNotesText)
+        val nonMoodleSpecialNotes = calendarInfo?.specialNote?.let { note ->
+            if (note.isNotBlank() && !note.contains("Moodle:")) note else null
+        }
 
-                val noteItem = TextView(requireContext()).apply {
-                    "- $note".also { text = it }
+        if (nonMoodleSpecialNotes != null) {
+            val calendarNotesText = TextView(requireContext()).apply {
+                text = getString(R.string.gall_spcieal_occasions_exam_schedule)
+                textSize = 16f
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
+            }
+            container.addView(calendarNotesText)
+
+            val noteItem = TextView(requireContext()).apply {
+                "- $nonMoodleSpecialNotes".also { text = it }
+                textSize = 14f
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
+                setPadding(16, 4, 0, 16)
+            }
+            container.addView(noteItem)
+        }
+
+        // moodle calendar entries
+        val moodleEntries = getMoodleEntriesForDate(date)
+        if (moodleEntries.isNotEmpty()) {
+            val moodleText = TextView(requireContext()).apply {
+                text = "Moodle Kalender:"
+                textSize = 16f
+                setTextColor(getThemeColor(R.attr.textPrimaryColor))
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 0, 8)
+            }
+            container.addView(moodleText)
+
+            moodleEntries.forEach { entry ->
+                val moodleItemContainer = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(16, 4, 0, 4)
+                }
+
+                val moodleItem = TextView(requireContext()).apply {
+                    text = "- ${entry.summary}"
                     textSize = 14f
                     setTextColor(getThemeColor(R.attr.textPrimaryColor))
-                    setPadding(16, 4, 0, 16)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
-                container.addView(noteItem)
+
+                val moodleButton = ImageButton(requireContext()).apply {
+                    setImageResource(R.drawable.ic_output)
+                    background = null
+                    setPadding(8, 8, 8, 8)
+                    contentDescription = "Open Moodle entry"
+                    setOnClickListener {
+                        openMoodleEntry(entry)
+                    }
+                }
+
+                moodleItemContainer.addView(moodleItem)
+                moodleItemContainer.addView(moodleButton)
+                container.addView(moodleItemContainer)
             }
+
+            val spacer = View(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    16
+                )
+            }
+            container.addView(spacer)
         }
 
         // homework
@@ -4230,6 +4297,70 @@ class GalleryFragment : Fragment() {
         currentDialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
         currentDialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
         currentDialog?.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun getMoodleEntriesForDate(date: Date): List<MoodleEntry> {
+        val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
+        val moodleEntries = mutableListOf<MoodleEntry>()
+
+        calendarInfo?.specialNote?.let { note ->
+            if (note.contains("Moodle:")) {
+                val moodleParts = note.split(" | ")
+                moodleParts.forEach { part ->
+                    if (part.contains("Moodle:")) {
+                        val summaryPattern = """Moodle: ([^(]+)""".toRegex()
+                        val idPattern = """\(ID: ([^)]+)\)""".toRegex()
+
+                        val summaryMatch = summaryPattern.find(part)
+                        val idMatch = idPattern.find(part)
+
+                        val summary = summaryMatch?.groupValues?.get(1)?.trim()
+                        val id = idMatch?.groupValues?.get(1)?.trim()
+
+                        if (summary != null && id != null) {
+                            val category = extractCategoryFromCalendarInfo(calendarInfo) ?: "Unknown Course"
+                            moodleEntries.add(MoodleEntry(summary, id, category))
+                        }
+                    }
+                }
+            }
+        }
+
+        return moodleEntries
+    }
+
+    private fun extractCategoryFromCalendarInfo(calendarInfo: CalendarDataManager.CalendarDayInfo?): String? {
+        return calendarInfo?.content?.let { content ->
+            val categoryPattern = """Kurs: ([^\n]+)""".toRegex()
+            categoryPattern.find(content)?.groupValues?.get(1)?.trim()
+        }
+    }
+
+    data class MoodleEntry(
+        val summary: String,
+        val id: String,
+        val category: String
+    )
+
+    private fun openMoodleEntry(entry: MoodleEntry) {
+        try {
+            currentDialog?.dismiss()
+            currentDialog = null
+
+            val navController = findNavController()
+
+            val bundle = Bundle().apply {
+                putString("moodle_search_category", entry.category)
+                putString("moodle_search_summary", entry.summary)
+                putString("moodle_entry_id", entry.id)
+            }
+
+            navController.navigate(R.id.nav_moodle, bundle)
+
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error opening Moodle entry", e)
+            Toast.makeText(requireContext(), "Error opening Moodle entry", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openHomeworkPage(homework: SlideshowFragment.HomeworkEntry) {

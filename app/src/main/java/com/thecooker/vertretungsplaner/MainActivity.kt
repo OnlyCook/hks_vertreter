@@ -21,6 +21,8 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.core.content.edit
 import androidx.navigation.ui.NavigationUI
+import androidx.activity.OnBackPressedCallback
+import com.thecooker.vertretungsplaner.ui.moodle.MoodleFragment
 
 class MainActivity : BaseActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
@@ -28,6 +30,8 @@ class MainActivity : BaseActivity() {
     private var isProcessingSharedContent = false
     private var hasProcessedSharedContent = false
     private var homeworkArgumentsCleared = false
+
+    private var moodleBackPressedCallback: OnBackPressedCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +81,8 @@ class MainActivity : BaseActivity() {
                 handleIncomingIntent(intent)
             }
         }
+
+        setupBackPressHandler()
     }
 
     private fun setupNavigationListener(navView: NavigationView, navController: androidx.navigation.NavController) {
@@ -86,7 +92,8 @@ class MainActivity : BaseActivity() {
             val needsCleanNavigation = args != null && (
                     args.containsKey("highlight_homework_id") ||
                             args.containsKey("highlight_exam_id") ||
-                            args.containsKey("highlight_home_item_id")
+                            args.containsKey("highlight_home_item_id") ||
+                            args.containsKey("moodle_search_category")
                     )
 
             if (needsCleanNavigation) {
@@ -145,20 +152,41 @@ class MainActivity : BaseActivity() {
             L.d("MainActivity", "Navigation changed to: ${destination.label}")
             L.d("MainActivity", "Navigation arguments: $arguments")
 
+            moodleBackPressedCallback?.isEnabled = (destination.id == R.id.nav_moodle)
+
             // clear any highlight args when on wrong destination
             if (arguments != null) {
                 val shouldClearArgs = when (destination.id) {
                     R.id.nav_slideshow -> arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
-                            arguments.containsKey("highlight_substitute_subject")
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_search_category")
                     R.id.nav_klausuren -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
-                            arguments.containsKey("highlight_substitute_subject")
-                    R.id.nav_home -> arguments.containsKey("highlight_homework_id") || arguments.containsKey("highlight_exam_id")
-                    else -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_search_category")
+                    R.id.nav_home -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("moodle_search_category")
+                    R.id.nav_gallery -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_search_category")
+                    R.id.nav_noten -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_search_category")
+                    R.id.nav_moodle -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject")
+                    else -> arguments.containsKey("highlight_homework_id") ||
+                            arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("highlight_home_item_id") ||
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_search_category")
                 }
 
                 if (shouldClearArgs) {
@@ -173,6 +201,7 @@ class MainActivity : BaseActivity() {
                     R.id.nav_slideshow -> arguments.containsKey("highlight_homework_id")
                     R.id.nav_klausuren -> arguments.containsKey("highlight_exam_id")
                     R.id.nav_home -> arguments.containsKey("highlight_home_item_id")
+                    R.id.nav_moodle -> arguments.containsKey("moodle_search_category")  // Add Moodle cleanup
                     else -> false
                 }
 
@@ -195,6 +224,9 @@ class MainActivity : BaseActivity() {
                             arguments.remove("highlight_substitute_date")
                             arguments.remove("highlight_substitute_type")
                             arguments.remove("highlight_substitute_room")
+                            arguments.remove("moodle_search_category")
+                            arguments.remove("moodle_search_summary")
+                            arguments.remove("moodle_entry_id")
                             L.d("MainActivity", "Arguments cleared successfully")
                         } catch (e: Exception) {
                             L.w("MainActivity", "Error clearing arguments", e)
@@ -203,7 +235,8 @@ class MainActivity : BaseActivity() {
                 }
             }
 
-            if (destination.id != R.id.nav_slideshow && destination.id != R.id.nav_klausuren && destination.id != R.id.nav_home) {
+            if (destination.id != R.id.nav_slideshow && destination.id != R.id.nav_klausuren &&
+                destination.id != R.id.nav_home && destination.id != R.id.nav_moodle) {
                 homeworkArgumentsCleared = false
             }
         }
@@ -237,6 +270,12 @@ class MainActivity : BaseActivity() {
             intent.removeExtra("highlight_substitute_date")
             intent.removeExtra("highlight_substitute_type")
             intent.removeExtra("highlight_substitute_room")
+        }
+        if (intent.hasExtra("moodle_search_category")) {
+            L.d("MainActivity", "Clearing lingering moodle intent data")
+            intent.removeExtra("moodle_search_category")
+            intent.removeExtra("moodle_search_summary")
+            intent.removeExtra("moodle_entry_id")
         }
 
         val landscapeEnabled = sharedPreferences.getBoolean("landscape_mode_enabled", true)
@@ -283,6 +322,23 @@ class MainActivity : BaseActivity() {
                     }
                 } catch (e: Exception) {
                     L.w("MainActivity", "Error force clearing exam arguments in onResume", e)
+                }
+            }, 4000)
+        }
+
+        if (currentDestination?.id == R.id.nav_moodle) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    navController.currentBackStackEntry?.arguments?.let { args ->
+                        if (args.containsKey("moodle_search_category")) {
+                            args.remove("moodle_search_category")
+                            args.remove("moodle_search_summary")
+                            args.remove("moodle_entry_id")
+                            L.d("MainActivity", "Force cleared moodle arguments in onResume")
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.w("MainActivity", "Error force clearing moodle arguments in onResume", e)
                 }
             }, 4000)
         }
@@ -603,5 +659,29 @@ class MainActivity : BaseActivity() {
         } catch (e: Exception) {
             L.e("MainActivity", "Error in forceCleanNavigation", e)
         }
+    }
+
+    private fun setupBackPressHandler() {
+        moodleBackPressedCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                val navController = findNavController(R.id.nav_host_fragment_content_main)
+                val currentFragment = supportFragmentManager.primaryNavigationFragment
+                    ?.childFragmentManager?.fragments?.firstOrNull()
+
+                if (currentFragment is MoodleFragment && navController.currentDestination?.id == R.id.nav_moodle) {
+                    if (!currentFragment.onBackPressed()) {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+
+        onBackPressedDispatcher.addCallback(this, moodleBackPressedCallback!!)
     }
 }
