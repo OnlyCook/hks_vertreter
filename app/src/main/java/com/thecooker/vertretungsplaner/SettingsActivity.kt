@@ -26,7 +26,6 @@ import android.view.View
 import com.thecooker.vertretungsplaner.utils.WorkScheduler
 import com.thecooker.vertretungsplaner.utils.TimePickerDialogHelper
 import android.app.TimePickerDialog
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Color
@@ -173,7 +172,6 @@ class SettingsActivity : BaseActivity() {
     private lateinit var switchShowLoginDialog: Switch
     private lateinit var btnClearMoodleCache: Button
     private lateinit var btnClearMoodleData: Button
-    private lateinit var moodleSettingsReceiver: BroadcastReceiver
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
@@ -3946,44 +3944,83 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun getMoodleFragment(): MoodleFragment? {
-        // try to get current fragment though aint no way i am implementing this
-        return null
+        return try {
+            val mainActivity = this.parent as? MainActivity
+
+            mainActivity?.supportFragmentManager?.fragments?.forEach { fragment ->
+                fragment.childFragmentManager.fragments.forEach { childFragment ->
+                    if (childFragment is MoodleFragment) {
+                        return childFragment
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun clearMoodleCacheManually() {
-        val webViewDir = File(applicationInfo.dataDir, "app_webview")
-        if (webViewDir.exists()) {
-            webViewDir.deleteRecursively()
+        try {
+            cacheDir.deleteRecursively()
+
+            File(applicationInfo.dataDir, "app_webview").deleteRecursively()
+            File(applicationInfo.dataDir, "app_WebView").deleteRecursively()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                codeCacheDir.deleteRecursively()
+            }
+
+            Toast.makeText(this, "Moodle cache cleared", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            L.e("SettingsActivity", "Error clearing cache manually", e)
+            Toast.makeText(this, "Failed to clear cache", Toast.LENGTH_SHORT).show()
         }
-        Toast.makeText(this, "Moodle cache cleared", Toast.LENGTH_SHORT).show()
     }
 
     private fun clearMoodleDataManually() {
-        clearMoodleCacheManually()
-
         try {
-            val masterKey = MasterKey.Builder(this)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
+            clearMoodleCacheManually()
 
-            val encryptedPrefs = EncryptedSharedPreferences.create(
-                this,
-                "moodle_credentials",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            encryptedPrefs.edit { clear() }
-        } catch (_: Exception) {
+            val dataDir = File(applicationInfo.dataDir)
+
+            File(dataDir, "app_webview").deleteRecursively()
+            File(dataDir, "app_WebView").deleteRecursively()
+
+            File(dataDir, "databases").listFiles()?.filter {
+                it.name.contains("webview", ignoreCase = true) ||
+                        it.name.contains("WebView", ignoreCase = true)
+            }?.forEach { it.deleteRecursively() }
+
+            try {
+                val masterKey = MasterKey.Builder(this)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+
+                val encryptedPrefs = EncryptedSharedPreferences.create(
+                    this,
+                    "moodle_credentials",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                encryptedPrefs.edit { clear() }
+            } catch (e: Exception) {
+                L.e("SettingsActivity", "Error clearing encrypted prefs", e)
+            }
+
+            sharedPreferences.edit {
+                remove("moodle_dont_show_login_dialog")
+                remove("moodle_auto_dismiss_confirm")
+                remove("moodle_debug_mode")
+            }
+
+            Toast.makeText(this, "All Moodle data cleared", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            L.e("SettingsActivity", "Error clearing data manually", e)
+            Toast.makeText(this, "Failed to clear data", Toast.LENGTH_SHORT).show()
         }
-
-        sharedPreferences.edit {
-            remove("moodle_dont_show_login_dialog")
-                .remove("moodle_auto_dismiss_confirm")
-                .remove("moodle_debug_mode")
-        }
-
-        Toast.makeText(this, "All Moodle data cleared", Toast.LENGTH_SHORT).show()
     }
 }
 

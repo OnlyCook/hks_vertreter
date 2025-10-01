@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.7.4"
+        versionName = "1.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -57,9 +57,9 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("com.itextpdf:itextg:5.5.10")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("androidx.work:work-runtime-ktx:2.10.3")
-    implementation("androidx.work:work-multiprocess:2.10.3")
-    implementation("com.google.code.gson:gson:2.13.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
+    implementation("androidx.work:work-multiprocess:2.10.5")
+    implementation("com.google.code.gson:gson:2.13.2")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.security:security-crypto:1.1.0")
     implementation(libs.androidx.preference.ktx)

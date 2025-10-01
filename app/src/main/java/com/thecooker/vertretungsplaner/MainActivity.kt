@@ -23,6 +23,7 @@ import androidx.core.content.edit
 import androidx.navigation.ui.NavigationUI
 import androidx.activity.OnBackPressedCallback
 import com.thecooker.vertretungsplaner.ui.moodle.MoodleFragment
+import androidx.core.content.ContextCompat
 
 class MainActivity : BaseActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
@@ -63,15 +64,18 @@ class MainActivity : BaseActivity() {
 
                 appBarConfiguration = AppBarConfiguration(
                     setOf(
-                        R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow, R.id.nav_klausuren, R.id.nav_noten, R.id.nav_moodle
+                        R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow,
+                        R.id.nav_klausuren, R.id.nav_noten, R.id.nav_moodle
                     ), drawerLayout
                 )
 
                 setupActionBarWithNavController(navController, appBarConfiguration)
                 navView.setupWithNavController(navController)
 
-                setupNavigationListener(navView, navController)
-                setupDestinationChangeListener(navController)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    setupNavigationListener(navView, navController)
+                    setupDestinationChangeListener(navController)
+                }, 50)
 
                 if (!handleIncomingIntent(intent)) {
                     navigateToStartupPage()
@@ -147,10 +151,34 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private fun updateNavigationIcons(destinationId: Int) {
+        val navView: NavigationView = binding.navView
+        val menu = navView.menu
+
+        val iconMap = mapOf(
+            R.id.nav_gallery to Pair(R.drawable.ic_menu_gallery, R.drawable.ic_menu_gallery_filled),
+            R.id.nav_home to Pair(R.drawable.ic_menu_camera, R.drawable.ic_menu_camera_filled),
+            R.id.nav_slideshow to Pair(R.drawable.ic_menu_slideshow, R.drawable.ic_menu_slideshow_filled),
+            R.id.nav_klausuren to Pair(R.drawable.ic_menu_klausuren, R.drawable.ic_menu_klausuren_filled),
+            R.id.nav_noten to Pair(R.drawable.ic_star, R.drawable.ic_star_filled),
+            R.id.nav_moodle to Pair(R.drawable.ic_moodle, R.drawable.ic_moodle) // moodle doesnt have a filled version
+        )
+
+        iconMap.forEach { (itemId, icons) ->
+            val menuItem = menu.findItem(itemId)
+            menuItem?.icon = ContextCompat.getDrawable(
+                this,
+                if (itemId == destinationId) icons.second else icons.first
+            )
+        }
+    }
+
     private fun setupDestinationChangeListener(navController: androidx.navigation.NavController) {
         navController.addOnDestinationChangedListener { _, destination, arguments ->
             L.d("MainActivity", "Navigation changed to: ${destination.label}")
             L.d("MainActivity", "Navigation arguments: $arguments")
+
+            updateNavigationIcons(destination.id)
 
             moodleBackPressedCallback?.isEnabled = (destination.id == R.id.nav_moodle)
 

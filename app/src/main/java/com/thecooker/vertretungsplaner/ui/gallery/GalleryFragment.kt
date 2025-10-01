@@ -3997,7 +3997,7 @@ class GalleryFragment : Fragment() {
         val moodleEntries = getMoodleEntriesForDate(date)
         if (moodleEntries.isNotEmpty()) {
             val moodleText = TextView(requireContext()).apply {
-                text = "Moodle Kalender:"
+                text = getString(R.string.gall_moodle_cal)
                 textSize = 16f
                 setTextColor(getThemeColor(R.attr.textPrimaryColor))
                 setTypeface(null, Typeface.BOLD)
@@ -4013,7 +4013,7 @@ class GalleryFragment : Fragment() {
                 }
 
                 val moodleItem = TextView(requireContext()).apply {
-                    text = "- ${entry.summary}"
+                    text = "➞ ${entry.summary}"
                     textSize = 14f
                     setTextColor(getThemeColor(R.attr.textPrimaryColor))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
