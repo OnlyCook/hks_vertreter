@@ -1510,5 +1510,14 @@
     <string name="moodle_login_required_for_pdf">Bitte einloggen um PDF-Dateien zu öffnen</string>
     <string name="moodle_pdf_timeout">Zeitüberschreitung beim Laden der PDF</string>
     <string name="moodle_resolving_file">Datei-URL wird aufgelöst…</string>
+    <string name="moodle_no_url_to_open">Keine URL zum Öffnen</string>
+    <string name="moodle_tab_opened_in_new_tab">In neuem Tab geöffnet</string>
+    <string name="moodle_cannot_close_last_tab">Letzten Tab kann nicht geschlossen werden</string>
+    <string name="moodle_couldnt_resolve_download_url">Download-URL konnte nicht aufgelöst werden</string>
+    <string name="moodle_download_failed_with_http_error">Download fehlgeschlagen: HTTP %d</string>
+    <string name="moodle_error_resolving_download">Fehler beim Auflösen des Downloads: %s</string>
+    <string name="moodle_couldnt_resolve_file_url">Datei-URL konnte nicht aufgelöst werden</string>
+    <string name="moodle_failed_resolving_url_with_http_error">URL konnte nicht aufgelöst werden: HTTP %d</string>
+    <string name="moodle_error_details">Fehler: %s</string>
 
 </resources>

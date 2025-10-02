@@ -1509,5 +1509,14 @@
     <string name="moodle_login_required_for_pdf">Please log in to view PDF files</string>
     <string name="moodle_pdf_timeout">PDF loading timed out</string>
     <string name="moodle_resolving_file">Resolving file URL…</string>
+    <string name="moodle_no_url_to_open">No URL to open</string>
+    <string name="moodle_tab_opened_in_new_tab">Opened in new tab</string>
+    <string name="moodle_cannot_close_last_tab">Cannot close the last tab</string>
+    <string name="moodle_couldnt_resolve_download_url">Could not resolve download URL</string>
+    <string name="moodle_download_failed_with_http_error">Download failed: HTTP %d</string>
+    <string name="moodle_error_resolving_download">Error resolving download: %s</string>
+    <string name="moodle_couldnt_resolve_file_url">Could not resolve file URL</string>
+    <string name="moodle_failed_resolving_url_with_http_error">Failed to resolve URL: HTTP %d</string>
+    <string name="moodle_error_details">Error: %s</string>
 
 </resources>
