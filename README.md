@@ -6,7 +6,7 @@
 
 Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
-<p align="center">
+<p align="center" id="download">
   <a href="https://github.com/OnlyCook/hks_vertreter/releases/latest/download/hks_vertreter_1-7-3.apk">
     <img src="https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android" alt="Download APK">
   </a>
@@ -49,11 +49,11 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 ## 📥 Installation
 
-Es gibt zwei Möglichkeiten, die App herunterzuladen und zu installieren:
+Es gibt zwei Möglichkeiten, die App herunterzuladen:
    - *Hinweis: Du musst möglicherweise „Installation aus unbekannten Quellen“ aktivieren*  
 
 ### ✅ 1. Empfohlene Methode
-Nutze den Download-Button oben auf dieser Seite.
+Nutze den [Download-Button oben](#download) auf dieser Seite.
 
 ### 🛠️ 2. Alternative Methode
 Falls der Button nicht funktioniert, kannst du die APK auch manuell herunterladen:
