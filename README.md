@@ -6,6 +6,12 @@
 
 Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
+<p align="center">
+  <a href="https://github.com/OnlyCook/hks_vertreter/releases/latest/download/hks_vertreter_1-7-3.apk">
+    <img src="https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android" alt="Download APK">
+  </a>
+</p>
+
 ## 🔒 Meine Garantien
 
 Diese App wird niemals...
@@ -43,10 +49,18 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 
 ## 📥 Installation
 
-1. Gehe zu den [Releases](../../releases) dieser Repository
-2. Lade die neueste APK-Datei herunter
-3. Installiere die App auf deinem Android-Gerät
-   - *Hinweis: Du musst möglicherweise "Installation aus unbekannten Quellen" aktivieren*
+Es gibt zwei Möglichkeiten, die App herunterzuladen und zu installieren:
+   - *Hinweis: Du musst möglicherweise „Installation aus unbekannten Quellen“ aktivieren*  
+
+### ✅ 1. Empfohlene Methode
+Nutze den Download-Button oben auf dieser Seite.
+
+### 🛠️ 2. Alternative Methode
+Falls der Button nicht funktioniert, kannst du die APK auch manuell herunterladen:
+
+1. Gehe zu den [Releases](../../releases) dieses Repositories  
+2. Lade die neueste APK-Datei herunter  
+3. Installiere die App auf deinem Android-Gerät  
 
 ## 🎨 Screenshots (1.7.2)
 <div align="center">
@@ -70,7 +84,7 @@ Die Scanner-Algorithmen für Stunden- und Klausurpläne sind speziell auf das BG
 Die Noten-Funktion bietet nur eine **ungefähre Berechnung** und entspricht **nicht** der offiziellen Zeugnis-Berechnung. Verwende sie nur als groben Richtwert.
 
 ### Benachrichtigungen
-Die Benachrichtigungen müssen manuell aktiviert werden und können eingeschränkt sein, wenn **Hintergrundaktivitäten** deaktiviert wurden.
+Die Benachrichtigungen müssen manuell aktiviert werden und können unzuverlässig sein, wenn **Hintergrundaktivitäten** beschränkt sind.
 
 ## 📬 Kontakt & Support
 
