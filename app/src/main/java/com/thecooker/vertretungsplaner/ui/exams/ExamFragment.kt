@@ -66,6 +66,7 @@ class ExamFragment : Fragment() {
     // file picker pdf import
     private lateinit var pdfPickerLauncher: ActivityResultLauncher<Intent>
     private lateinit var exportLauncher: ActivityResultLauncher<Intent>
+    private lateinit var importLauncher: ActivityResultLauncher<Intent>
 
     private val allowOldSchedules = false // set to true for testing only
 
@@ -415,21 +416,6 @@ class ExamFragment : Fragment() {
         }
     }
 
-    private fun showErrorState() {
-        if (!isAdded) return
-
-        hideLoadingState()
-        Toast.makeText(requireContext(), getString(R.string.exam_loading_error), Toast.LENGTH_LONG).show()
-
-        recyclerView.visibility = View.VISIBLE
-        searchBar.visibility = View.VISIBLE
-        btnAddExam.visibility = View.VISIBLE
-        btnMenu.visibility = View.VISIBLE
-        tvExamCount.visibility = View.VISIBLE
-
-        isLoading = false
-    }
-
     private fun showLoadingState() {
         loadingView = LayoutInflater.from(requireContext()).inflate(android.R.layout.simple_list_item_1, null)
 
@@ -440,12 +426,8 @@ class ExamFragment : Fragment() {
             gravity = Gravity.CENTER
             setPadding(32, 64, 32, 64)
 
-            val textColor = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val textColor =
                 requireContext().getColor(android.R.color.primary_text_dark)
-            } else {
-                @Suppress("DEPRECATION")
-                requireContext().resources.getColor(android.R.color.primary_text_dark)
-            }
             setTextColor(textColor)
 
             setTypeface(null, Typeface.BOLD)
@@ -497,6 +479,21 @@ class ExamFragment : Fragment() {
                     val content = sharedPreferences.getString("temp_export_content", "") ?: ""
                     saveToSelectedFile(uri, content)
                     sharedPreferences.edit {remove("temp_export_content")}
+                }
+            }
+        }
+
+        importLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.data?.let { uri ->
+                    try {
+                        val inputStream = requireContext().contentResolver.openInputStream(uri)
+                        val content = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+                        importExamData(content)
+                    } catch (e: Exception) {
+                        L.e(TAG, "Error reading import file", e)
+                        Toast.makeText(requireContext(), getString(R.string.exam_import_error, e.message), Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
@@ -2188,11 +2185,17 @@ class ExamFragment : Fragment() {
     }
 
     private fun importFromFilePicker() {
-        Intent(Intent.ACTION_GET_CONTENT).apply {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        sharedPreferences.edit { remove("temp_add_to_existing") } // didnt want to change the name
+        sharedPreferences.edit { remove("temp_add_to_existing") }
+
+        try {
+            importLauncher.launch(intent)
+        } catch (_: Exception) {
+            Toast.makeText(requireContext(), getString(R.string.set_act_error_while_opening_file_dialog), Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun importFromClipboard() {
@@ -2209,6 +2212,11 @@ class ExamFragment : Fragment() {
 
     private fun importExamData(content: String) {
         try {
+            if (isSharedExamFormat(content)) {
+                showSharedExamDetectedDialog()
+                return
+            }
+
             backupManager.importExamDataFromFullBackup(content)
 
             loadExams()
@@ -2233,6 +2241,29 @@ class ExamFragment : Fragment() {
 
             Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun isSharedExamFormat(content: String): Boolean {
+        val trimmedContent = content.trim()
+
+        if (trimmedContent.startsWith("{") && trimmedContent.endsWith("}")) {
+            return trimmedContent.contains("\"type\":\"exam\"") &&
+                    trimmedContent.contains("\"sharedBy\"") &&
+                    trimmedContent.contains("\"sharedDate\"")
+        }
+
+        return false
+    }
+
+    private fun showSharedExamDetectedDialog() {
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.exam_shared_exam_detected_title))
+            .setMessage(getString(R.string.exam_shared_exam_detected_message))
+            .setPositiveButton(getString(R.string.slide_close), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
     }
 
     private fun showAddExamDialog(editExam: ExamEntry? = null) {
@@ -3183,23 +3214,6 @@ class ExamFragment : Fragment() {
         val b = (Color.blue(color1) * inverseRatio + Color.blue(color2) * ratio).toInt()
         val a = (Color.alpha(color1) * inverseRatio + Color.alpha(color2) * ratio).toInt()
         return Color.argb(a, r, g, b)
-    }
-
-    private fun waitForInitializationThenExecute(action: () -> Unit) {
-        if (!isLoading) {
-            Handler(Looper.getMainLooper()).postDelayed(action, 100)
-        } else {
-            val checkInitialization = object : Runnable {
-                override fun run() {
-                    if (!isLoading && isAdded) {
-                        action()
-                    } else if (isAdded) {
-                        Handler(Looper.getMainLooper()).postDelayed(this, 100)
-                    }
-                }
-            }
-            Handler(Looper.getMainLooper()).postDelayed(checkInitialization, 200)
-        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

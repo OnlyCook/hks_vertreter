@@ -89,7 +89,6 @@ class TabAdapter(
         val isDefaultTab = tab.isDefault
 
         tabHolder.title.text = buildString {
-            if (isDefaultTab) append("🔒 ")
             append(tab.title.take(if (isCompactLayout) 15 else 30))
             if (tab.title.length > (if (isCompactLayout) 15 else 30)) append("...")
         }
@@ -128,7 +127,21 @@ class TabAdapter(
             tabHolder.closeButton?.apply {
                 visibility = View.VISIBLE
                 setOnClickListener {
-                    onTabClose(actualPosition)
+                    tabHolder.itemView.animate()
+                        .alpha(0f)
+                        .scaleX(0.85f)
+                        .scaleY(0.85f)
+                        .translationX(tabHolder.itemView.width.toFloat() * 0.3f)
+                        .setDuration(150)
+                        .withEndAction {
+                            tabHolder.itemView.alpha = 1f
+                            tabHolder.itemView.scaleX = 1f
+                            tabHolder.itemView.scaleY = 1f
+                            tabHolder.itemView.translationX = 0f
+
+                            onTabClose(actualPosition)
+                        }
+                        .start()
                 }
             }
         } else {

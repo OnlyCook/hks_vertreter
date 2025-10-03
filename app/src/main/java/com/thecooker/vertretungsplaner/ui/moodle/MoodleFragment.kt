@@ -162,6 +162,7 @@ class MoodleFragment : Fragment() {
     private var headerHiddenDuringScroll = false
     private val pullThresholdComplete = 350f
     private var isHeaderAnimating = false
+    private var isPullToRefreshActive = false
 
     // session expired
     private var sessionExpiredDetected = false
@@ -171,6 +172,7 @@ class MoodleFragment : Fragment() {
     private val SESSION_RETRY_DELAY = 30000L
     private var isLoginInProgress = false
     private var loginAttemptCount = 0
+    private var sessionExpiredRetryCount = 0
 
     private var userAgent: String = ""
 
@@ -384,12 +386,21 @@ class MoodleFragment : Fragment() {
                 if (url.contains("/mod/resource/view.php")) {
                     L.d("MoodleFragment", "Intercepted resource view URL: $url")
                     val cookies = CookieManager.getInstance().getCookie(url)
-                    resolveDownloadUrl(url, cookies)
+
+                    verifyFileLink(url) { isFileLink ->
+                        if (isFileLink) {
+                            resolveDownloadUrl(url, cookies)
+                        } else {
+                            activity?.runOnUiThread {
+                                webView.loadUrl(url)
+                            }
+                        }
+                    }
                     return true
                 }
 
-                if (url.contains("/pluginfile.php") || url.contains("forcedownload=1")) {
-                    L.d("MoodleFragment", "Intercepted direct download URL: $url")
+                if (url.contains("/pluginfile.php")) {
+                    L.d("MoodleFragment", "Intercepted direct file URL: $url")
                     val cookies = CookieManager.getInstance().getCookie(url)
                     handleInterceptedDownload(url, cookies)
                     return true
@@ -405,6 +416,16 @@ class MoodleFragment : Fragment() {
                     hideLoadingBar()
                     updateUIState()
                     updateDashboardButtonIcon()
+
+                    if (isTabViewVisible && currentTabIndex in tabs.indices) {
+                        val currentTab = tabs[currentTabIndex]
+                        tabs[currentTabIndex] = currentTab.copy(
+                            url = webView.url ?: currentTab.url,
+                            title = webView.title ?: currentTab.title,
+                            thumbnail = captureWebViewThumbnail()
+                        )
+                        tabAdapter.notifyItemChanged(currentTabIndex)
+                    }
                 }
                 isPageFullyLoaded = true
 
@@ -530,17 +551,20 @@ class MoodleFragment : Fragment() {
 
                         if (deltaY > 0) {
                             isPulling = true
+                            isPullToRefreshActive = true
                             pullDistance = deltaY
                             updateRefreshIndicator(pullDistance)
                             return@setOnTouchListener true
                         } else if (deltaY < 0 && isPulling) {
                             isPulling = false
+                            isPullToRefreshActive = false
                             startedPullFromTop = false
                             animateRefreshIndicatorAway()
                         }
                     } else {
                         if (isPulling) {
                             isPulling = false
+                            isPullToRefreshActive = false
                             startedPullFromTop = false
                             animateRefreshIndicatorAway()
                         }
@@ -555,6 +579,7 @@ class MoodleFragment : Fragment() {
 
                     isUserScrolling = false
                     isPulling = false
+                    isPullToRefreshActive = false
                     startedPullFromTop = false
                     pullDistance = 0f
                     isScrollingDown = false
@@ -589,6 +614,58 @@ class MoodleFragment : Fragment() {
                 checkScrollEndedAtTop()
             }
             Handler(Looper.getMainLooper()).postDelayed(scrollEndCheckRunnable!!, 150)
+        }
+    }
+
+    private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
+        val idMatch = "id=(\\d+)".toRegex().find(url)
+        val resourceId = idMatch?.groupValues?.get(1)
+
+        if (resourceId == null) {
+            callback(false)
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var links = document.querySelectorAll('a[href*="id=$resourceId"]');
+                
+                for (var i = 0; i < links.length; i++) {
+                    var link = links[i];
+
+                    var accessHideSpan = link.querySelector('span.accesshide');
+                    if (accessHideSpan) {
+                        var text = accessHideSpan.textContent.trim().toLowerCase();
+                        if (text.includes('datei') || text.includes('file')) {
+                            return true;
+                        }
+                    }
+
+                    var container = link.closest('.activity-item, .activityinstance');
+                    if (container) {
+                        var activityIcon = container.querySelector('img.activityicon');
+                        if (activityIcon && activityIcon.src) {
+                            var imgSrc = activityIcon.src.toLowerCase();
+                            if (imgSrc.includes('/f/pdf') || 
+                                imgSrc.includes('/f/document') || 
+                                imgSrc.includes('/f/archive') ||
+                                imgSrc.includes('resource')) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            callback(result == "true")
         }
     }
 
@@ -1681,6 +1758,7 @@ class MoodleFragment : Fragment() {
                 loginRetryCount = 0
                 consecutiveLoginFailures = 0
                 sessionExpiredDetected = false
+                sessionExpiredRetryCount = 0
                 loginSuccessConfirmed = true
                 lastSuccessfulLoginCheck = System.currentTimeMillis()
                 isLoginDialogShown = false
@@ -1689,18 +1767,18 @@ class MoodleFragment : Fragment() {
             }
 
             val jsCode = """
-            (function() {
-                try {
-                    var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    if (errorDiv && errorDiv.textContent && errorDiv.textContent.trim() !== '') {
-                        return errorDiv.textContent.trim();
-                    }
-                    return '';
-                } catch(e) {
-                    return '';
+        (function() {
+            try {
+                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (errorDiv && errorDiv.textContent && errorDiv.textContent.trim() !== '') {
+                    return errorDiv.textContent.trim();
                 }
-            })();
-        """.trimIndent()
+                return '';
+            } catch(e) {
+                return '';
+            }
+        })();
+    """.trimIndent()
 
             webView.evaluateJavascript(jsCode) { result ->
                 val errorMessage = result.replace("\"", "").trim()
@@ -1723,6 +1801,7 @@ class MoodleFragment : Fragment() {
                         loginAttemptCount = 0
                         loginRetryCount = 0
                         consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
+                        sessionExpiredRetryCount = 0
                         hasLoginFailed = true
                         isLoginDialogShown = false
                         loginSuccessConfirmed = false
@@ -1739,11 +1818,24 @@ class MoodleFragment : Fragment() {
                         }, 500)
 
                     } else if (isSessionExpired) {
-                        if (consecutiveLoginFailures >= 1) {
+                        if (sessionExpiredRetryCount == 0) {
+                            L.d("MoodleFragment", "Session expired - retrying once")
+                            sessionExpiredRetryCount = 1
+                            isLoginInProgress = false
+
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                val username = encryptedPrefs.getString("moodle_username", "") ?: ""
+                                val password = encryptedPrefs.getString("moodle_password", "") ?: ""
+                                if (username.isNotEmpty() && password.isNotEmpty()) {
+                                    fillLoginForm(username, password)
+                                }
+                            }, 2000)
+                        } else {
                             L.e("MoodleFragment", "Session expired on retry - entering cooldown")
                             isLoginInProgress = false
                             loginAttemptCount = 0
                             sessionExpiredDetected = true
+                            sessionExpiredRetryCount = 0
                             lastSessionExpiredTime = System.currentTimeMillis()
                             hasLoginFailed = true
                             isLoginDialogShown = false
@@ -1755,23 +1847,12 @@ class MoodleFragment : Fragment() {
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
-                        } else {
-                            L.d("MoodleFragment", "Session expired - will retry once")
-                            consecutiveLoginFailures = 1
-                            isLoginInProgress = false
-
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                val username = encryptedPrefs.getString("moodle_username", "") ?: ""
-                                val password = encryptedPrefs.getString("moodle_password", "") ?: ""
-                                if (username.isNotEmpty() && password.isNotEmpty()) {
-                                    fillLoginForm(username, password)
-                                }
-                            }, 2000)
                         }
                     } else {
                         L.e("MoodleFragment", "Unknown error - stopping")
                         isLoginInProgress = false
                         loginAttemptCount = 0
+                        sessionExpiredRetryCount = 0
                         consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
                         hasLoginFailed = true
                         isLoginDialogShown = false
@@ -1779,6 +1860,7 @@ class MoodleFragment : Fragment() {
                 } else {
                     L.w("MoodleFragment", "No error message found, login status unclear")
                     isLoginInProgress = false
+                    sessionExpiredRetryCount = 0
                     hasLoginFailed = true
                     isLoginDialogShown = false
                 }
@@ -3192,7 +3274,7 @@ class MoodleFragment : Fragment() {
         }
 
         webView.reload()
-        Toast.makeText(requireContext(), getString(R.string.moodle_refreshing), Toast.LENGTH_SHORT).show()
+        //Toast.makeText(requireContext(), getString(R.string.moodle_refreshing), Toast.LENGTH_SHORT).show()
 
         Handler(Looper.getMainLooper()).postDelayed({
             animateRefreshIndicatorAway()
@@ -3498,6 +3580,10 @@ class MoodleFragment : Fragment() {
     }
 
     private fun showLinkContextMenu(url: String) {
+        if (isPullToRefreshActive) {
+            return
+        }
+
         val startTime = System.currentTimeMillis()
 
         analyzeLinkCapabilities(url) { linkInfo ->
@@ -3506,7 +3592,9 @@ class MoodleFragment : Fragment() {
 
             Handler(Looper.getMainLooper()).postDelayed({
                 activity?.runOnUiThread {
-                    showLinkOptionsDialog(url, linkInfo)
+                    if (!isPullToRefreshActive) {
+                        showLinkOptionsDialog(url, linkInfo)
+                    }
                 }
             }, delay)
         }
@@ -3615,10 +3703,13 @@ class MoodleFragment : Fragment() {
 
         val cookies = CookieManager.getInstance().getCookie(url)
 
-        options.add(Pair("Open in new tab", R.drawable.ic_tab_background))
-        actions.add {
-            createNewTab(url)
-            Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
+        // open in new tab (add only when not downloadable file)
+        if (!linkInfo.isDownloadable || linkInfo.isImage) {
+            options.add(Pair("Open in new tab", R.drawable.ic_tab_background))
+            actions.add {
+                createNewTab(url)
+                Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
+            }
         }
 
         // download to user device
@@ -3626,9 +3717,9 @@ class MoodleFragment : Fragment() {
             options.add(Pair(getString(R.string.moodle_download), R.drawable.ic_download))
             actions.add {
                 if (url.contains("/mod/resource/view.php")) {
-                    resolveDownloadUrl(url, cookies)
+                    resolveDownloadUrl(url, cookies, forceDownload = true)
                 } else {
-                    handleInterceptedDownload(url, cookies)
+                    downloadToDeviceWithCookies(url, cookies)
                 }
             }
         }
@@ -3923,7 +4014,7 @@ class MoodleFragment : Fragment() {
         switchToTab(currentTabIndex)
         savePinnedTabs()
 
-        if (isTabViewVisible) {
+        if (isTabViewVisible && !isDraggingTab) {
             refreshTabViewLayout()
         }
     }
@@ -4043,7 +4134,7 @@ class MoodleFragment : Fragment() {
                 bottomMargin = 0
             }
         } else {
-            // Normal view - standard spacing
+            // Normal view
             tabHeaderLayout?.setPadding(
                 (16 * density).toInt(),
                 (8 * density).toInt(),
@@ -4078,14 +4169,17 @@ class MoodleFragment : Fragment() {
     }
 
     private fun setupLayoutToggle(handle: View, overlayView: View) {
-        val handleIcon = handle.findViewById<ImageView>(R.id.handleIcon)
+        handle.alpha = 0.6f
+        handle.scaleX = 1f
+        handle.scaleY = 1f
 
         var startY = 0f
         var isDragging = false
         var overlayHeight: Int
+        var initialOverlayHeight = 0
         val density = resources.displayMetrics.density
-        val minHeight = (200 * density).toInt()
-        val maxHeight = (320 * density).toInt()
+        val minHeight = (190 * density).toInt()
+        val maxHeight = (310 * density).toInt()
         val closeThreshold = (50 * density).toInt()
 
         overlayHeight = if (isCompactTabLayout) minHeight else maxHeight
@@ -4093,11 +4187,15 @@ class MoodleFragment : Fragment() {
         layoutParams.height = overlayHeight
         overlayView.layoutParams = layoutParams
 
+        var lastCompactState = isCompactTabLayout
+
         handle.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     startY = event.rawY
+                    initialOverlayHeight = overlayView.layoutParams.height
                     isDragging = true
+                    lastCompactState = isCompactTabLayout
 
                     handle.animate()
                         .scaleX(1.1f)
@@ -4113,7 +4211,7 @@ class MoodleFragment : Fragment() {
                     if (!isDragging) return@setOnTouchListener false
 
                     val deltaY = startY - event.rawY
-                    val newHeight = (overlayHeight + deltaY).toInt()
+                    val newHeight = (initialOverlayHeight + deltaY).toInt()
                         .coerceIn(closeThreshold, maxHeight)
 
                     val layoutParams = overlayView.layoutParams
@@ -4121,23 +4219,20 @@ class MoodleFragment : Fragment() {
                     overlayView.layoutParams = layoutParams
 
                     val heightRatio = (newHeight - minHeight).toFloat() / (maxHeight - minHeight)
-                    val wasCompact = isCompactTabLayout
 
-                    if (heightRatio < 0.3f && !isCompactTabLayout) {
-                        isCompactTabLayout = true
-                        if (wasCompact != isCompactTabLayout) {
-                            refreshTabLayout(overlayView)
-                        }
-                    } else if (heightRatio > 0.7f && isCompactTabLayout) {
-                        isCompactTabLayout = false
-                        if (wasCompact != isCompactTabLayout) {
-                            refreshTabLayout(overlayView)
-                        }
+                    val shouldBeCompact = heightRatio < 0.3f
+
+                    if (shouldBeCompact != isCompactTabLayout) {
+                        isCompactTabLayout = shouldBeCompact
+                        refreshTabLayoutDuringDrag(overlayView)
+                        lastCompactState = isCompactTabLayout
                     }
 
                     if (newHeight < minHeight) {
                         val closeProgress = (minHeight - newHeight).toFloat() / (minHeight - closeThreshold)
                         overlayView.alpha = 1f - (closeProgress * 0.5f)
+                    } else {
+                        overlayView.alpha = 1f
                     }
 
                     true
@@ -4170,16 +4265,22 @@ class MoodleFragment : Fragment() {
                         maxHeight
                     }
 
-                    ValueAnimator.ofInt(currentHeight, targetHeight).apply {
-                        duration = 200
-                        addUpdateListener { animator ->
-                            layoutParams.height = animator.animatedValue as Int
-                            overlayView.layoutParams = layoutParams
+                    if (currentHeight != targetHeight) {
+                        ValueAnimator.ofInt(currentHeight, targetHeight).apply {
+                            duration = 200
+                            addUpdateListener { animator ->
+                                layoutParams.height = animator.animatedValue as Int
+                                overlayView.layoutParams = layoutParams
+                            }
+                            doOnEnd {
+                                if (lastCompactState != isCompactTabLayout) {
+                                    setupTabOverlayControls(overlayView)
+                                }
+                            }
+                            start()
                         }
-                        doOnEnd {
-                            setupTabOverlayControls(overlayView)
-                        }
-                        start()
+                    } else if (lastCompactState != isCompactTabLayout) {
+                        setupTabOverlayControls(overlayView)
                     }
 
                     overlayHeight = targetHeight
@@ -4189,7 +4290,6 @@ class MoodleFragment : Fragment() {
                         putBoolean("moodle_tab_layout_compact", isCompactTabLayout)
                     }
 
-                    refreshTabLayout(overlayView)
                     true
                 }
                 else -> false
@@ -4197,24 +4297,95 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun refreshTabLayout(overlayView: View) {
-        setupTabOverlayControls(overlayView)
-
-        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
-        setupTabRecyclerView(overlayView)
-
+    private fun refreshTabLayoutDuringDrag(overlayView: View) {
         overlayView.animate()
-            .scaleX(0.95f)
-            .scaleY(0.95f)
+            .alpha(0.85f)
             .setDuration(100)
             .withEndAction {
                 overlayView.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
+                    .alpha(1f)
                     .setDuration(100)
                     .start()
             }
             .start()
+
+        val btnClearAll = overlayView.findViewById<ImageButton>(R.id.btnClearAllTabs)
+        val btnCloseOverlay = overlayView.findViewById<ImageButton>(R.id.btnCloseTabOverlay)
+        val layoutToggleHandle = overlayView.findViewById<View>(R.id.layoutToggleHandle)
+        val tabHeaderLayout = overlayView.findViewById<LinearLayout>(R.id.tabHeaderLayout)
+
+        val density = resources.displayMetrics.density
+
+        if (isCompactTabLayout) {
+            tabHeaderLayout?.setPadding(
+                (8 * density).toInt(),
+                (2 * density).toInt(),
+                (8 * density).toInt(),
+                (2 * density).toInt()
+            )
+
+            val compactButtonSize = (36 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (24 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = 0
+            }
+        } else {
+            tabHeaderLayout?.setPadding(
+                (16 * density).toInt(),
+                (8 * density).toInt(),
+                (16 * density).toInt(),
+                (12 * density).toInt()
+            )
+
+            val normalButtonSize = (40 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (28 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = (4 * density).toInt()
+            }
+        }
+
+        btnClearAll.requestLayout()
+        btnCloseOverlay.requestLayout()
+        layoutToggleHandle.requestLayout()
+        tabHeaderLayout?.requestLayout()
+
+        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
+        tabRecyclerView.animate()
+            .scaleX(0.97f)
+            .scaleY(0.97f)
+            .setDuration(80)
+            .withEndAction {
+                tabRecyclerView.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(120)
+                    .start()
+            }
+            .start()
+
+        setupTabRecyclerView(overlayView)
     }
 
     private fun hideTabOverlay() {
@@ -4259,16 +4430,16 @@ class MoodleFragment : Fragment() {
         val itemHeight: Int
 
         if (isCompactTabLayout) {
-            horizontalSpacing = (6 * density).toInt()
-            sideMargin = (8 * density).toInt()
+            horizontalSpacing = (4 * density).toInt()
+            sideMargin = (6 * density).toInt()
             val totalHorizontalPadding = (2 * sideMargin) + (3 * horizontalSpacing)
-            itemWidth = ((screenWidth - totalHorizontalPadding) / 4f).toInt()
+            itemWidth = ((screenWidth - totalHorizontalPadding) / 4.46f).toInt()
             itemHeight = (100 * density).toInt()
         } else {
-            horizontalSpacing = (8 * density).toInt()
-            sideMargin = (12 * density).toInt()
+            horizontalSpacing = (6 * density).toInt()
+            sideMargin = (8 * density).toInt()
             val totalHorizontalPadding = (2 * sideMargin) + horizontalSpacing
-            itemWidth = ((screenWidth - totalHorizontalPadding) / 2f).toInt()
+            itemWidth = ((screenWidth - totalHorizontalPadding) / 2.27f).toInt()
             itemHeight = (180 * density).toInt()
         }
 
@@ -4463,8 +4634,26 @@ class MoodleFragment : Fragment() {
     }
 
     private fun animateTabDeletion(index: Int) {
-        closeTab(index)
-        tabAdapter.notifyDataSetChanged()
+        if (index !in tabs.indices) return
+
+        val viewHolder = tabRecyclerView.findViewHolderForAdapterPosition(index)
+        viewHolder?.itemView?.let { itemView ->
+            itemView.animate()
+                .alpha(0f)
+                .scaleX(0.8f)
+                .scaleY(0.8f)
+                .translationX(itemView.width.toFloat())
+                .setDuration(200)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction {
+                    closeTab(index)
+                    tabAdapter.notifyDataSetChanged()
+                }
+                .start()
+        } ?: run {
+            closeTab(index)
+            tabAdapter.notifyDataSetChanged()
+        }
     }
 
     private fun showClearAllTabsDialog() {
@@ -4597,7 +4786,9 @@ class MoodleFragment : Fragment() {
             .setTitle(getString(R.string.moodle_pdf_options))
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> savePdfToDownloads(pdfFile, fileName)
+                    0 -> {
+                        savePdfToDownloads(pdfFile, fileName)
+                    }
                     1 -> sharePdf(pdfFile)
                     2 -> copyPdfText(pdfFile)
                     3 -> searchInPdf()
@@ -4698,11 +4889,31 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "MimeType: $mimetype")
         L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
 
+        val fileName = when {
+            contentDisposition.contains("filename=") -> {
+                val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
+                match?.groupValues?.get(1) ?: ""
+            }
+            else -> {
+                try {
+                    URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                } catch (_: Exception) {
+                    ""
+                }
+            }
+        }
+
+        L.d("MoodleFragment", "Extracted filename: $fileName")
+
         val isPdf = mimetype == "application/pdf" ||
-                url.contains(".pdf", ignoreCase = true) ||
-                contentDisposition.contains(".pdf", ignoreCase = true) ||
-                contentDisposition.contains("filename=\"", ignoreCase = true) &&
-                contentDisposition.substringAfter("filename=\"").substringBefore("\"").endsWith(".pdf", ignoreCase = true)
+                fileName.endsWith(".pdf", ignoreCase = true) ||
+                url.contains(".pdf", ignoreCase = true)
+
+        val isDocx = mimetype?.contains("wordprocessingml") == true ||
+                fileName.endsWith(".docx", ignoreCase = true) ||
+                url.contains(".docx", ignoreCase = true)
+
+        L.d("MoodleFragment", "File type detection - PDF: $isPdf, DOCX: $isDocx")
 
         if (isPdf && tabs.size < MAX_TABS) {
             L.d("MoodleFragment", "Opening PDF in viewer")
@@ -4834,80 +5045,208 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun resolveDownloadUrl(viewUrl: String, cookies: String?) {
+    private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
         backgroundExecutor.execute {
             try {
-                L.d("MoodleFragment", "Resolving actual download URL from: $viewUrl")
+                L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
+                L.d("MoodleFragment", "Initial URL: $viewUrl")
+                L.d("MoodleFragment", "Force download to device: $forceDownload")
 
-                val connection = URL(viewUrl).openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.instanceFollowRedirects = false
+                // Get fresh cookies from CookieManager
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
 
-                if (!cookies.isNullOrBlank()) {
-                    connection.setRequestProperty("Cookie", cookies)
+                L.d("MoodleFragment", "Fresh cookies from CookieManager: ${freshCookies != null}")
+                if (cookiesToUse != null) {
+                    L.d("MoodleFragment", "Cookie preview: ${cookiesToUse.take(100)}...")
+                } else {
+                    L.e("MoodleFragment", "ERROR: No cookies available!")
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available. Please reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@execute
                 }
 
-                connection.setRequestProperty("User-Agent", userAgent)
-                connection.setRequestProperty("Referer", moodleBaseUrl)
-                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+                var contentType: String? = null
+                var contentDisposition: String? = null
 
-                val responseCode = connection.responseCode
-                L.d("MoodleFragment", "Response code: $responseCode")
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "--- Redirect attempt $redirectCount ---")
+                    L.d("MoodleFragment", "Current URL: $currentUrl")
 
-                if (responseCode in 300..399) {
-                    val actualFileUrl = connection.getHeaderField("Location")
-                    connection.disconnect()
-
-                    if (actualFileUrl != null) {
-                        val fullUrl = if (actualFileUrl.startsWith("http")) {
-                            actualFileUrl
-                        } else {
-                            "$moodleBaseUrl$actualFileUrl"
-                        }
-
-                        L.d("MoodleFragment", "Resolved to actual file URL: $fullUrl")
-
-                        val contentType = connection.getHeaderField("Content-Type")
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page - session may have expired")
 
                         activity?.runOnUiThread {
-                            handleInterceptedDownload(fullUrl, cookies, "", contentType)
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveDownloadUrl(viewUrl, newCookies, forceDownload)
+                                }, 1000)
+                            }
                         }
-                    } else {
-                        L.e("MoodleFragment", "No redirect location found")
-                        connection.disconnect()
-                        activity?.runOnUiThread {
-                            Toast.makeText(requireContext(), getString(R.string.moodle_couldnt_resolve_download_url), Toast.LENGTH_SHORT).show()
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Response code: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            L.d("MoodleFragment", "Got redirect to: $location")
+
+                            val setCookie = conn.getHeaderField("Set-Cookie")
+                            if (setCookie != null) {
+                                L.d("MoodleFragment", "Server set new cookie: ${setCookie.take(100)}...")
+                            }
+
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "ERROR: Redirect without Location header")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            contentType = conn.getHeaderField("Content-Type")
+                            contentDisposition = conn.getHeaderField("Content-Disposition")
+                            L.d("MoodleFragment", "SUCCESS: Found final file")
+                            L.d("MoodleFragment", "Final URL: $finalUrl")
+                            L.d("MoodleFragment", "Content-Type: $contentType")
+                            L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
+                            conn.disconnect()
+                            break
+                        }
+                        401, 403 -> {
+                            L.e("MoodleFragment", "ERROR: Authentication failed (code $responseCode)")
+                            conn.disconnect()
+
+                            activity?.runOnUiThread {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Session expired. Please reload the page.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            return@execute
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "ERROR: Unexpected response code: $responseCode")
+                            conn.disconnect()
+                            break
                         }
                     }
-                } else if (responseCode == 200) {
-                    val contentType = connection.getHeaderField("Content-Type")
-                    val contentDisposition = connection.getHeaderField("Content-Disposition")
+                }
 
-                    L.d("MoodleFragment", "Direct download without redirect")
-                    L.d("MoodleFragment", "Content-Type: $contentType")
-                    L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
-
-                    connection.disconnect()
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
 
                     activity?.runOnUiThread {
-                        handleInterceptedDownload(viewUrl, cookies, contentDisposition ?: "", contentType)
+                        if (forceDownload) {
+                            downloadToDeviceWithCookies(finalUrl, cookiesToUse, contentDisposition ?: "")
+                        } else {
+                            handleInterceptedDownload(finalUrl, cookiesToUse, contentDisposition ?: "", contentType)
+                        }
                     }
                 } else {
-                    L.e("MoodleFragment", "Unexpected response code: $responseCode")
-                    connection.disconnect()
-
+                    L.e("MoodleFragment", "FAILED: Could not resolve after $redirectCount attempts")
                     activity?.runOnUiThread {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_download_failed_with_http_error, responseCode), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve download URL. Try again or reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
 
             } catch (e: Exception) {
-                L.e("MoodleFragment", "Error resolving download URL", e)
+                L.e("MoodleFragment", "EXCEPTION in resolveDownloadUrl", e)
                 activity?.runOnUiThread {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_error_resolving_download, e.message), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
+            }
+        }
+    }
+
+    private fun dismissSessionConfirmDialog(onDismissed: () -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                var cancelButton = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (cancelButton) {
+                    cancelButton.click();
+                    return true;
+                }
+
+                var dialogs = document.querySelectorAll('[role="dialog"], .modal');
+                for (var i = 0; i < dialogs.length; i++) {
+                    var dialog = dialogs[i];
+                    var cancelBtn = dialog.querySelector('button[data-action="cancel"], button:contains("Abbrechen"), button:contains("Cancel")');
+                    if (cancelBtn) {
+                        cancelBtn.click();
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Session dialog dismissed")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    onDismissed()
+                }, 500)
+            } else {
+                L.w("MoodleFragment", "Could not find session dialog to dismiss")
+                onDismissed()
             }
         }
     }
@@ -4915,64 +5254,137 @@ class MoodleFragment : Fragment() {
     private fun resolveAndParseDocument(viewUrl: String, cookies: String?, progressDialog: AlertDialog) {
         backgroundExecutor.execute {
             try {
-                val connection = URL(viewUrl).openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.instanceFollowRedirects = false
+                L.d("MoodleFragment", "=== Resolving document for parsing ===")
+                L.d("MoodleFragment", "View URL: $viewUrl")
 
-                if (!cookies.isNullOrBlank()) {
-                    connection.setRequestProperty("Cookie", cookies)
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                if (cookiesToUse == null) {
+                    L.e("MoodleFragment", "No cookies available for parsing")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    return@execute
                 }
 
-                connection.setRequestProperty("User-Agent", userAgent)
-                connection.setRequestProperty("Referer", moodleBaseUrl)
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
 
-                val responseCode = connection.responseCode
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "Parse redirect attempt $redirectCount: $currentUrl")
 
-                if (responseCode in 300..399) {
-                    val actualFileUrl = connection.getHeaderField("Location")
-                    connection.disconnect()
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page during parsing")
 
-                    if (actualFileUrl != null) {
-                        val fullUrl = if (actualFileUrl.startsWith("http")) {
-                            actualFileUrl
-                        } else {
-                            "$moodleBaseUrl$actualFileUrl"
-                        }
-
-                        downloadAndParseDocumentWithCookies(fullUrl, cookies) { text ->
-                            activity?.runOnUiThread {
-                                progressDialog.dismiss()
-                                if (text != null) {
-                                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(requireContext(), getString(R.string.moodle_parse_failed), Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    } else {
-                        connection.disconnect()
                         activity?.runOnUiThread {
                             progressDialog.dismiss()
-                            Toast.makeText(requireContext(), getString(R.string.moodle_couldnt_resolve_file_url), Toast.LENGTH_SHORT).show()
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newProgressDialog = AlertDialog.Builder(requireContext())
+                                        .setMessage(getString(R.string.moodle_parsing_document))
+                                        .setCancelable(false)
+                                        .show()
+
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveAndParseDocument(viewUrl, newCookies, newProgressDialog)
+                                }, 1000)
+                            }
+                        }
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "*/*")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Parse redirect response: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "Redirect without location")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            L.d("MoodleFragment", "Found final document URL: $finalUrl")
+                            conn.disconnect()
+                            break
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unexpected response: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                }
+
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "Downloading and parsing: $finalUrl")
+                    downloadAndParseDocumentWithCookies(finalUrl, cookiesToUse) { text ->
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            if (text != null) {
+                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 } else {
-                    connection.disconnect()
+                    L.e("MoodleFragment", "Failed to resolve document URL")
                     activity?.runOnUiThread {
                         progressDialog.dismiss()
-                        Toast.makeText(requireContext(), getString(R.string.moodle_failed_resolving_url_with_http_error, responseCode), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve file URL for parsing",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
             } catch (e: Exception) {
-                L.e("MoodleFragment", "Error resolving document URL", e)
+                L.e("MoodleFragment", "Error resolving document", e)
                 activity?.runOnUiThread {
                     progressDialog.dismiss()
-                    Toast.makeText(requireContext(), getString(R.string.moodle_error_details, e.message), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -4981,6 +5393,9 @@ class MoodleFragment : Fragment() {
     private fun downloadAndParseDocumentWithCookies(url: String, cookies: String?, callback: (String?) -> Unit) {
         backgroundExecutor.execute {
             try {
+                L.d("MoodleFragment", "=== Downloading document for parsing ===")
+                L.d("MoodleFragment", "URL: $url")
+
                 val connection = URL(url).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
 
@@ -4996,11 +5411,16 @@ class MoodleFragment : Fragment() {
                 connection.instanceFollowRedirects = false
 
                 val responseCode = connection.responseCode
+                L.d("MoodleFragment", "Download response code: $responseCode")
 
                 if (responseCode == 200) {
+                    val contentType = connection.getHeaderField("Content-Type")
+                    L.d("MoodleFragment", "Content-Type: $contentType")
+
                     val inputStream = connection.inputStream
                     val text = when {
                         url.endsWith(".pdf", ignoreCase = true) -> {
+                            L.d("MoodleFragment", "Parsing as PDF")
                             try {
                                 val pdfReader = PdfReader(inputStream)
                                 val textBuilder = StringBuilder()
@@ -5019,16 +5439,28 @@ class MoodleFragment : Fragment() {
                                 }
 
                                 pdfReader.close()
-                                textBuilder.toString()
+                                val result = textBuilder.toString()
+                                L.d("MoodleFragment", "PDF parsed successfully, ${result.length} chars")
+                                result
                             } catch (e: Exception) {
                                 L.e("MoodleFragment", "Error parsing PDF", e)
                                 null
                             }
                         }
                         url.endsWith(".docx", ignoreCase = true) -> {
-                            parseDocxToText(inputStream)
+                            L.d("MoodleFragment", "Parsing as DOCX")
+                            val result = parseDocxToText(inputStream)
+                            if (result != null) {
+                                L.d("MoodleFragment", "DOCX parsed successfully, ${result.length} chars")
+                            } else {
+                                L.e("MoodleFragment", "DOCX parsing returned null")
+                            }
+                            result
                         }
-                        else -> null
+                        else -> {
+                            L.e("MoodleFragment", "Unknown file type for URL: $url")
+                            null
+                        }
                     }
 
                     inputStream.close()
@@ -5040,7 +5472,7 @@ class MoodleFragment : Fragment() {
                     callback(null)
                 }
             } catch (e: Exception) {
-                L.e("MoodleFragment", "Error downloading document", e)
+                L.e("MoodleFragment", "Exception downloading document", e)
                 callback(null)
             }
         }

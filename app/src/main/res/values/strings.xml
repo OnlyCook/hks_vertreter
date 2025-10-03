@@ -758,6 +758,8 @@
     <string name="slide_homework_not_found">Hausaufgabe nicht gefunden</string>
     <string name="slide_homework_notes">"Hausaufgaben Notizen"</string>
     <string name="slide_loading_error">Fehler beim Laden der Hausaufgaben</string>
+    <string name="slide_shared_homework_detected_title">Geteilte Hausaufgabe erkannt</string>
+    <string name="slide_shared_homework_detected_message">Es scheint, als würdest du versuchen, eine geteilte Hausaufgabe über die Import-Funktion zu importieren.\n\nGeteilte Hausaufgaben müssen direkt über die .txt-Datei geöffnet werden. Tippe einfach auf die geteilte Datei und wähle diese App aus, um die Hausaufgabe zu importieren.</string>
 
     <!-- HOMEFRAGMENT.KT -->
     <string name="home_not_selected">Nicht ausgewählt</string>
@@ -1060,6 +1062,8 @@
     <string name="exam_preserve_notes_message">Sie haben bereits Klausuren mit Notizen oder Noten. Möchten Sie diese bei passenden Klausuren im neuen Stundenplan übernehmen? Überfallige Klausuren mit Noten werden automatisch beibehalten.</string>
     <string name="exam_continue">Fortfahren</string>
     <string name="exam_loading_error">Fehler beim Laden der Klausuren</string>
+    <string name="exam_shared_exam_detected_title">Geteilte Klausur erkannt</string>
+    <string name="exam_shared_exam_detected_message">Es scheint, als würdest du versuchen, eine geteilte Klausur über die Import-Funktion zu importieren.\n\nGeteilte Klausuren müssen direkt über die .txt-Datei geöffnet werden. Tippe einfach auf die geteilte Datei und wähle diese App aus, um die Klausur zu importieren.</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen…</string>

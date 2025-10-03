@@ -3834,12 +3834,6 @@ class GalleryFragment : Fragment() {
                 cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
     }
 
-    private fun hasNotesForDay(date: Date): Boolean {
-        val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
-        return calendarInfo?.specialNote?.isNotBlank() == true ||
-                calendarInfo?.isSpecialDay == true
-    }
-
     private fun showDayDetails(date: Date) {
         val calendarInfo = calendarDataManager.getCalendarInfoForDate(date)
         val dateStr = getTranslatedDate(date)

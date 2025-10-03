@@ -1428,13 +1428,45 @@ class SlideshowFragment : Fragment() {
         filePickerLauncher.launch(Intent.createChooser(intent, getString(R.string.slide_choose_homework_file)))
     }
 
+    private fun isSharedHomeworkFormat(content: String): Boolean {
+        return try {
+            val trimmed = content.trim()
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                val json = org.json.JSONObject(trimmed)
+                json.has("type") &&
+                        json.getString("type") == "homework" &&
+                        json.has("sharedDate") &&
+                        json.has("checklistItems")
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun showSharedHomeworkImportWarning() {
+        val alertDialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.slide_shared_homework_detected_title))
+            .setMessage(getString(R.string.slide_shared_homework_detected_message))
+            .setPositiveButton(getString(R.string.slide_close), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+    }
+
     private fun importFromFile(uri: Uri) {
         try {
             val inputStream = requireContext().contentResolver.openInputStream(uri)
             val content = inputStream?.bufferedReader()?.use { it.readText() }
 
             if (content != null) {
-                importHomeworkData(content)
+                if (isSharedHomeworkFormat(content)) {
+                    showSharedHomeworkImportWarning()
+                } else {
+                    importHomeworkData(content)
+                }
             } else {
                 Toast.makeText(requireContext(), getString(R.string.slide_file_read_error), Toast.LENGTH_LONG).show()
             }
@@ -1450,7 +1482,12 @@ class SlideshowFragment : Fragment() {
 
         if (clip != null && clip.itemCount > 0) {
             val content = clip.getItemAt(0).text.toString()
-            importHomeworkData(content)
+
+            if (isSharedHomeworkFormat(content)) {
+                showSharedHomeworkImportWarning()
+            } else {
+                importHomeworkData(content)
+            }
         } else {
             Toast.makeText(requireContext(), getString(R.string.set_act_import_clipboard_empty), Toast.LENGTH_SHORT).show()
         }

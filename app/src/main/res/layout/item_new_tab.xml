@@ -8,7 +8,7 @@
     app:cardCornerRadius="12dp"
     app:cardElevation="4dp"
     app:strokeWidth="2dp"
-    app:strokeColor="?attr/settingsColorPrimary"
+    app:strokeColor="?attr/textSecondaryColor"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground">
