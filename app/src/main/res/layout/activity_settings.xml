@@ -1637,6 +1637,15 @@
 
                     </LinearLayout>
 
+                    <Button
+                        android:id="@+id/btnResetMoodleFetchPreference"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_reset_moodle_fetch_preference"
+                        android:layout_gravity="end"
+                        android:textColor="@android:color/white"
+                        android:paddingHorizontal="24dp" />
+
                     <!-- Action buttons -->
                     <LinearLayout
                         android:layout_width="match_parent"

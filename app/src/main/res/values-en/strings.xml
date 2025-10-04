@@ -184,6 +184,16 @@
     <string name="act_set_loading">Loading…</string>
     <string name="settings_search_hint">Search settings…</string>
     <string name="settings_no_results">No matching settings found</string>
+    <string name="settings_reset_moodle_fetch_preference">Fetch Preferences</string>
+    <string name="settings_moodle_fetch_reset">Moodle fetch preferences reset</string>
+    <string name="settings_reset_moodle_preferences_title">Reset Moodle Fetch Preferences</string>
+    <string name="settings_reset_moodle_preferences_desc">Select which Moodle fetch preferences you want to reset. You will be asked again next time.</string>
+    <string name="settings_reset_exam_fetch_preference">Exam schedule fetch preference</string>
+    <string name="settings_reset_timetable_fetch_preference">Timetable fetch preference</string>
+    <string name="settings_reset_saved_program_name">Saved program course name</string>
+    <string name="settings_reset_saved_timetable_entry">Saved timetable entry name</string>
+    <string name="settings_clear_selected">Clear Selected</string>
+    <string name="settings_preferences_reset_success">Selected preferences have been reset</string>
 
     <!-- ACTIVITY_SETUP.XML -->
     <string name="act_set_school_name">Heinrich-Kleyer-School</string>
@@ -605,6 +615,10 @@
     <string name="act_set_show_color_legend">Show color legend</string>
     <string name="act_set_color_legend_enabled">Color legend enabled</string>
     <string name="act_set_color_legend_disabled">Color legend disabled</string>
+    <string name="settings_fetch_timetable_from_moodle_message">Would you like to fetch your timetable from Moodle automatically?</string>
+    <string name="settings_scan_timetable">Scan Timetable</string>
+    <string name="settings_no_class_selected">No class selected</string>
+    <string name="settings_moodle_fetch_error">Error starting Moodle fetch</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1064,6 +1078,14 @@
     <string name="exam_loading_error">Error loading exams</string>
     <string name="exam_shared_exam_detected_title">Shared Exam Detected</string>
     <string name="exam_shared_exam_detected_message">It appears you are trying to import a shared exam file through the import function.\n\nShared exam files must be opened directly by tapping on the .txt file and selecting this app to import the exam.</string>
+    <string name="exam_fetch_from_moodle_message">Would you like to fetch your exam schedule from Moodle automatically?</string>
+    <string name="exam_remember_decision">Remember my decision</string>
+    <string name="exam_fetch_schedule">Fetch Exam Schedule</string>
+    <string name="exam_fetch_from_moodle">Fetch from Moodle</string>
+    <string name="exam_select_pdf_manually">Select PDF manually</string>
+    <string name="exam_no_bildungsgang_selected">No examination program selected</string>
+    <string name="exam_moodle_fetch_error">Error starting Moodle fetch</string>
+    <string name="exam_moodle_pdf_process_error">Error processing PDF from Moodle</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Loading calendar…</string>
@@ -1522,5 +1544,41 @@
     <string name="moodle_couldnt_resolve_file_url">Could not resolve file URL</string>
     <string name="moodle_failed_resolving_url_with_http_error">Failed to resolve URL: HTTP %d</string>
     <string name="moodle_error_details">Error: %s</string>
+    <string name="moodle_fetching_title">Fetching from Moodle</string>
+    <string name="moodle_fetching_exam_schedule">Fetching Exam Schedule</string>
+    <string name="moodle_fetching_timetable">Fetching Timetable</string>
+    <string name="moodle_waiting_for_login">Waiting for login…</string>
+    <string name="moodle_please_login">Please log in to Moodle</string>
+    <string name="moodle_please_login_to_continue">Please log in to Moodle to continue fetching</string>
+    <string name="moodle_login_successful">Login successful</string>
+    <string name="moodle_navigating_to_my_page">Navigating to My Courses…</string>
+    <string name="moodle_searching_exam_program">Searching for %s…</string>
+    <string name="moodle_enter_exam_program_prompt">Please enter the full name of your examination program</string>
+    <string name="moodle_enter_exam_program_name">Examination program name</string>
+    <string name="moodle_program_name_required">Program name is required</string>
+    <string name="moodle_program_not_found">Examination program not found</string>
+    <string name="moodle_locating_schedule_file">Locating schedule file…</string>
+    <string name="moodle_schedule_not_found">Exam schedule not found on course page</string>
+    <string name="moodle_downloading_schedule">Downloading schedule…</string>
+    <string name="moodle_schedule_download_failed">Failed to download exam schedule</string>
+    <string name="moodle_processing_schedule">Processing schedule…</string>
+    <string name="moodle_fetch_complete">Fetch complete</string>
+    <string name="moodle_fetch_cancelled">Fetch cancelled</string>
+    <string name="moodle_fetch_download_error">Download error: %s</string>
+    <string name="moodle_return_error">Error returning to exam page</string>
+    <string name="moodle_searching_schedule">Searching Exam Schedule</string>
+    <string name="moodle_detecting_program">Detecting examination program…</string>
+    <string name="moodle_program_auto_detect_failed">Could not automatically detect your examination program course. Please enter it manually:</string>
+    <string name="moodle_save_program_name">Save this program name</string>
+    <string name="moodle_enter_timetable_entry_name">Timetable entry name</string>
+    <string name="moodle_timetable_not_found_prompt">Could not find your timetable automatically. Please enter the exact name of the timetable entry:</string>
+    <string name="moodle_timetable_name_required">Timetable entry name is required</string>
+    <string name="moodle_searching_specific_timetable">Searching for "%s"…</string>
+    <string name="moodle_locating_timetable_file">Locating timetable file…</string>
+    <string name="moodle_downloading_timetable">Downloading timetable…</string>
+    <string name="moodle_timetable_parse_error">Error analyzing timetable entries</string>
+    <string name="moodle_unknown_fetch_type">Unknown fetch type</string>
+    <string name="moodle_timetable_not_found_for_class">Could not find timetable for your class</string>
+    <string name="moodle_open_in_new_tab">Open in new tab</string>
 
 </resources>

@@ -86,6 +86,35 @@ class MainActivity : BaseActivity() {
             }
         }
 
+        if (intent.getBooleanExtra("navigate_to_moodle", false)) {
+            val fetchType = intent.getStringExtra("moodle_fetch_type")
+            val fetchInProgress = intent.getBooleanExtra("moodle_fetch_in_progress", false)
+            val fetchClass = intent.getStringExtra("moodle_fetch_class")  // Get the class
+
+            if (fetchInProgress && fetchType != null) {
+                intent.removeExtra("navigate_to_moodle")
+                intent.removeExtra("moodle_fetch_type")
+                intent.removeExtra("moodle_fetch_in_progress")
+                intent.removeExtra("moodle_fetch_class")
+
+                binding.root.postDelayed({
+                    try {
+                        val navController = findNavController(R.id.nav_host_fragment_content_main)
+                        val bundle = Bundle().apply {
+                            putString("moodle_fetch_type", fetchType)
+                            putBoolean("moodle_fetch_in_progress", true)
+                            if (fetchClass != null) {
+                                putString("moodle_fetch_class", fetchClass)  // Pass to fragment
+                            }
+                        }
+                        navController.navigate(R.id.nav_moodle, bundle)
+                    } catch (e: Exception) {
+                        L.e("MainActivity", "Error navigating to Moodle", e)
+                    }
+                }, 100)
+            }
+        }
+
         setupBackPressHandler()
     }
 
@@ -188,33 +217,44 @@ class MainActivity : BaseActivity() {
                     R.id.nav_slideshow -> arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     R.id.nav_klausuren -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress")
                     R.id.nav_home -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     R.id.nav_gallery -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_fetch_in_progress") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     R.id.nav_noten -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     R.id.nav_moodle -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
-                            arguments.containsKey("highlight_substitute_subject")
+                            arguments.containsKey("highlight_substitute_subject") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     else -> arguments.containsKey("highlight_homework_id") ||
                             arguments.containsKey("highlight_exam_id") ||
                             arguments.containsKey("highlight_home_item_id") ||
                             arguments.containsKey("highlight_substitute_subject") ||
-                            arguments.containsKey("moodle_search_category")
+                            arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                 }
 
                 if (shouldClearArgs) {
@@ -227,9 +267,11 @@ class MainActivity : BaseActivity() {
             if (arguments != null && !homeworkArgumentsCleared) {
                 val hasValidArgs = when (destination.id) {
                     R.id.nav_slideshow -> arguments.containsKey("highlight_homework_id")
-                    R.id.nav_klausuren -> arguments.containsKey("highlight_exam_id")
+                    R.id.nav_klausuren -> arguments.containsKey("highlight_exam_id") ||
+                            arguments.containsKey("moodle_fetched_pdf")
                     R.id.nav_home -> arguments.containsKey("highlight_home_item_id")
-                    R.id.nav_moodle -> arguments.containsKey("moodle_search_category")  // Add Moodle cleanup
+                    R.id.nav_moodle -> arguments.containsKey("moodle_search_category") ||
+                            arguments.containsKey("moodle_fetch_in_progress")
                     else -> false
                 }
 
@@ -255,6 +297,11 @@ class MainActivity : BaseActivity() {
                             arguments.remove("moodle_search_category")
                             arguments.remove("moodle_search_summary")
                             arguments.remove("moodle_entry_id")
+                            arguments.remove("moodle_fetch_in_progress")
+                            arguments.remove("moodle_fetch_type")
+                            arguments.remove("moodle_fetch_preserve_notes")
+                            arguments.remove("moodle_fetch_program_name")
+                            arguments.remove("moodle_fetched_pdf")
                             L.d("MainActivity", "Arguments cleared successfully")
                         } catch (e: Exception) {
                             L.w("MainActivity", "Error clearing arguments", e)
@@ -487,6 +534,37 @@ class MainActivity : BaseActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+
+        if (intent.getBooleanExtra("navigate_to_moodle", false)) {
+            val fetchType = intent.getStringExtra("moodle_fetch_type")
+            val fetchInProgress = intent.getBooleanExtra("moodle_fetch_in_progress", false)
+            val fetchClass = intent.getStringExtra("moodle_fetch_class")
+
+            if (fetchInProgress && fetchType != null) {
+                intent.removeExtra("navigate_to_moodle")
+                intent.removeExtra("moodle_fetch_type")
+                intent.removeExtra("moodle_fetch_in_progress")
+                intent.removeExtra("moodle_fetch_class")
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        val navController = findNavController(R.id.nav_host_fragment_content_main)
+                        val bundle = Bundle().apply {
+                            putString("moodle_fetch_type", fetchType)
+                            putBoolean("moodle_fetch_in_progress", true)
+                            if (fetchClass != null) {
+                                putString("moodle_fetch_class", fetchClass)
+                            }
+                        }
+                        navController.navigate(R.id.nav_moodle, bundle)
+                    } catch (e: Exception) {
+                        L.e("MainActivity", "Error navigating to Moodle from onNewIntent", e)
+                    }
+                }, 100)
+                return
+            }
+        }
+
         handleIncomingIntent(intent)
     }
 

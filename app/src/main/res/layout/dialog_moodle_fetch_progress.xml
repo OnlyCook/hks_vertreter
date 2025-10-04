@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/tvFetchTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_fetching_title"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvFetchStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_waiting_for_login"
+        android:textSize="14sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:gravity="center"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tvFetchDetails"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorTertiary"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
+    <ProgressBar
+        android:id="@+id/progressBarFetch"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:progress="0"
+        android:max="100"
+        android:progressTint="?android:attr/colorAccent"
+        android:layout_marginBottom="16dp" />
+
+    <EditText
+        android:id="@+id/editTextExamProgramName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/moodle_enter_exam_program_name"
+        android:inputType="text"
+        android:visibility="gone"
+        android:layout_marginBottom="8dp" />
+
+    <CheckBox
+        android:id="@+id/checkBoxSaveProgramName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_save_program_name"
+        android:visibility="gone"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btnFetchCancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/moodle_cancel"
+            android:textColor="?attr/dialogSectionButtonColor"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <Button
+            android:id="@+id/btnFetchContinue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/moodle_continue"
+            android:textColor="?attr/dialogSectionButtonColor"
+            android:background="?android:attr/selectableItemBackground"
+            android:visibility="gone"
+            android:layout_marginStart="16dp" />
+    </LinearLayout>
+
+</LinearLayout>

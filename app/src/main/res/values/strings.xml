@@ -605,6 +605,20 @@
     <string name="act_set_show_color_legend">Farblegende anzeigen</string>
     <string name="act_set_color_legend_enabled">Farblegende aktiviert</string>
     <string name="act_set_color_legend_disabled">Farblegende deaktiviert</string>
+    <string name="settings_fetch_timetable_from_moodle_message">Möchtest du deinen Stundenplan automatisch von Moodle abrufen?</string>
+    <string name="settings_scan_timetable">Stundenplan scannen</string>
+    <string name="settings_no_class_selected">Keine Klasse ausgewählt</string>
+    <string name="settings_moodle_fetch_error">Fehler beim Starten des Moodle-Abrufs</string>
+    <string name="settings_reset_moodle_fetch_preference">Abruf-Einstellungen</string>
+    <string name="settings_moodle_fetch_reset">Moodle-Abruf-Einstellungen zurückgesetzt</string>
+    <string name="settings_reset_moodle_preferences_title">Moodle-Abruf-Einstellungen zurücksetzen</string>
+    <string name="settings_reset_moodle_preferences_desc">Wähle aus, welche Moodle-Abruf-Einstellungen du zurücksetzen möchtest. Du wirst beim nächsten Mal erneut gefragt.</string>
+    <string name="settings_reset_exam_fetch_preference">Klausurplan-Abruf-Einstellung</string>
+    <string name="settings_reset_timetable_fetch_preference">Stundenplan-Abruf-Einstellung</string>
+    <string name="settings_reset_saved_program_name">Gespeicherter Programm-Kursname</string>
+    <string name="settings_reset_saved_timetable_entry">Gespeicherter Stundenplaneintrags-Name</string>
+    <string name="settings_clear_selected">Ausgewählte löschen</string>
+    <string name="settings_preferences_reset_success">Ausgewählte Einstellungen wurden zurückgesetzt</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1064,6 +1078,14 @@
     <string name="exam_loading_error">Fehler beim Laden der Klausuren</string>
     <string name="exam_shared_exam_detected_title">Geteilte Klausur erkannt</string>
     <string name="exam_shared_exam_detected_message">Es scheint, als würdest du versuchen, eine geteilte Klausur über die Import-Funktion zu importieren.\n\nGeteilte Klausuren müssen direkt über die .txt-Datei geöffnet werden. Tippe einfach auf die geteilte Datei und wähle diese App aus, um die Klausur zu importieren.</string>
+    <string name="exam_fetch_from_moodle_message">Möchtest du deinen Klausurplan automatisch von Moodle abrufen?</string>
+    <string name="exam_remember_decision">Meine Entscheidung merken</string>
+    <string name="exam_fetch_schedule">Klausurplan abrufen</string>
+    <string name="exam_fetch_from_moodle">Von Moodle abrufen</string>
+    <string name="exam_select_pdf_manually">PDF manuell auswählen</string>
+    <string name="exam_no_bildungsgang_selected">Kein Bildungsgang ausgewählt</string>
+    <string name="exam_moodle_fetch_error">Fehler beim Starten des Moodle-Abrufs</string>
+    <string name="exam_moodle_pdf_process_error">Fehler beim Verarbeiten der PDF von Moodle</string>
 
     <!-- GALLERYFRAGMENT.KT -->
     <string name="gall_calendar_loading">Kalender wird geladen…</string>
@@ -1523,5 +1545,41 @@
     <string name="moodle_couldnt_resolve_file_url">Datei-URL konnte nicht aufgelöst werden</string>
     <string name="moodle_failed_resolving_url_with_http_error">URL konnte nicht aufgelöst werden: HTTP %d</string>
     <string name="moodle_error_details">Fehler: %s</string>
+    <string name="moodle_fetching_title">Abrufen von Moodle</string>
+    <string name="moodle_fetching_exam_schedule">Klausurplan wird abgerufen</string>
+    <string name="moodle_fetching_timetable">Stundenplan wird abgerufen</string>
+    <string name="moodle_waiting_for_login">Warte auf Login…</string>
+    <string name="moodle_please_login">Bitte bei Moodle anmelden</string>
+    <string name="moodle_please_login_to_continue">Bitte bei Moodle anmelden, um den Abruf fortzusetzen</string>
+    <string name="moodle_login_successful">Login erfolgreich</string>
+    <string name="moodle_navigating_to_my_page">Navigiere zu Meine Kurse…</string>
+    <string name="moodle_searching_exam_program">Suche nach %s…</string>
+    <string name="moodle_enter_exam_program_prompt">Bitte gib den vollständigen Namen deines Bildungsgangs ein</string>
+    <string name="moodle_enter_exam_program_name">Bildungsgang-Name</string>
+    <string name="moodle_program_name_required">Programmname ist erforderlich</string>
+    <string name="moodle_program_not_found">Bildungsgang nicht gefunden</string>
+    <string name="moodle_locating_schedule_file">Klausurplandatei wird gesucht…</string>
+    <string name="moodle_schedule_not_found">Klausurplan wurde auf der Kursseite nicht gefunden</string>
+    <string name="moodle_downloading_schedule">Klausurplan wird heruntergeladen…</string>
+    <string name="moodle_schedule_download_failed">Klausurplan konnte nicht heruntergeladen werden</string>
+    <string name="moodle_processing_schedule">Klausurplan wird verarbeitet…</string>
+    <string name="moodle_fetch_complete">Abruf abgeschlossen</string>
+    <string name="moodle_fetch_cancelled">Abruf abgebrochen</string>
+    <string name="moodle_fetch_download_error">Download-Fehler: %s</string>
+    <string name="moodle_return_error">Fehler bei der Rückkehr zur Klausurseite</string>
+    <string name="moodle_searching_schedule">Klausurplan wird abgerufen</string>
+    <string name="moodle_detecting_program">Bildungsgang wird erkannt…</string>
+    <string name="moodle_program_auto_detect_failed">Bildungsgang-Kurs konnte nicht automatisch erkannt werden. Bitte gib ihn manuell ein:</string>
+    <string name="moodle_save_program_name">Diesen Programmnamen speichern</string>
+    <string name="moodle_enter_timetable_entry_name">Stundenplaneintrags-Name</string>
+    <string name="moodle_timetable_not_found_prompt">Stundenplan konnte nicht automatisch gefunden werden. Bitte gib den exakten Namen des Stundenplaneintrags ein:</string>
+    <string name="moodle_timetable_name_required">Stundenplaneintrags-Name ist erforderlich</string>
+    <string name="moodle_searching_specific_timetable">Suche nach "%s"…</string>
+    <string name="moodle_locating_timetable_file">Stundenplandatei wird gesucht…</string>
+    <string name="moodle_downloading_timetable">Stundenplan wird heruntergeladen…</string>
+    <string name="moodle_timetable_parse_error">Fehler beim Analysieren der Stundenplaneinträge</string>
+    <string name="moodle_unknown_fetch_type">Unbekannter Abruf-Typ</string>
+    <string name="moodle_timetable_not_found_for_class">Stundenplan für deine Klasse konnte nicht gefunden werden</string>
+    <string name="moodle_open_in_new_tab">In neuem Tab öffnen</string>
 
 </resources>

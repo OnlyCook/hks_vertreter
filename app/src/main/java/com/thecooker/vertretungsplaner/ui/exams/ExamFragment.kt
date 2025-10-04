@@ -46,6 +46,10 @@ import android.util.TypedValue
 import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.navigation.fragment.findNavController
+import com.thecooker.vertretungsplaner.FetchType
+import com.thecooker.vertretungsplaner.MoodleFetchConfig
+import java.io.File
 
 class ExamFragment : Fragment() {
 
@@ -375,6 +379,10 @@ class ExamFragment : Fragment() {
         private const val PREFS_EXAM_SCHEDULE_INFO = "exam_schedule_info"
     }
 
+    // moodle exam schedule fetching
+    private var moodleFetchConfig: MoodleFetchConfig? = null
+    private var isMoodleFetchInProgress = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val view = inflater.inflate(R.layout.fragment_exam, container, false)
 
@@ -590,18 +598,168 @@ class ExamFragment : Fragment() {
 
             val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+            return
         }
 
+        val skipMoodleFetchDialog = sharedPreferences.getBoolean("skip_moodle_fetch_dialog", false)
+        val shouldFetchFromMoodle = sharedPreferences.getBoolean("fetch_from_moodle_preference", false)
+
+        if (skipMoodleFetchDialog) {
+            if (shouldFetchFromMoodle) {
+                checkAndShowNotePreservationDialog(fetchFromMoodle = true)
+            } else {
+                checkAndShowNotePreservationDialog(fetchFromMoodle = false)
+            }
+        } else {
+            showMoodleFetchDialog()
+        }
+    }
+
+    private fun showMoodleFetchDialog() {
+        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_exam, null)
+        val container = dialogView as ViewGroup
+        container.removeAllViews()
+
+        val messageText = TextView(requireContext()).apply {
+            text = getString(R.string.exam_fetch_from_moodle_message)
+            textSize = 16f
+            setPadding(0, 0, 0, 32)
+        }
+
+        val checkBox = CheckBox(requireContext()).apply {
+            text = getString(R.string.exam_remember_decision)
+            isChecked = false
+        }
+
+        val layout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+            addView(messageText)
+            addView(checkBox)
+        }
+
+        container.addView(layout)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.exam_fetch_schedule))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.exam_fetch_from_moodle)) { _, _ ->
+                if (checkBox.isChecked) {
+                    sharedPreferences.edit {
+                        putBoolean("skip_moodle_fetch_dialog", true)
+                        putBoolean("fetch_from_moodle_preference", true)
+                    }
+                }
+                checkAndShowNotePreservationDialog(fetchFromMoodle = true)
+            }
+            .setNegativeButton(getString(R.string.exam_select_pdf_manually)) { _, _ ->
+                if (checkBox.isChecked) {
+                    sharedPreferences.edit {
+                        putBoolean("skip_moodle_fetch_dialog", true)
+                        putBoolean("fetch_from_moodle_preference", false)
+                    }
+                }
+                checkAndShowNotePreservationDialog(fetchFromMoodle = false)
+            }
+            .setNeutralButton(getString(R.string.cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun checkAndShowNotePreservationDialog(fetchFromMoodle: Boolean) {
         val hasExamsWithNotesOrGrades = examList.any {
             it.note.isNotBlank() || it.mark != null
         }
 
         if (hasExamsWithNotesOrGrades) {
-            showNotePreservationDialog()
+            showNotePreservationDialog(fetchFromMoodle)
         } else {
-            proceedWithExamScheduleScan(preserveNotes = false)
+            if (fetchFromMoodle) {
+                startMoodleFetch(preserveNotes = false)
+            } else {
+                proceedWithExamScheduleScan(preserveNotes = false)
+            }
+        }
+    }
+
+    private fun showNotePreservationDialog(fetchFromMoodle: Boolean) {
+        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_exam, null)
+
+        val container = dialogView as ViewGroup
+        container.removeAllViews()
+
+        val messageText = TextView(requireContext()).apply {
+            text = getString(R.string.exam_preserve_notes_message)
+            textSize = 16f
+            setPadding(0, 0, 0, 32)
+        }
+
+        val checkBox = CheckBox(requireContext()).apply {
+            text = getString(R.string.exam_preserve_notes)
+            isChecked = true
+        }
+
+        val layout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+            addView(messageText)
+            addView(checkBox)
+        }
+
+        container.addView(layout)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.exam_scan_schedule))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.exam_continue)) { _, _ ->
+                if (fetchFromMoodle) {
+                    startMoodleFetch(preserveNotes = checkBox.isChecked)
+                } else {
+                    proceedWithExamScheduleScan(preserveNotes = checkBox.isChecked)
+                }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun startMoodleFetch(preserveNotes: Boolean) {
+        this.preserveExamNotes = preserveNotes
+        L.d(TAG, "Starting Moodle exam schedule fetch, preserveNotes: $preserveNotes")
+
+        val bildungsgang = sharedPreferences.getString("selected_bildungsgang", "") ?: ""
+
+        if (bildungsgang.isEmpty()) {
+            Toast.makeText(requireContext(), getString(R.string.exam_no_bildungsgang_selected), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        navigateToMoodleForFetch()
+    }
+
+    private fun navigateToMoodleForFetch() {
+        try {
+            isMoodleFetchInProgress = true
+
+            val navController = findNavController()
+            val bundle = Bundle().apply {
+                putString("moodle_fetch_type", FetchType.EXAM_SCHEDULE.name)
+                putBoolean("moodle_fetch_preserve_notes", preserveExamNotes)
+                putBoolean("moodle_fetch_in_progress", true)
+            }
+
+            navController.navigate(R.id.nav_moodle, bundle)
+        } catch (e: Exception) {
+            L.e(TAG, "Error navigating to Moodle for fetch", e)
+            Toast.makeText(requireContext(), getString(R.string.exam_moodle_fetch_error), Toast.LENGTH_LONG).show()
+            isMoodleFetchInProgress = false
         }
     }
 
@@ -3219,8 +3377,28 @@ class ExamFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        L.d("ExamFragment", "onViewCreated called")
-        L.d("ExamFragment", "Arguments: $arguments")
+        arguments?.getByteArray("moodle_fetched_pdf")?.let { pdfBytes ->
+            val preserveNotes = arguments?.getBoolean("moodle_fetch_preserve_notes", false) ?: false
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                processFetchedPdfFromMoodle(pdfBytes, preserveNotes)
+            }, 500)
+
+            arguments?.remove("moodle_fetched_pdf")
+            arguments?.remove("moodle_fetch_preserve_notes")
+        }
+
+        arguments?.getString("highlight_exam_id")?.let { examId ->
+            L.d("ExamFragment", "Processing highlight_exam_id: $examId")
+
+            if (isLoading) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    highlightAndShowExam(examId)
+                }, 500)
+            } else {
+                highlightAndShowExam(examId)
+            }
+        }
 
         arguments?.getString("shared_exam_uri")?.let { uriString ->
             L.d("ExamFragment", "Processing shared exam URI: $uriString")
@@ -3238,22 +3416,38 @@ class ExamFragment : Fragment() {
             arguments?.remove("shared_exam_uri")
         }
 
-        arguments?.getString("highlight_exam_id")?.let { examId ->
-            L.d("ExamFragment", "Processing highlight_exam_id: $examId")
-
-            if (isLoading) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    highlightAndShowExam(examId)
-                }, 500)
-            } else {
-                highlightAndShowExam(examId)
-            }
-        }
-
         Handler(Looper.getMainLooper()).post {
             L.d("ExamFragment", "Clearing arguments to prevent reuse")
             arguments?.clear()
             arguments = Bundle()
+        }
+    }
+
+    private fun processFetchedPdfFromMoodle(pdfBytes: ByteArray, preserveNotes: Boolean) {
+        try {
+            val cacheDir = requireContext().cacheDir
+            val pdfFile = File(cacheDir, "moodle_exam_schedule_${System.currentTimeMillis()}.pdf")
+
+            pdfFile.outputStream().use { output ->
+                output.write(pdfBytes)
+            }
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                requireContext(),
+                "${requireContext().packageName}.fileprovider",
+                pdfFile
+            )
+
+            this.preserveExamNotes = preserveNotes
+            processPdfExamSchedule(uri)
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                pdfFile.delete()
+            }, 5000)
+
+        } catch (e: Exception) {
+            L.e(TAG, "Error processing fetched PDF from Moodle", e)
+            Toast.makeText(requireContext(), getString(R.string.exam_moodle_pdf_process_error), Toast.LENGTH_LONG).show()
         }
     }
 

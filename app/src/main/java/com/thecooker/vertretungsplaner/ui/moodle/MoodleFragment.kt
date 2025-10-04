@@ -67,12 +67,15 @@ import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import androidx.core.graphics.scale
 import androidx.core.graphics.createBitmap
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.LocationTextExtractionStrategy
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
+import com.thecooker.vertretungsplaner.FetchType
+import com.thecooker.vertretungsplaner.SettingsActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -229,6 +232,20 @@ class MoodleFragment : Fragment() {
     private lateinit var horizontalProgressBar: ProgressBar
     private lateinit var loadingBarContainer: FrameLayout
 
+    // pdf fetching
+    private var moodleFetchProgressDialog: AlertDialog? = null
+    private var isFetchingFromMoodle = false
+    private var fetchCancelled = false
+    private var fetchStartTime = 0L
+    private val FETCH_TIMEOUT = 180000L // 3 min
+    private var fetchPreserveNotes = false
+    private var fetchProgramName: String? = null
+    private var userProvidedProgramName: String? = null
+    private var currentFetchType: FetchType? = null
+    private var savedProgramCourseName: String? = null
+    private var savedTimetableEntryName: String? = null
+    private var fetchReturnDestination: Int? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -242,6 +259,42 @@ class MoodleFragment : Fragment() {
             arguments?.remove("moodle_search_category")
             arguments?.remove("moodle_search_summary")
             arguments?.remove("moodle_entry_id")
+        }
+
+        arguments?.getBoolean("moodle_fetch_in_progress", false)?.let { fetchInProgress ->
+            if (fetchInProgress) {
+                currentFetchType = arguments?.getString("moodle_fetch_type")?.let { typeString ->
+                    try {
+                        FetchType.valueOf(typeString)
+                    } catch (_: IllegalArgumentException) {
+                        null
+                    }
+                }
+                fetchPreserveNotes = arguments?.getBoolean("moodle_fetch_preserve_notes", false) ?: false
+                fetchProgramName = arguments?.getString("moodle_fetch_program_name")
+
+                val passedClass = arguments?.getString("moodle_fetch_class")
+                if (passedClass != null) {
+                    L.d("MoodleFragment", "Received class from Intent: $passedClass")
+                    requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("temp_fetch_class", passedClass)
+                        .apply()
+                }
+
+                fetchReturnDestination = arguments?.getInt("moodle_fetch_return_destination")
+
+                arguments?.remove("moodle_fetch_in_progress")
+                arguments?.remove("moodle_fetch_type")
+                arguments?.remove("moodle_fetch_preserve_notes")
+                arguments?.remove("moodle_fetch_program_name")
+                arguments?.remove("moodle_fetch_return_destination")
+                arguments?.remove("moodle_fetch_class")
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    startMoodleFetchProcess()
+                }, 1000)
+            }
         }
     }
 
@@ -2533,6 +2586,7 @@ class MoodleFragment : Fragment() {
         backgroundExecutor.shutdown()
         cleanupRefreshIndicator()
         scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        cleanupFetchProcess()
     }
 
     private fun showDebugMenu() {
@@ -3016,11 +3070,16 @@ class MoodleFragment : Fragment() {
             if (resultsReady) {
                 updateSearchProgress(70, getString(R.string.moodle_opening_course))
 
-                val firstCourseLinkXpath = "/html/body/div[1]/div[2]/div/div[1]/div/div/section/section[2]/div/div/div[1]/div[2]/div/div/div[1]/div/ul/li[1]/div/div[2]/a"
-
                 val jsCode = """
                 (function() {
-                    var courseLink = document.evaluate('$firstCourseLinkXpath', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    var courseLink = document.evaluate(
+                        '/html/body/div[1]/div[2]/div/div[1]/div/div/section/section[1]/div/div/div[1]/div[2]/div/div/div[1]/div/ul/li[1]/div/div[2]/a',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
                     if (courseLink && courseLink.href) {
                         var courseUrl = courseLink.href;
                         courseLink.click();
@@ -3500,11 +3559,11 @@ class MoodleFragment : Fragment() {
 
         val popup = PopupMenu(requireContext(), btnOpenInBrowser)
 
-        popup.menu.add(0, 1, 0, getString(R.string.moodle_copy_url)).apply {
-            setIcon(R.drawable.ic_import_clipboard)
-        }
-        popup.menu.add(0, 2, 0, "Open in new tab").apply {
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_in_new_tab)).apply {
             setIcon(R.drawable.ic_tab_background)
+        }
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_copy_url)).apply {
+            setIcon(R.drawable.ic_import_clipboard)
         }
 
         try {
@@ -3521,15 +3580,15 @@ class MoodleFragment : Fragment() {
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> {
+                    createNewTab(currentUrl)
+                    Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show() // strings.xml
+                    true
+                }
+                2 -> {
                     val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip = ClipData.newPlainText(getString(R.string.moodle_url), currentUrl)
                     clipboard.setPrimaryClip(clip)
                     Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                2 -> {
-                    createNewTab(currentUrl)
-                    Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show() // strings.xml
                     true
                 }
                 else -> false
@@ -3705,7 +3764,7 @@ class MoodleFragment : Fragment() {
 
         // open in new tab (add only when not downloadable file)
         if (!linkInfo.isDownloadable || linkInfo.isImage) {
-            options.add(Pair("Open in new tab", R.drawable.ic_tab_background))
+            options.add(Pair(getString(R.string.moodle_open_in_new_tab), R.drawable.ic_tab_background))
             actions.add {
                 createNewTab(url)
                 Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
@@ -3913,6 +3972,11 @@ class MoodleFragment : Fragment() {
 
     private fun captureWebViewThumbnail(): Bitmap? {
         try {
+            if (webView.width <= 0 || webView.height <= 0) {
+                L.w("MoodleFragment", "WebView has invalid dimensions: ${webView.width}x${webView.height}")
+                return null
+            }
+
             val bitmap = createBitmap(webView.width, webView.height)
             val canvas = Canvas(bitmap)
             webView.draw(canvas)
@@ -4938,8 +5002,8 @@ class MoodleFragment : Fragment() {
                 }
             }
 
-            request.setTitle("Downloading $fileName")
-            request.setDescription("Download from Moodle")
+            request.setTitle(fileName)
+            request.setDescription("Moodle Download")
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
             request.setAllowedOverMetered(true)
@@ -5561,5 +5625,854 @@ class MoodleFragment : Fragment() {
             loadingBarContainer.layoutParams = layoutParams
             horizontalProgressBar.progress = 0
         }
+    }
+
+    private fun startMoodleFetchProcess() {
+        if (isFetchingFromMoodle) {
+            L.d("MoodleFragment", "Fetch already in progress")
+            return
+        }
+
+        isFetchingFromMoodle = true
+        fetchCancelled = false
+        fetchStartTime = System.currentTimeMillis()
+
+        showMoodleFetchProgressDialog()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            checkLoginStatusForFetch()
+        }, 1000)
+    }
+
+    private fun showMoodleFetchProgressDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_fetch_progress, null)
+        val tvFetchTitle = dialogView.findViewById<TextView>(R.id.tvFetchTitle)
+        val tvFetchStatus = dialogView.findViewById<TextView>(R.id.tvFetchStatus)
+        val progressBar = dialogView.findViewById<ProgressBar>(R.id.progressBarFetch)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnFetchCancel)
+
+        tvFetchTitle.text = when (currentFetchType) {
+            FetchType.EXAM_SCHEDULE -> getString(R.string.moodle_fetching_exam_schedule)
+            FetchType.TIMETABLE -> getString(R.string.moodle_fetching_timetable)
+            else -> getString(R.string.moodle_fetching_title)
+        }
+
+        tvFetchStatus.text = getString(R.string.moodle_waiting_for_login)
+        progressBar.progress = 10
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+
+        btnCancel.setOnClickListener {
+            fetchCancelled = true
+            dialog.dismiss()
+            cleanupFetchProcess()
+            Toast.makeText(requireContext(), getString(R.string.moodle_fetch_cancelled), Toast.LENGTH_SHORT).show()
+        }
+
+        moodleFetchProgressDialog = dialog
+        dialog.show()
+    }
+
+    private fun checkLoginStatusForFetch() {
+        if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > FETCH_TIMEOUT) {
+            cleanupFetchProcess()
+            return
+        }
+
+        val currentUrl = webView.url ?: ""
+        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+        if (isOnLoginPage) {
+            updateFetchProgress(15, getString(R.string.moodle_please_login))
+
+            moodleFetchProgressDialog?.hide()
+
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.moodle_please_login_to_continue),
+                Toast.LENGTH_LONG
+            ).show()
+
+            monitorLoginCompletion()
+        } else {
+            continueAfterLogin()
+        }
+    }
+
+    private fun monitorLoginCompletion() {
+        val checkInterval = 1000L
+        val handler = Handler(Looper.getMainLooper())
+
+        val loginCheckRunnable = object : Runnable {
+            override fun run() {
+                if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > FETCH_TIMEOUT) {
+                    cleanupFetchProcess()
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+                val isStillOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+                if (!isStillOnLoginPage) {
+                    moodleFetchProgressDialog?.show()
+                    updateFetchProgress(20, getString(R.string.moodle_login_successful))
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        continueAfterLogin()
+                    }, 500)
+                } else {
+                    handler.postDelayed(this, checkInterval)
+                }
+            }
+        }
+
+        handler.post(loginCheckRunnable)
+    }
+
+    private fun continueAfterLogin() {
+        if (fetchCancelled) return
+
+        updateFetchProgress(25, getString(R.string.moodle_navigating_to_my_page))
+
+        loadUrlInBackground("$moodleBaseUrl/my/")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!fetchCancelled) {
+                extractProgramCourseNameFromPage()
+            }
+        }, 2000)
+    }
+
+    private fun extractProgramCourseNameFromPage() {
+        if (fetchCancelled) return
+
+        updateFetchProgress(30, getString(R.string.moodle_detecting_program))
+
+        val jsCode = """
+        (function() {
+            try {
+                var programNameElement = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/section/section[1]/div/div/div[1]/div[2]/div/div/div[1]/div/ul/li[1]/div/div[2]/div/span[2]/text()',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (programNameElement && programNameElement.textContent) {
+                    return programNameElement.textContent.trim().toLowerCase();
+                }
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            val programName = result.replace("\"", "").trim()
+            if (programName != "false" && programName.isNotEmpty()) {
+                L.d("MoodleFragment", "Extracted program name: $programName")
+                searchForExamProgramWithName(programName)
+            } else {
+                val savedName = sharedPrefs.getString("saved_program_course_name", null)
+                if (savedName != null) {
+                    searchForExamProgramWithName(savedName)
+                } else {
+                    requestProgramNameFromUser(isAutoDetectFailed = true)
+                }
+            }
+        }
+    }
+
+    private fun searchForExamProgramWithName(programName: String) {
+        if (fetchCancelled) return
+
+        updateFetchProgress(35, getString(R.string.moodle_searching_exam_program, programName))
+
+        performProgramSearch(programName)
+    }
+
+    private fun requestProgramNameFromUser(isAutoDetectFailed: Boolean = false) {
+        activity?.runOnUiThread {
+            moodleFetchProgressDialog?.let { dialog ->
+                val dialogView = dialog.findViewById<View>(android.R.id.content)
+                val editText = dialogView?.findViewById<EditText>(R.id.editTextExamProgramName)
+                val btnContinue = dialogView?.findViewById<Button>(R.id.btnFetchContinue)
+                val tvStatus = dialogView?.findViewById<TextView>(R.id.tvFetchStatus)
+                val checkBoxSave = dialogView?.findViewById<CheckBox>(R.id.checkBoxSaveProgramName)
+
+                val message = if (isAutoDetectFailed) {
+                    getString(R.string.moodle_program_auto_detect_failed)
+                } else {
+                    getString(R.string.moodle_enter_exam_program_prompt)
+                }
+
+                tvStatus?.text = message
+                editText?.visibility = View.VISIBLE
+                btnContinue?.visibility = View.VISIBLE
+                checkBoxSave?.visibility = View.VISIBLE
+
+                btnContinue?.setOnClickListener {
+                    val enteredName = editText?.text?.toString()?.trim()
+                    if (!enteredName.isNullOrEmpty()) {
+                        userProvidedProgramName = enteredName
+
+                        if (checkBoxSave?.isChecked == true) {
+                            savedProgramCourseName = enteredName
+                            sharedPrefs.edit {
+                                putString("saved_program_course_name", enteredName)
+                            }
+                        }
+
+                        editText.visibility = View.GONE
+                        btnContinue.visibility = View.GONE
+                        checkBoxSave?.visibility = View.GONE
+                        performProgramSearch(enteredName)
+                    } else {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_program_name_required), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun performProgramSearch(programName: String) {
+        if (fetchCancelled) return
+
+        waitForPageLoadComplete {
+            if (fetchCancelled) return@waitForPageLoadComplete
+
+            updateFetchProgress(35, getString(R.string.moodle_preparing_search))
+            resetSearchState()
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (fetchCancelled) return@postDelayed
+
+                waitForSearchFieldReady { searchFieldReady ->
+                    if (fetchCancelled) return@waitForSearchFieldReady
+
+                    if (searchFieldReady) {
+                        updateFetchProgress(40, getString(R.string.moodle_filling_search))
+                        fillSearchFieldWithDelay(programName) { searchFilled ->
+                            if (fetchCancelled) return@fillSearchFieldWithDelay
+
+                            if (searchFilled) {
+                                updateFetchProgress(50, getString(R.string.moodle_waiting_results))
+
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    if (!fetchCancelled) {
+                                        clickFirstProgramResult()
+                                    }
+                                }, 1500)
+                            } else {
+                                handleFetchError(getString(R.string.moodle_search_course_failed))
+                            }
+                        }
+                    } else {
+                        handleFetchError(getString(R.string.moodle_search_not_available))
+                    }
+                }
+            }, 1000)
+        }
+    }
+
+    private fun clickFirstProgramResult() {
+        if (fetchCancelled) return
+
+        waitForSearchResults { resultsReady ->
+            if (fetchCancelled) return@waitForSearchResults
+
+            if (resultsReady) {
+                updateFetchProgress(70, getString(R.string.moodle_opening_course))
+
+                val jsCode = """
+                (function() {
+                    var courseLink = document.evaluate(
+                        '/html/body/div[1]/div[2]/div/div[1]/div/div/section/section[1]/div/div/div[1]/div[2]/div/div/div[1]/div/ul/li[1]/div/div[2]/a',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (courseLink && courseLink.href) {
+                        var courseUrl = courseLink.href;
+                        courseLink.click();
+                        return courseUrl;
+                    }
+                    return false;
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (fetchCancelled) return@evaluateJavascript
+
+                    val courseUrl = result.replace("\"", "")
+                    if (courseUrl != "false" && courseUrl.contains("course/view.php")) {
+                        L.d("MoodleFragment", "Opened program course: $courseUrl")
+                        updateFetchProgress(80, getString(R.string.moodle_searching_schedule))
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (!fetchCancelled) {
+                                waitForCoursePageLoad {
+                                    if (!fetchCancelled) {
+                                        when (currentFetchType) {
+                                            FetchType.EXAM_SCHEDULE -> searchForScheduleEntry()
+                                            FetchType.TIMETABLE -> searchForTimetableEntry()
+                                            else -> handleFetchError(getString(R.string.moodle_unknown_fetch_type))
+                                        }
+                                    }
+                                }
+                            }
+                        }, 1500)
+                    } else {
+                        if (userProvidedProgramName != null) {
+                            sharedPrefs.edit { remove("saved_program_course_name") }
+                            savedProgramCourseName = null
+                        }
+                        requestProgramNameFromUser(isAutoDetectFailed = false)
+                    }
+                }
+            } else {
+                handleFetchError(getString(R.string.moodle_search_results_not_loaded))
+            }
+        }
+    }
+
+    private fun searchForTimetableEntry() {
+        if (fetchCancelled) return
+
+        updateFetchProgress(85, getString(R.string.moodle_locating_timetable_file))
+
+        val tempPrefs = requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
+        val klasse = tempPrefs.getString("temp_fetch_class", "") ?: ""
+        val klasseBase = klasse.replace(Regex("\\d+$"), "")
+
+        L.d("MoodleFragment", "Searching for timetable - Full class: $klasse, Base class: $klasseBase")
+
+        if (klasse.isEmpty()) {
+            handleFetchError("No class information available for timetable fetch")
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                var stundenplanLinks = [];
+
+                for (var i = 0; i < links.length; i++) {
+                    var link = links[i];
+                    var linkText = link.textContent.toLowerCase();
+                    
+                    // Must contain "stundenplan" and NOT be inside an h4 header
+                    if (linkText.includes('stundenplan')) {
+                        var parentH4 = link.closest('h4');
+                        if (!parentH4) {
+                            stundenplanLinks.push({
+                                href: link.href,
+                                text: link.textContent.trim()
+                            });
+                        }
+                    }
+                }
+                
+                console.log('Found ' + stundenplanLinks.length + ' timetable entries');
+                
+                if (stundenplanLinks.length === 0) {
+                    return JSON.stringify({ found: false, reason: 'no_timetables', count: 0 });
+                }
+
+                for (var j = 0; j < stundenplanLinks.length; j++) {
+                    console.log('Timetable ' + (j+1) + ': ' + stundenplanLinks[j].text);
+                }
+
+                for (var k = 0; k < stundenplanLinks.length; k++) {
+                    var text = stundenplanLinks[k].text.toLowerCase();
+                    if (text.includes('$klasse'.toLowerCase())) {
+                        console.log('Found exact match for $klasse');
+                        return JSON.stringify({ 
+                            found: true, 
+                            url: stundenplanLinks[k].href,
+                            matchType: 'exact',
+                            count: stundenplanLinks.length
+                        });
+                    }
+                }
+
+                for (var m = 0; m < stundenplanLinks.length; m++) {
+                    var text = stundenplanLinks[m].text.toLowerCase();
+                    if (text.includes('$klasseBase'.toLowerCase())) {
+                        console.log('Found partial match for $klasseBase');
+                        return JSON.stringify({ 
+                            found: true, 
+                            url: stundenplanLinks[m].href,
+                            matchType: 'partial',
+                            count: stundenplanLinks.length
+                        });
+                    }
+                }
+
+                console.log('No match found for $klasse or $klasseBase');
+                return JSON.stringify({ 
+                    found: false, 
+                    reason: 'no_match',
+                    count: stundenplanLinks.length,
+                    available: stundenplanLinks.map(function(l) { return l.text; })
+                });
+                
+            } catch(e) {
+                console.error('Error searching timetables: ' + e.message);
+                return JSON.stringify({ found: false, error: e.message });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                val jsonResult = JSONObject(cleanResult)
+
+                val found = jsonResult.optBoolean("found", false)
+                val url = jsonResult.optString("url", "")
+                val count = jsonResult.optInt("count", 0)
+
+                L.d("MoodleFragment", "Timetable search result - Found: $found, Count: $count")
+
+                if (found && url.isNotEmpty()) {
+                    val matchType = jsonResult.optString("matchType", "unknown")
+                    L.d("MoodleFragment", "Found timetable ($matchType match): $url")
+                    updateFetchProgress(90, getString(R.string.moodle_downloading_timetable))
+                    downloadSchedulePdf(url)
+                } else {
+                    val reason = jsonResult.optString("reason", "unknown")
+                    val available = jsonResult.optJSONArray("available")
+                    val availableList = mutableListOf<String>()
+                    available?.let {
+                        for (i in 0 until it.length()) {
+                            availableList.add(it.getString(i))
+                        }
+                    }
+
+                    L.e("MoodleFragment", "Timetable not found. Reason: $reason, Found $count timetables")
+                    L.e("MoodleFragment", "Available timetables: $availableList")
+
+                    handleFetchError(getString(R.string.moodle_timetable_not_found_for_class, klasse))
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing timetable search result", e)
+                handleFetchError(getString(R.string.moodle_timetable_parse_error))
+            }
+        }
+    }
+
+    private fun searchForScheduleEntry() {
+        if (fetchCancelled) return
+
+        updateFetchProgress(85, getString(R.string.moodle_locating_schedule_file))
+
+        val jsCode = """
+        (function() {
+            try {
+                var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                
+                for (var i = 0; i < links.length; i++) {
+                    var link = links[i];
+                    var linkText = link.textContent.toLowerCase();
+                    
+                    if (linkText.includes('klausurplan')) {
+                        var parent = link.closest('h4');
+                        if (!parent) {
+                            return link.href;
+                        }
+                    }
+                }
+                
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            val scheduleUrl = result.replace("\"", "")
+            if (scheduleUrl != "false" && scheduleUrl.contains("/mod/resource/view.php")) {
+                L.d("MoodleFragment", "Found exam schedule URL: $scheduleUrl")
+                updateFetchProgress(90, getString(R.string.moodle_downloading_schedule))
+
+                downloadSchedulePdf(scheduleUrl)
+            } else {
+                handleFetchError(getString(R.string.moodle_schedule_not_found))
+            }
+        }
+    }
+
+    private fun requestTimetableEntryNameFromUser() {
+        activity?.runOnUiThread {
+            moodleFetchProgressDialog?.let { dialog ->
+                val dialogView = dialog.findViewById<View>(android.R.id.content)
+                val editText = dialogView?.findViewById<EditText>(R.id.editTextExamProgramName)
+                val btnContinue = dialogView?.findViewById<Button>(R.id.btnFetchContinue)
+                val tvStatus = dialogView?.findViewById<TextView>(R.id.tvFetchStatus)
+                val checkBoxSave = dialogView?.findViewById<CheckBox>(R.id.checkBoxSaveProgramName)
+
+                editText?.hint = getString(R.string.moodle_enter_timetable_entry_name)
+                tvStatus?.text = getString(R.string.moodle_timetable_not_found_prompt)
+                editText?.visibility = View.VISIBLE
+                btnContinue?.visibility = View.VISIBLE
+                checkBoxSave?.visibility = View.VISIBLE
+
+                btnContinue?.setOnClickListener {
+                    val enteredName = editText?.text?.toString()?.trim()
+                    if (!enteredName.isNullOrEmpty()) {
+                        if (checkBoxSave?.isChecked == true) {
+                            savedTimetableEntryName = enteredName
+                            sharedPrefs.edit {
+                                putString("saved_timetable_entry_name", enteredName)
+                            }
+                        }
+
+                        editText.visibility = View.GONE
+                        btnContinue.visibility = View.GONE
+                        checkBoxSave?.visibility = View.GONE
+                        searchForSpecificTimetableEntry(enteredName)
+                    } else {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_timetable_name_required), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun searchForSpecificTimetableEntry(entryName: String) {
+        if (fetchCancelled) return
+
+        updateFetchProgress(87, getString(R.string.moodle_searching_specific_timetable, entryName))
+
+        val jsCode = """
+        (function() {
+            try {
+                var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                
+                for (var i = 0; i < links.length; i++) {
+                    var link = links[i];
+                    var linkText = link.textContent.toLowerCase();
+                    
+                    if (linkText.includes('$entryName'.toLowerCase())) {
+                        var parent = link.closest('h4');
+                        if (!parent) {
+                            return link.href;
+                        }
+                    }
+                }
+                
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            val timetableUrl = result.replace("\"", "")
+            if (timetableUrl != "false" && timetableUrl.contains("/mod/resource/view.php")) {
+                L.d("MoodleFragment", "Found specific timetable: $timetableUrl")
+                updateFetchProgress(90, getString(R.string.moodle_downloading_timetable))
+                downloadSchedulePdf(timetableUrl)
+            } else {
+                sharedPrefs.edit { remove("saved_timetable_entry_name") }
+                savedTimetableEntryName = null
+                requestTimetableEntryNameFromUser()
+            }
+        }
+    }
+
+    private fun downloadSchedulePdf(url: String) {
+        if (fetchCancelled) return
+
+        L.d("MoodleFragment", "Starting PDF download from: $url")
+
+        val cookies = CookieManager.getInstance().getCookie(url)
+        if (cookies == null) {
+            L.e("MoodleFragment", "No cookies available for PDF download")
+            handleFetchError("Session expired. Please try again.")
+            return
+        }
+
+        dismissSessionConfirmDialog {
+            Handler(Looper.getMainLooper()).postDelayed({
+                proceedWithPdfDownload(url, cookies)
+            }, 500)
+        }
+    }
+
+    private fun proceedWithPdfDownload(url: String, cookies: String) {
+        backgroundExecutor.execute {
+            try {
+                var currentUrl = url
+                var redirectCount = 0
+                val maxRedirects = 10
+                var pdfBytes: ByteArray? = null
+
+                while (redirectCount < maxRedirects && !fetchCancelled) {
+                    L.d("MoodleFragment", "PDF download attempt $redirectCount: $currentUrl")
+
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page during download - attempting to dismiss confirmation dialog")
+
+                        activity?.runOnUiThread {
+                            dismissSessionConfirmDialog {
+                                L.d("MoodleFragment", "Session dialog dismissed, retrying download")
+
+                                // Get fresh cookies after dismissal
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    if (freshCookies != null) {
+                                        proceedWithPdfDownload(url, freshCookies)
+                                    } else {
+                                        handleFetchError("Session expired. Please reload the page and try again.")
+                                    }
+                                }, 1000)
+                            }
+                        }
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookies)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "application/pdf,*/*")
+                    conn.connectTimeout = 30000
+                    conn.readTimeout = 30000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "PDF download response code: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            L.d("MoodleFragment", "Redirect to: $location")
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "Redirect without location header")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            val contentType = conn.getHeaderField("Content-Type")
+                            L.d("MoodleFragment", "Final content type: $contentType")
+
+                            if (contentType?.contains("text/html") == true) {
+                                L.w("MoodleFragment", "Got HTML instead of PDF - likely redirected to login")
+                                conn.disconnect()
+
+                                activity?.runOnUiThread {
+                                    dismissSessionConfirmDialog {
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                            if (freshCookies != null) {
+                                                proceedWithPdfDownload(url, freshCookies)
+                                            } else {
+                                                handleFetchError("Session expired. Please reload the page and try again.")
+                                            }
+                                        }, 1000)
+                                    }
+                                }
+                                return@execute
+                            }
+
+                            pdfBytes = conn.inputStream.use { it.readBytes() }
+                            conn.disconnect()
+
+                            L.d("MoodleFragment", "Downloaded ${pdfBytes.size} bytes")
+                            break
+                        }
+                        401, 403 -> {
+                            L.e("MoodleFragment", "Authentication failed: $responseCode")
+                            conn.disconnect()
+
+                            activity?.runOnUiThread {
+                                dismissSessionConfirmDialog {
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                        if (freshCookies != null) {
+                                            proceedWithPdfDownload(url, freshCookies)
+                                        } else {
+                                            handleFetchError("Session expired. Please reload the page and try again.")
+                                        }
+                                    }, 1000)
+                                }
+                            }
+                            return@execute
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unexpected response code: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                }
+
+                activity?.runOnUiThread {
+                    if (fetchCancelled) return@runOnUiThread
+
+                    if (pdfBytes != null && pdfBytes.isNotEmpty()) {
+                        val isPdf = pdfBytes.size >= 4 &&
+                                pdfBytes[0] == '%'.code.toByte() &&
+                                pdfBytes[1] == 'P'.code.toByte() &&
+                                pdfBytes[2] == 'D'.code.toByte() &&
+                                pdfBytes[3] == 'F'.code.toByte()
+
+                        if (isPdf) {
+                            L.d("MoodleFragment", "Valid PDF downloaded, processing...")
+                            updateFetchProgress(95, getString(R.string.moodle_processing_schedule))
+                            returnToDestinationWithPdf(pdfBytes)
+                        } else {
+                            L.e("MoodleFragment", "Downloaded file is not a valid PDF")
+                            L.d("MoodleFragment", "File header: ${pdfBytes.take(10).map { it.toInt() }}")
+                            handleFetchError("Downloaded file is not a valid PDF. Please try again.")
+                        }
+                    } else {
+                        L.e("MoodleFragment", "No PDF data downloaded after $redirectCount redirects")
+                        handleFetchError(getString(R.string.moodle_schedule_download_failed))
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error downloading schedule PDF", e)
+                activity?.runOnUiThread {
+                    if (!fetchCancelled) {
+                        handleFetchError(getString(R.string.moodle_fetch_download_error, e.message))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun returnToDestinationWithPdf(pdfBytes: ByteArray) {
+        updateFetchProgress(100, getString(R.string.moodle_fetch_complete))
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                when (currentFetchType) {
+                    FetchType.EXAM_SCHEDULE -> {
+                        val navController = findNavController()
+                        val bundle = Bundle().apply {
+                            putByteArray("moodle_fetched_pdf", pdfBytes)
+                            putBoolean("moodle_fetch_preserve_notes", fetchPreserveNotes)
+                        }
+                        cleanupFetchProcess()
+                        navController.navigate(R.id.nav_klausuren, bundle)
+                    }
+                    FetchType.TIMETABLE -> {
+                        val cacheDir = requireContext().cacheDir
+                        val pdfFile = File(cacheDir, "moodle_timetable_${System.currentTimeMillis()}.pdf")
+                        pdfFile.outputStream().use { it.write(pdfBytes) }
+
+                        requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putString("pending_timetable_pdf_path", pdfFile.absolutePath)
+                            .remove("temp_fetch_class")
+                            .apply()
+
+                        cleanupFetchProcess()
+
+                        activity?.let { act ->
+                            val intent = Intent(act, SettingsActivity::class.java)
+                            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            act.startActivity(intent)
+                        }
+                    }
+                    else -> {
+                        handleFetchError(getString(R.string.moodle_unknown_fetch_type))
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error returning with PDF", e)
+                activity?.runOnUiThread {
+                    Toast.makeText(activity, getString(R.string.moodle_return_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }, 500)
+    }
+
+    private fun updateFetchProgress(progress: Int, status: String, details: String = "") {
+        moodleFetchProgressDialog?.let { dialog ->
+            if (dialog.isShowing && !fetchCancelled) {
+                val dialogView = dialog.findViewById<View>(android.R.id.content)
+                val tvFetchStatus = dialogView?.findViewById<TextView>(R.id.tvFetchStatus)
+                val tvFetchDetails = dialogView?.findViewById<TextView>(R.id.tvFetchDetails)
+                val progressBar = dialogView?.findViewById<ProgressBar>(R.id.progressBarFetch)
+
+                activity?.runOnUiThread {
+                    tvFetchStatus?.text = status
+                    progressBar?.progress = progress
+
+                    if (details.isNotEmpty()) {
+                        tvFetchDetails?.text = details
+                        tvFetchDetails?.visibility = View.VISIBLE
+                    } else {
+                        tvFetchDetails?.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleFetchError(errorMessage: String) {
+        L.e("MoodleFragment", "Fetch error: $errorMessage")
+
+        activity?.runOnUiThread {
+            moodleFetchProgressDialog?.dismiss()
+            cleanupFetchProcess()
+
+            Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
+
+            try {
+                findNavController().navigate(R.id.nav_klausuren)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error navigating back to exam fragment", e)
+            }
+        }
+    }
+
+    private fun cleanupFetchProcess() {
+        isFetchingFromMoodle = false
+        fetchCancelled = false
+        currentFetchType = null
+        fetchPreserveNotes = false
+        fetchProgramName = null
+        userProvidedProgramName = null
+        moodleFetchProgressDialog?.dismiss()
+        moodleFetchProgressDialog = null
     }
 }

@@ -52,6 +52,7 @@ import com.thecooker.vertretungsplaner.utils.SectionSelectionDialog
 import android.text.TextWatcher
 import android.text.Editable
 import android.util.TypedValue
+import android.view.LayoutInflater
 import android.widget.ScrollView
 import androidx.core.graphics.toColorInt
 import android.widget.CheckBox
@@ -172,6 +173,11 @@ class SettingsActivity : BaseActivity() {
     private lateinit var switchShowLoginDialog: Switch
     private lateinit var btnClearMoodleCache: Button
     private lateinit var btnClearMoodleData: Button
+
+    // moodle fetching
+    private var moodleTimetableFetchConfig: MoodleFetchConfig? = null
+    private var isMoodleTimetableFetchInProgress = false
+    private lateinit var btnResetMoodleFetchPreference: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
@@ -431,6 +437,7 @@ class SettingsActivity : BaseActivity() {
         layoutAppInfoContent = findViewById(R.id.layoutAppInfoContent)
         btnAppInfoToggle = findViewById(R.id.btnAppInfoToggle)
         switchCalendarColorLegend = findViewById(R.id.switchCalendarColorLegend)
+        btnResetMoodleFetchPreference = findViewById(R.id.btnResetMoodleFetchPreference)
     }
 
     private fun setupToolbar() {
@@ -455,7 +462,18 @@ class SettingsActivity : BaseActivity() {
             if (isDocumentScanned()) {
                 showDeleteTimetableDialog()
             } else {
-                openPdfPicker()
+                val skipMoodleFetchDialog = sharedPreferences.getBoolean("skip_moodle_timetable_fetch_dialog", false)
+                val shouldFetchFromMoodle = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
+
+                if (skipMoodleFetchDialog) {
+                    if (shouldFetchFromMoodle) {
+                        startMoodleTimetableFetch()
+                    } else {
+                        openPdfPicker()
+                    }
+                } else {
+                    showMoodleTimetableFetchDialog()
+                }
             }
         }
 
@@ -3941,6 +3959,12 @@ class SettingsActivity : BaseActivity() {
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
         }
+
+        btnResetMoodleFetchPreference = findViewById(R.id.btnResetMoodleFetchPreference)
+
+        btnResetMoodleFetchPreference.setOnClickListener {
+            showResetMoodlePreferencesDialog()
+        }
     }
 
     private fun getMoodleFragment(): MoodleFragment? {
@@ -4021,6 +4045,221 @@ class SettingsActivity : BaseActivity() {
             L.e("SettingsActivity", "Error clearing data manually", e)
             Toast.makeText(this, "Failed to clear data", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun showMoodleTimetableFetchDialog() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_exam, null)
+        val container = dialogView as ViewGroup
+        container.removeAllViews()
+
+        val messageText = TextView(this).apply {
+            text = getString(R.string.settings_fetch_timetable_from_moodle_message)
+            textSize = 16f
+            setPadding(0, 0, 0, 32)
+        }
+
+        val checkBox = CheckBox(this).apply {
+            text = getString(R.string.exam_remember_decision)
+            isChecked = false
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 32, 64, 32)
+            addView(messageText)
+            addView(checkBox)
+        }
+
+        container.addView(layout)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.settings_scan_timetable))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.exam_fetch_from_moodle)) { _, _ ->
+                if (checkBox.isChecked) {
+                    sharedPreferences.edit {
+                        putBoolean("skip_moodle_timetable_fetch_dialog", true)
+                        putBoolean("fetch_timetable_from_moodle_preference", true)
+                    }
+                }
+                startMoodleTimetableFetch()
+            }
+            .setNegativeButton(getString(R.string.exam_select_pdf_manually)) { _, _ ->
+                if (checkBox.isChecked) {
+                    sharedPreferences.edit {
+                        putBoolean("skip_moodle_timetable_fetch_dialog", true)
+                        putBoolean("fetch_timetable_from_moodle_preference", false)
+                    }
+                }
+                openPdfPicker()
+            }
+            .setNeutralButton(getString(R.string.cancel), null)
+            .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun startMoodleTimetableFetch() {
+        L.d(TAG, "Starting Moodle timetable fetch")
+
+        val klasse = sharedPreferences.getString("selected_klasse", "") ?: ""
+
+        if (klasse.isEmpty()) {
+            Toast.makeText(this, getString(R.string.settings_no_class_selected), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        L.d(TAG, "Passing class to Moodle: $klasse")
+
+        moodleTimetableFetchConfig = MoodleFetchConfig(
+            fetchType = FetchType.TIMETABLE,
+            preserveNotes = false
+        )
+
+        navigateToMoodleForTimetableFetch(klasse)
+    }
+
+    private fun navigateToMoodleForTimetableFetch(klasse: String) {
+        try {
+            isMoodleTimetableFetchInProgress = true
+
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("navigate_to_moodle", true)
+                putExtra("moodle_fetch_type", FetchType.TIMETABLE.name)
+                putExtra("moodle_fetch_in_progress", true)
+                putExtra("moodle_fetch_class", klasse)
+            }
+
+            startActivity(intent)
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                finish()
+            }, 100)
+        } catch (e: Exception) {
+            L.e(TAG, "Error navigating to Moodle for timetable fetch", e)
+            Toast.makeText(this, getString(R.string.settings_moodle_fetch_error), Toast.LENGTH_LONG).show()
+            isMoodleTimetableFetchInProgress = false
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (sharedPreferences.contains("pending_timetable_pdf_path")) {
+            val pdfPath = sharedPreferences.getString("pending_timetable_pdf_path", null)
+            sharedPreferences.edit { remove("pending_timetable_pdf_path") }
+
+            if (pdfPath != null) {
+                val file = File(pdfPath)
+                if (file.exists()) {
+                    L.d(TAG, "Processing returned timetable PDF from path: $pdfPath")
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        this,
+                        "${packageName}.fileprovider",
+                        file
+                    )
+                    processPdfFile(uri)
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        file.delete()
+                    }, 5000)
+                }
+            }
+        }
+    }
+
+    private fun showResetMoodlePreferencesDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_reset_moodle_preferences, null)
+        val checkboxResetExamFetch = dialogView.findViewById<CheckBox>(R.id.checkboxResetExamFetch)
+        val checkboxResetTimetableFetch = dialogView.findViewById<CheckBox>(R.id.checkboxResetTimetableFetch)
+        val checkboxResetProgramName = dialogView.findViewById<CheckBox>(R.id.checkboxResetProgramName)
+        val checkboxResetTimetableEntry = dialogView.findViewById<CheckBox>(R.id.checkboxResetTimetableEntry)
+        val btnClear = dialogView.findViewById<Button>(R.id.btnClear)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        val grayColor = ContextCompat.getColor(this, android.R.color.darker_gray)
+
+        btnClear.setTextColor(grayColor)
+        btnCancel.setTextColor(buttonColor)
+
+        val checkboxes = listOf(
+            checkboxResetExamFetch,
+            checkboxResetTimetableFetch,
+            checkboxResetProgramName,
+            checkboxResetTimetableEntry
+        )
+
+        val updateButtonState = {
+            val anyChecked = checkboxes.any { it.isChecked }
+            btnClear.isEnabled = anyChecked
+            btnClear.setTextColor(if (anyChecked) Color.WHITE else grayColor)
+        }
+
+        checkboxes.forEach { checkbox ->
+            checkbox.setOnCheckedChangeListener { _, _ ->
+                updateButtonState()
+            }
+        }
+
+        btnClear.setOnClickListener {
+            val prefsToRemove = mutableListOf<String>()
+
+            if (checkboxResetExamFetch.isChecked) {
+                prefsToRemove.add("skip_moodle_fetch_dialog")
+                prefsToRemove.add("fetch_from_moodle_preference")
+            }
+
+            if (checkboxResetTimetableFetch.isChecked) {
+                prefsToRemove.add("skip_moodle_timetable_fetch_dialog")
+                prefsToRemove.add("fetch_timetable_from_moodle_preference")
+            }
+
+            if (checkboxResetProgramName.isChecked) {
+                prefsToRemove.add("saved_program_course_name")
+            }
+
+            if (checkboxResetTimetableEntry.isChecked) {
+                prefsToRemove.add("saved_timetable_entry_name")
+            }
+
+            if (prefsToRemove.isNotEmpty()) {
+                sharedPreferences.edit {
+                    prefsToRemove.forEach { key ->
+                        remove(key)
+                    }
+                }
+
+                val resetItems = mutableListOf<String>()
+                if (checkboxResetExamFetch.isChecked) resetItems.add(getString(R.string.settings_reset_exam_fetch_preference))
+                if (checkboxResetTimetableFetch.isChecked) resetItems.add(getString(R.string.settings_reset_timetable_fetch_preference))
+                if (checkboxResetProgramName.isChecked) resetItems.add(getString(R.string.settings_reset_saved_program_name))
+                if (checkboxResetTimetableEntry.isChecked) resetItems.add(getString(R.string.settings_reset_saved_timetable_entry))
+
+                Toast.makeText(
+                    this,
+                    getString(R.string.settings_preferences_reset_success) + "\n• " + resetItems.joinToString("\n• "),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+            dialog.dismiss()
+        }
+
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 }
 
