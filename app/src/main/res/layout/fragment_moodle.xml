@@ -214,12 +214,13 @@
             android:contentDescription="@string/moodle_back"
             android:layout_marginEnd="8dp" />
 
+        <!-- Normal web browsing controls -->
         <RelativeLayout
+            android:id="@+id/webControlsLayout"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:clipChildren="false"
-            android:clipToPadding="false">
+            android:visibility="visible">
 
             <EditText
                 android:id="@+id/urlBar"
@@ -229,7 +230,7 @@
                 android:inputType="textUri"
                 android:padding="8dp"
                 android:paddingStart="12dp"
-                android:paddingEnd="40dp"
+                android:paddingEnd="80dp"
                 android:background="@drawable/subtle_search_background"
                 android:textSize="14sp"
                 android:textColor="?attr/textPrimaryColor"
@@ -243,13 +244,54 @@
                 android:layout_height="32dp"
                 android:layout_alignParentEnd="true"
                 android:layout_centerVertical="true"
-                android:layout_marginEnd="4dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_globe"
+                android:contentDescription="@string/moodle_open_external"
+                android:scaleType="centerInside" />
+        </RelativeLayout>
+
+        <!-- PDF controls (hidden by default) -->
+        <LinearLayout
+            android:id="@+id/pdfControlsLayout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/btnOpenInBrowser2"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_globe"
                 android:contentDescription="@string/moodle_open_external"
                 android:scaleType="centerInside" />
 
-        </RelativeLayout>
+            <TextView
+                android:id="@+id/pdfPageCounter"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/moodle_pdf_page_default"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="?attr/textPrimaryColor"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="8dp" />
+
+            <ImageButton
+                android:id="@+id/pdfKebabMenu"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_more_vert"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/moodle_pdf_options"
+                android:scaleType="centerInside" />
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/btnForward"
@@ -259,7 +301,6 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/moodle_tabs"
             android:layout_marginStart="8dp" />
-
     </LinearLayout>
 
     <FrameLayout
@@ -327,6 +368,51 @@
             android:elevation="20dp"
             app:tint="@android:color/white" />
 
+    </FrameLayout>
+
+    <!-- PDF Container (hidden by default) -->
+    <FrameLayout
+        android:id="@+id/pdfContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone"
+        android:background="?attr/homeworkFragmentBackgroundColor">
+
+        <!-- Scroll mode: all pages -->
+        <ScrollView
+            android:id="@+id/pdfScrollContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/pdfPagesContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="16dp" />
+        </ScrollView>
+
+        <!-- Single page mode with gesture support -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/pdfSinglePageContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/pdfSinglePageView"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:adjustViewBounds="true"
+                android:scaleType="fitCenter"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </FrameLayout>
 
 </LinearLayout>

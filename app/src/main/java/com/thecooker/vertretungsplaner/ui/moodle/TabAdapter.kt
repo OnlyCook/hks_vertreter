@@ -17,7 +17,7 @@ import com.google.android.material.card.MaterialCardView
 
 class TabAdapter(
     private val tabs: List<MoodleFragment.TabInfo>,
-    private var currentTabIndex: Int,
+    private val getCurrentTabIndex: () -> Int,
     private val isCompactLayout: Boolean,
     private val itemWidth: Int,
     private val itemHeight: Int,
@@ -85,7 +85,7 @@ class TabAdapter(
         if (actualPosition == RecyclerView.NO_POSITION || actualPosition >= tabs.size) return
 
         val tab = tabs[actualPosition]
-        val isCurrentTab = actualPosition == currentTabIndex
+        val isCurrentTab = actualPosition == getCurrentTabIndex()
         val isDefaultTab = tab.isDefault
 
         tabHolder.title.text = buildString {

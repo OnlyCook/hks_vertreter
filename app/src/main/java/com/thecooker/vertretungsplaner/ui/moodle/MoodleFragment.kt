@@ -39,7 +39,6 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.pdf.PdfRenderer
 import android.os.Environment
-import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.util.Base64
 import android.util.TypedValue
@@ -50,8 +49,8 @@ import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
 import android.view.inputmethod.InputMethodManager
 import androidx.annotation.AttrRes
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import java.net.URLDecoder
 import androidx.core.net.toUri
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
@@ -79,7 +78,6 @@ import com.thecooker.vertretungsplaner.SettingsActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.io.FileInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -88,6 +86,7 @@ import java.util.Collections
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -134,8 +133,8 @@ class MoodleFragment : Fragment() {
     private var backPressTime = 0L
     private var backPressCount = 0
 
-    // file picker
     private lateinit var btnOpenInBrowser: ImageButton
+    private lateinit var btnOpenInBrowser2: ImageButton // pdf viewer globe button
 
     // calendar data refresh
     private var wasOnLoginPage = false
@@ -222,11 +221,26 @@ class MoodleFragment : Fragment() {
 
     // pdf viewer
     private var pdfRenderer: PdfRenderer? = null
-    private var currentPdfPage = 0
-    private var pdfViewerOverlay: View? = null
-    private var isPdfViewerVisible = false
-    private lateinit var pdfImageView: ImageView
-    private lateinit var pdfPageIndicator: TextView
+    private var pdfViewerManager: PdfViewerManager? = null
+    private val PDF_TAB_PREFIX = "pdf_tab_"
+    private lateinit var pdfContainer: FrameLayout
+    private lateinit var pdfScrollContainer: ScrollView
+    private lateinit var pdfPagesContainer: LinearLayout
+    private lateinit var pdfSinglePageContainer: ConstraintLayout
+    private lateinit var pdfSinglePageView: ImageView
+    private lateinit var webControlsLayout: RelativeLayout
+    private lateinit var pdfControlsLayout: LinearLayout
+    private lateinit var pdfPageCounter: TextView
+    private lateinit var pdfKebabMenu: ImageButton
+    private var isDarkTheme = false
+    private var pdfFileUrl: String? = null
+    private var isScrolling = false
+    private var scrollStopHandler: Handler? = null
+    private var scrollStopRunnable: Runnable? = null
+    private var lastUnloadTime = 0L
+    private val UNLOAD_THROTTLE_MS = 500L
+    private var isNavigating = false
+    private var ignoreScrollUpdates = false
 
     // horizontal loading bar
     private lateinit var horizontalProgressBar: ProgressBar
@@ -276,10 +290,10 @@ class MoodleFragment : Fragment() {
                 val passedClass = arguments?.getString("moodle_fetch_class")
                 if (passedClass != null) {
                     L.d("MoodleFragment", "Received class from Intent: $passedClass")
-                    requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
-                        .edit()
-                        .putString("temp_fetch_class", passedClass)
-                        .apply()
+                    requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                        .edit {
+                            putString("temp_fetch_class", passedClass)
+                        }
                 }
 
                 fetchReturnDestination = arguments?.getInt("moodle_fetch_return_destination")
@@ -308,6 +322,8 @@ class MoodleFragment : Fragment() {
         initViews(root)
         setupSharedPreferences()
         calendarDataManager = CalendarDataManager.getInstance(requireContext())
+
+        detectCurrentTheme()
 
         if (!isWebViewInitialized) {
             Handler(Looper.getMainLooper()).post {
@@ -343,15 +359,12 @@ class MoodleFragment : Fragment() {
         btnMessages.isEnabled = !isOnLoginPage
         btnMenu.isEnabled = !isOnLoginPage
 
-        btnForward.isEnabled = !isOnLoginPage
-
         btnSearch.alpha = if (isOnLoginPage) 0.5f else 1.0f
         btnDashboard.alpha = if (isOnLoginPage) 0.5f else 1.0f
         btnNotifications.alpha = if (isOnLoginPage) 0.5f else 1.0f
         btnMessages.alpha = if (isOnLoginPage) 0.5f else 1.0f
         btnMenu.alpha = if (isOnLoginPage) 0.5f else 1.0f
         btnBack.alpha = if (canGoBack) 1.0f else 0.5f
-        btnForward.alpha = if (isOnLoginPage) 0.5f else 1.0f
 
         if (isOnLoginPage && searchBarVisible) {
             toggleSearchBar()
@@ -376,11 +389,21 @@ class MoodleFragment : Fragment() {
         btnClearSearch = root.findViewById(R.id.btnClearSearch)
         btnSubmitSearch = root.findViewById(R.id.btnSubmitSearch)
         btnOpenInBrowser = root.findViewById(R.id.btnOpenInBrowser)
+        btnOpenInBrowser2 = root.findViewById(R.id.btnOpenInBrowser2)
         spinnerSearchType = root.findViewById(R.id.spinnerSearchType)
         tvNotificationCount = root.findViewById(R.id.tvNotificationCount)
         tvMessageCount = root.findViewById(R.id.tvMessageCount)
         refreshContainer = root.findViewById(R.id.refreshContainer)
         refreshIndicator = root.findViewById(R.id.refreshIndicator)
+        pdfContainer = root.findViewById(R.id.pdfContainer)
+        pdfScrollContainer = root.findViewById(R.id.pdfScrollContainer)
+        pdfPagesContainer = root.findViewById(R.id.pdfPagesContainer)
+        pdfSinglePageContainer = root.findViewById(R.id.pdfSinglePageContainer)
+        pdfSinglePageView = root.findViewById(R.id.pdfSinglePageView)
+        webControlsLayout = root.findViewById(R.id.webControlsLayout)
+        pdfControlsLayout = root.findViewById(R.id.pdfControlsLayout)
+        pdfPageCounter = root.findViewById(R.id.pdfPageCounter)
+        pdfKebabMenu = root.findViewById(R.id.pdfKebabMenu)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -566,6 +589,10 @@ class MoodleFragment : Fragment() {
         }
 
         webView.setOnTouchListener { _, event ->
+            if (isPdfTab(currentTabIndex)) {
+                return@setOnTouchListener false
+            }
+
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     isUserScrolling = true
@@ -661,6 +688,10 @@ class MoodleFragment : Fragment() {
         }
 
         webView.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            if (isPdfTab(currentTabIndex)) {
+                return@setOnScrollChangeListener
+            }
+
             scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
 
             scrollEndCheckRunnable = Runnable {
@@ -804,15 +835,15 @@ class MoodleFragment : Fragment() {
         }
 
         btnDashboard.setOnClickListener {
-            loadUrlInBackground("$moodleBaseUrl/my/")
+            navigateFromCurrentTab("$moodleBaseUrl/my/")
         }
 
         btnNotifications.setOnClickListener {
-            loadUrlInBackground("$moodleBaseUrl/message/output/popup/notifications.php")
+            navigateFromCurrentTab("$moodleBaseUrl/message/output/popup/notifications.php")
         }
 
         btnMessages.setOnClickListener {
-            loadUrlInBackground("$moodleBaseUrl/message/index.php")
+            navigateFromCurrentTab("$moodleBaseUrl/message/index.php")
         }
 
         btnMenu.setOnClickListener {
@@ -826,9 +857,7 @@ class MoodleFragment : Fragment() {
         }
 
         btnForward.setOnClickListener {
-            if (!isOnLoginPage()) {
-                showTabOverlay()
-            }
+            showTabOverlay()
         }
 
         btnClearSearch.setOnClickListener {
@@ -881,6 +910,37 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun navigateFromCurrentTab(url: String) {
+        if (isPdfTab(currentTabIndex)) {
+            saveCurrentTabState()
+
+            pdfViewerManager?.closePdf()
+            pdfViewerManager = null
+            pdfFileUrl = null
+
+            val currentTab = tabs[currentTabIndex]
+            tabs[currentTabIndex] = currentTab.copy(
+                id = UUID.randomUUID().toString(),
+                url = url,
+                title = getString(R.string.act_set_loading),
+                thumbnail = null,
+                webViewState = null
+            )
+
+            webView.visibility = View.VISIBLE
+            pdfContainer.visibility = View.GONE
+            webControlsLayout.visibility = View.VISIBLE
+            pdfControlsLayout.visibility = View.GONE
+            btnBack.visibility = View.VISIBLE
+            btnOpenInBrowser.visibility = View.VISIBLE
+
+            showLoadingBar()
+            webView.loadUrl(url)
+        } else {
+            loadUrlInBackground(url)
+        }
+    }
+
     private fun updateTabButtonIcon() {
         btnForward.setImageResource(
             if (isTabViewVisible) R.drawable.ic_tabs_filled else R.drawable.ic_tabs
@@ -888,7 +948,12 @@ class MoodleFragment : Fragment() {
     }
 
     private fun updateDashboardButtonIcon() {
-        val currentUrl = webView.url ?: ""
+        val currentUrl = if (isPdfTab(currentTabIndex)) {
+            tabs.getOrNull(currentTabIndex)?.url ?: ""
+        } else {
+            webView.url ?: ""
+        }
+
         val isOnDashboard = currentUrl == "$moodleBaseUrl/my/" ||
                 currentUrl.endsWith("/my") ||
                 currentUrl.contains("/my/index.php")
@@ -1013,6 +1078,15 @@ class MoodleFragment : Fragment() {
     }
 
     private fun updateExtendedHeaderVisibility() {
+        val isPdf = isPdfTab(currentTabIndex)
+
+        if (isPdf) {
+            if (!extendedHeaderLayout.isVisible) {
+                showExtendedHeaderWithAnimation()
+            }
+            return
+        }
+
         val shouldShow = isAtTop && !searchBarVisible
 
         if (shouldShow) {
@@ -1081,6 +1155,29 @@ class MoodleFragment : Fragment() {
     }
 
     private fun loadUrlInBackground(url: String) {
+        if (isPdfTab(currentTabIndex)) {
+            saveCurrentTabState()
+
+            val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+            if (defaultTabIndex != -1) {
+                currentTabIndex = defaultTabIndex
+                switchToTab(defaultTabIndex)
+            } else {
+                val newTab = TabInfo(
+                    url = url,
+                    title = getString(R.string.act_set_loading)
+                )
+                tabs.add(newTab)
+                currentTabIndex = tabs.size - 1
+            }
+
+            webView.visibility = View.VISIBLE
+            pdfContainer.visibility = View.GONE
+            webControlsLayout.visibility = View.VISIBLE
+            pdfControlsLayout.visibility = View.GONE
+            btnBack.visibility = View.VISIBLE
+        }
+
         showLoadingBar()
         webView.loadUrl(url)
     }
@@ -1090,14 +1187,39 @@ class MoodleFragment : Fragment() {
         if (query.isEmpty()) return
 
         val searchType = spinnerSearchType.selectedItemPosition
+
+        // If on PDF tab, convert to web tab first
+        if (isPdfTab(currentTabIndex)) {
+            saveCurrentTabState()
+            pdfViewerManager?.closePdf()
+            pdfViewerManager = null
+            pdfFileUrl = null
+
+            val currentTab = tabs[currentTabIndex]
+            tabs[currentTabIndex] = currentTab.copy(
+                id = UUID.randomUUID().toString(),
+                url = "$moodleBaseUrl/my/",
+                title = "My courses",
+                thumbnail = null,
+                webViewState = null
+            )
+
+            webView.visibility = View.VISIBLE
+            pdfContainer.visibility = View.GONE
+            webControlsLayout.visibility = View.VISIBLE
+            pdfControlsLayout.visibility = View.GONE
+            btnBack.visibility = View.VISIBLE
+            btnOpenInBrowser.visibility = View.VISIBLE
+        }
+
         val currentUrl = webView.url ?: ""
 
         val isOnMyCoursesPage = currentUrl.contains("/my/") || currentUrl == "$moodleBaseUrl/my/"
         val isOnAllCoursesPage = currentUrl.contains("/course/index.php")
 
         val shouldNavigate = when (searchType) {
-            0 -> !isOnMyCoursesPage  // My courses
-            1 -> !isOnAllCoursesPage  // All courses
+            0 -> !isOnMyCoursesPage
+            1 -> !isOnAllCoursesPage
             else -> true
         }
 
@@ -1968,31 +2090,31 @@ class MoodleFragment : Fragment() {
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> {
-                    loadUrlInBackground("$moodleBaseUrl/user/profile.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/user/profile.php")
                     true
                 }
                 2 -> {
-                    loadUrlInBackground("$moodleBaseUrl/grade/report/overview/index.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/grade/report/overview/index.php")
                     true
                 }
                 3 -> {
-                    loadUrlInBackground("$moodleBaseUrl/calendar/view.php?view=month")
+                    navigateFromCurrentTab("$moodleBaseUrl/calendar/view.php?view=month")
                     true
                 }
                 4 -> {
-                    loadUrlInBackground("$moodleBaseUrl/user/files.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/user/files.php")
                     true
                 }
                 5 -> {
-                    loadUrlInBackground("$moodleBaseUrl/reportbuilder/index.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/reportbuilder/index.php")
                     true
                 }
                 6 -> {
-                    loadUrlInBackground("$moodleBaseUrl/user/preferences.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/user/preferences.php")
                     true
                 }
                 7 -> {
-                    loadUrlInBackground("$moodleBaseUrl/login/logout.php")
+                    navigateFromCurrentTab("$moodleBaseUrl/login/logout.php")
                     true
                 }
                 8 -> {
@@ -2580,12 +2702,14 @@ class MoodleFragment : Fragment() {
 
     override fun onDestroy() {
         super.onDestroy()
+        pdfViewerManager?.closePdf()
         savePinnedTabs()
         tabs.forEach { it.thumbnail?.recycle() }
         pdfRenderer?.close()
         backgroundExecutor.shutdown()
         cleanupRefreshIndicator()
         scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
         cleanupFetchProcess()
     }
 
@@ -3448,6 +3572,10 @@ class MoodleFragment : Fragment() {
     }
 
     private fun hideExtendedHeaderWithAnimation() {
+        if (isPdfTab(currentTabIndex)) {
+            return
+        }
+
         if (extendedHeaderLayout.isGone || isHeaderAnimating) {
             return
         }
@@ -3504,6 +3632,16 @@ class MoodleFragment : Fragment() {
 
     private fun checkScrollEndedAtTop() {
         if (!isUserScrolling && !isHeaderAnimating) {
+            val isPdf = isPdfTab(currentTabIndex)
+
+            if (isPdf) {
+                isAtTop = true
+                if (!extendedHeaderLayout.isVisible) {
+                    showExtendedHeaderWithAnimation()
+                }
+                return
+            }
+
             val currentScrollY = webView.scrollY
             val shouldBeAtTop = currentScrollY <= scrollThreshold
 
@@ -3778,7 +3916,11 @@ class MoodleFragment : Fragment() {
                 if (url.contains("/mod/resource/view.php")) {
                     resolveDownloadUrl(url, cookies, forceDownload = true)
                 } else {
-                    downloadToDeviceWithCookies(url, cookies)
+                    if (url.endsWith(".docx", ignoreCase = true)) {
+                        handleDocxFile(url, cookies, forceDownload = true)
+                    } else {
+                        downloadToDeviceWithCookies(url, cookies)
+                    }
                 }
             }
         }
@@ -3860,11 +4002,6 @@ class MoodleFragment : Fragment() {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
-    private fun isOnLoginPage(): Boolean {
-        val currentUrl = webView.url ?: ""
-        return currentUrl == loginUrl || currentUrl.contains("login/index.php")
-    }
-
     private fun initializeTabSystem() {
         isCompactTabLayout = sharedPrefs.getBoolean("moodle_tab_layout_compact", false)
 
@@ -3900,6 +4037,15 @@ class MoodleFragment : Fragment() {
                 put("title", tab.title)
                 put("isPinned", true)
                 put("createdAt", tab.createdAt)
+
+                if (tab.id.startsWith(PDF_TAB_PREFIX)) {
+                    tab.webViewState?.let { bundle ->
+                        put("pdf_file_path", bundle.getString("pdf_file_path"))
+                        put("pdf_current_page", bundle.getInt("pdf_current_page", 0))
+                        put("pdf_scroll_mode", bundle.getBoolean("pdf_scroll_mode", true))
+                        put("pdf_dark_mode", bundle.getBoolean("pdf_dark_mode", false))
+                    }
+                }
 
                 tab.thumbnail?.let { bitmap ->
                     try {
@@ -3938,7 +4084,6 @@ class MoodleFragment : Fragment() {
                 val tabId = tabJson.getString("id")
 
                 if (tabId == "default_tab") continue
-
                 if (!tabJson.optBoolean("isPinned", false)) continue
 
                 val thumbnail = try {
@@ -3952,6 +4097,15 @@ class MoodleFragment : Fragment() {
                     null
                 }
 
+                val webViewState = if (tabId.startsWith(PDF_TAB_PREFIX)) {
+                    Bundle().apply {
+                        putString("pdf_file_path", tabJson.optString("pdf_file_path"))
+                        putInt("pdf_current_page", tabJson.optInt("pdf_current_page", 0))
+                        putBoolean("pdf_scroll_mode", tabJson.optBoolean("pdf_scroll_mode", true))
+                        putBoolean("pdf_dark_mode", tabJson.optBoolean("pdf_dark_mode", false))
+                    }
+                } else null
+
                 loadedTabs.add(TabInfo(
                     id = tabId,
                     url = tabJson.getString("url"),
@@ -3959,6 +4113,7 @@ class MoodleFragment : Fragment() {
                     isPinned = true,
                     isDefault = false,
                     thumbnail = thumbnail,
+                    webViewState = webViewState,
                     createdAt = tabJson.optLong("createdAt", System.currentTimeMillis())
                 ))
             }
@@ -3993,43 +4148,367 @@ class MoodleFragment : Fragment() {
     private fun saveCurrentTabState() {
         if (currentTabIndex in tabs.indices) {
             val currentTab = tabs[currentTabIndex]
-            val bundle = Bundle()
-            webView.saveState(bundle)
 
-            tabs[currentTabIndex] = currentTab.copy(
-                url = webView.url ?: currentTab.url,
-                title = webView.title ?: currentTab.title,
-                thumbnail = captureWebViewThumbnail(),
-                webViewState = bundle
-            )
+            if (isPdfTab(currentTabIndex)) {
+                val pdfState = pdfViewerManager?.getCurrentState()
+                val bundle = Bundle().apply {
+                    putString("pdf_file_path", pdfState?.file?.absolutePath)
+                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
+                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
+                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
+                }
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = currentTab.url,
+                    title = currentTab.title,
+                    thumbnail = capturePdfThumbnail(),
+                    webViewState = bundle
+                )
+            } else {
+                val bundle = Bundle()
+                webView.saveState(bundle)
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = webView.url ?: currentTab.url,
+                    title = webView.title ?: currentTab.title,
+                    thumbnail = captureWebViewThumbnail(),
+                    webViewState = bundle
+                )
+            }
 
             savePinnedTabs()
         }
     }
 
+    private fun capturePdfThumbnail(): Bitmap? {
+        return try {
+            val bitmap = pdfViewerManager?.renderPage(0)
+            bitmap?.scale(bitmap.width / 4, bitmap.height / 4)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun switchToTab(index: Int) {
-        if (index !in tabs.indices || index == currentTabIndex) return
+        if (index !in tabs.indices) return
+
+        if (index == currentTabIndex) {
+            L.d("MoodleFragment", "Already on tab $index, skipping switch")
+            return
+        }
+
+        L.d("MoodleFragment", "Switching from tab $currentTabIndex to tab $index")
 
         saveCurrentTabState()
+
+        val previousIndex = currentTabIndex
         currentTabIndex = index
 
         val tab = tabs[index]
 
-        if (tab.webViewState != null) {
-            webView.restoreState(tab.webViewState)
+        if (isPdfTab(index)) {
+            loadPdfTab(tab)
         } else {
-            webView.loadUrl(tab.url)
+            if (isPdfTab(previousIndex)) {
+                pdfViewerManager?.closePdf()
+                pdfViewerManager = null
+                pdfFileUrl = null
+            }
+
+            activity?.runOnUiThread {
+                webView.visibility = View.VISIBLE
+                pdfContainer.visibility = View.GONE
+                webControlsLayout.visibility = View.VISIBLE
+                pdfControlsLayout.visibility = View.GONE
+                btnBack.visibility = View.VISIBLE
+                btnOpenInBrowser.visibility = View.VISIBLE
+            }
+
+            if (tab.webViewState != null) {
+                webView.restoreState(tab.webViewState)
+            } else {
+                webView.loadUrl(tab.url)
+            }
         }
 
         updateUIState()
+        updateDashboardButtonIcon()
+
+        L.d("MoodleFragment", "Switch complete - now on tab $currentTabIndex showing ${tab.url}")
     }
 
-    private fun refreshTabViewLayout() {
-        tabOverlayView?.let { overlayView ->
-            setupTabOverlayControls(overlayView)
+    private fun loadPdfTab(tab: TabInfo) {
+        val pdfFilePath = tab.webViewState?.getString("pdf_file_path")
 
-            tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
-            setupTabRecyclerView(overlayView)
+        if (pdfFilePath != null) {
+            val pdfFile = File(pdfFilePath)
+
+            if (pdfFile.exists()) {
+                pdfViewerManager?.closePdf()
+                pdfViewerManager = null
+
+                pdfViewerManager = PdfViewerManager(requireContext())
+
+                if (pdfViewerManager?.openPdf(pdfFile) == true) {
+                    val savedPage = tab.webViewState.getInt("pdf_current_page", 0)
+                    val scrollMode = tab.webViewState.getBoolean("pdf_scroll_mode", true)
+                    val darkMode = tab.webViewState.getBoolean("pdf_dark_mode", isDarkTheme)
+
+                    pdfViewerManager?.setCurrentPage(savedPage)
+                    if (!scrollMode) pdfViewerManager?.toggleScrollMode()
+                    if (darkMode != isDarkTheme) pdfViewerManager?.toggleDarkMode()
+
+                    webView.visibility = View.GONE
+                    pdfContainer.visibility = View.VISIBLE
+                    webControlsLayout.visibility = View.GONE
+                    pdfControlsLayout.visibility = View.VISIBLE
+
+                    btnBack.visibility = View.GONE
+                    btnOpenInBrowser.visibility = View.VISIBLE
+
+                    setupPdfControls()
+                    renderPdfContent()
+
+                    isAtTop = true
+                    showExtendedHeaderWithAnimation()
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_load_failed), Toast.LENGTH_SHORT).show()
+                    closeTab(currentTabIndex)
+                }
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.moodle_pdf_file_not_found), Toast.LENGTH_SHORT).show()
+                closeTab(currentTabIndex)
+            }
+        }
+    }
+
+    private fun setupPdfControls() {
+        btnOpenInBrowser2.setOnClickListener {
+            val pdfUrl = pdfFileUrl ?: tabs.getOrNull(currentTabIndex)?.url
+            if (!pdfUrl.isNullOrBlank()) {
+                openInExternalBrowser(pdfUrl)
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.moodle_no_url_to_open), Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnOpenInBrowser2.setOnLongClickListener {
+            showPdfGlobeButtonMenu()
+            true
+        }
+
+        pdfPageCounter.setOnClickListener {
+            showPdfPageMenu()
+        }
+
+        pdfKebabMenu.setOnClickListener {
+            showPdfOptionsMenu()
+        }
+
+        updatePdfControls()
+    }
+
+    private fun showPdfGlobeButtonMenu() {
+        val pdfUrl = pdfFileUrl ?: tabs.getOrNull(currentTabIndex)?.url
+        if (pdfUrl.isNullOrBlank()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_no_url), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val popup = PopupMenu(requireContext(), btnOpenInBrowser2)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_in_new_tab)).apply {
+            setIcon(R.drawable.ic_tab_background)
+        }
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_copy_url)).apply {
+            setIcon(R.drawable.ic_import_clipboard)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (_: Exception) { }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    createNewTabFromPdf(pdfUrl)
+                    Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
+                    true
+                }
+                2 -> {
+                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText(getString(R.string.moodle_url), pdfUrl)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun createNewTabFromPdf(url: String) {
+        if (tabs.size >= MAX_TABS) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_max_tabs_reached), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        saveCurrentTabState()
+
+        val newTab = TabInfo(
+            url = url,
+            title = getString(R.string.act_set_loading)
+        )
+        tabs.add(newTab)
+        currentTabIndex = tabs.size - 1
+
+        webView.visibility = View.VISIBLE
+        pdfContainer.visibility = View.GONE
+        webControlsLayout.visibility = View.VISIBLE
+        pdfControlsLayout.visibility = View.GONE
+        btnBack.visibility = View.VISIBLE
+
+        webView.loadUrl(url)
+        updateUIState()
+    }
+
+    private fun renderPdfContent() {
+        if (pdfViewerManager?.scrollModeEnabled == true) {
+            pdfScrollContainer.visibility = View.VISIBLE
+            pdfSinglePageContainer.visibility = View.GONE
+            renderAllPdfPages()
+            setupScrollListener()
+            updatePdfControlsForScrollMode()
+        } else {
+            pdfScrollContainer.visibility = View.GONE
+            pdfSinglePageContainer.visibility = View.VISIBLE
+            renderSinglePdfPage(pdfViewerManager?.getCurrentPage() ?: 0)
+            setupSwipeGestures()
+            updatePdfControls()
+        }
+    }
+
+    private fun updatePdfControlsForScrollMode() {
+        pdfScrollContainer.viewTreeObserver.addOnScrollChangedListener {
+            updateCurrentPageFromScroll()
+        }
+        updatePdfControls()
+    }
+
+    private fun updateCurrentPageFromScroll() {
+        val scrollY = pdfScrollContainer.scrollY
+        var currentPageIndex = 0
+        var accumulatedHeight = 0
+
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            accumulatedHeight += child.height + child.marginBottom
+            if (scrollY < accumulatedHeight) {
+                currentPageIndex = i
+                break
+            }
+        }
+
+        if (currentPageIndex != pdfViewerManager?.getCurrentPage()) {
+            pdfViewerManager?.setCurrentPage(currentPageIndex)
+            updatePdfControls()
+        }
+    }
+
+    private val View.marginBottom: Int
+        get() = (layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+
+    private fun setupScrollListener() {
+        if (scrollStopHandler == null) {
+            scrollStopHandler = Handler(Looper.getMainLooper())
+        }
+
+        pdfScrollContainer.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            if (ignoreScrollUpdates) {
+                return@setOnScrollChangeListener
+            }
+
+            val wasAtTop = isAtTop
+            isAtTop = scrollY <= scrollThreshold
+
+            if (wasAtTop != isAtTop) {
+                if (isAtTop) {
+                    showExtendedHeaderWithAnimation()
+                } else {
+                    hideExtendedHeaderWithAnimation()
+                }
+            }
+
+            isScrolling = true
+
+            scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
+
+            loadVisiblePages()
+
+            if (!isNavigating) {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastUnloadTime > UNLOAD_THROTTLE_MS) {
+                    lastUnloadTime = currentTime
+                    unloadDistantPages()
+                }
+            }
+
+            scrollStopRunnable = Runnable {
+                isScrolling = false
+                if (!isNavigating && !ignoreScrollUpdates) {
+                    unloadDistantPages()
+                }
+            }
+            scrollStopHandler?.postDelayed(scrollStopRunnable!!, 200)
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupSwipeGestures() {
+        var startX = 0f
+        var startY = 0f
+
+        pdfSinglePageView.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = event.x
+                    startY = event.y
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val deltaX = event.x - startX
+                    val deltaY = event.y - startY
+
+                    if (abs(deltaX) > abs(deltaY) && abs(deltaX) > 100) {
+                        if (deltaX > 0) {
+                            // swipe right -> previous page
+                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                            if (currentPage > 0) {
+                                pdfViewerManager?.setCurrentPage(currentPage - 1)
+                                renderSinglePdfPage(currentPage - 1)
+                                updatePdfControls()
+                            }
+                        } else {
+                            // swipe left -> next page
+                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                            val pageCount = pdfViewerManager?.getPageCount() ?: 0
+                            if (currentPage < pageCount - 1) {
+                                pdfViewerManager?.setCurrentPage(currentPage + 1)
+                                renderSinglePdfPage(currentPage + 1)
+                                updatePdfControls()
+                            }
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -4041,21 +4520,32 @@ class MoodleFragment : Fragment() {
 
         saveCurrentTabState()
 
+        val wasPdfTab = isPdfTab(currentTabIndex)
+        if (wasPdfTab) {
+            pdfViewerManager?.closePdf()
+        }
+
         val newTab = TabInfo(
             url = url,
-            title = "New Tab"
+            title = getString(R.string.moodle_new_tab)
         )
         tabs.add(newTab)
         currentTabIndex = tabs.size - 1
 
+        webView.visibility = View.VISIBLE
+        pdfContainer.visibility = View.GONE
+        webControlsLayout.visibility = View.VISIBLE
+        pdfControlsLayout.visibility = View.GONE
+        btnBack.visibility = View.VISIBLE
+        btnOpenInBrowser.visibility = View.VISIBLE
+
         webView.loadUrl(url)
         updateUIState()
+        updateDashboardButtonIcon()
 
         if (isTabViewVisible) {
-            refreshTabViewLayout()
+            hideTabOverlay()
         }
-
-        hideTabOverlay()
     }
 
     private fun closeTab(index: Int) {
@@ -4066,20 +4556,29 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        val wasClosingCurrentTab = (index == currentTabIndex)
+
         tabs[index].thumbnail?.recycle()
         tabs.removeAt(index)
 
-        if (currentTabIndex >= tabs.size) {
-            currentTabIndex = tabs.size - 1
-        } else if (index <= currentTabIndex && currentTabIndex > 0) {
-            currentTabIndex--
+        val newCurrentIndex = when {
+            index < currentTabIndex -> currentTabIndex - 1
+            index == currentTabIndex -> {
+                if (index >= tabs.size) tabs.size - 1 else index
+            }
+            else -> currentTabIndex
         }
 
-        switchToTab(currentTabIndex)
+        if (wasClosingCurrentTab) {
+            switchToTab(newCurrentIndex)
+        } else {
+            currentTabIndex = newCurrentIndex
+        }
+
         savePinnedTabs()
 
         if (isTabViewVisible && !isDraggingTab) {
-            refreshTabViewLayout()
+            tabAdapter.notifyDataSetChanged()
         }
     }
 
@@ -4087,10 +4586,16 @@ class MoodleFragment : Fragment() {
         tabs.forEach { it.thumbnail?.recycle() }
         tabs.clear()
 
-        tabs.add(TabInfo(url = "$moodleBaseUrl/my/", title = "Dashboard"))
+        tabs.add(TabInfo(
+            id = "default_tab",
+            url = "$moodleBaseUrl/my/",
+            title = "Dashboard",
+            isDefault = true
+        ))
         currentTabIndex = 0
         webView.loadUrl("$moodleBaseUrl/my/")
 
+        savePinnedTabs()
         Toast.makeText(requireContext(), getString(R.string.moodle_tabs_cleared), Toast.LENGTH_SHORT).show()
     }
 
@@ -4104,22 +4609,29 @@ class MoodleFragment : Fragment() {
 
         if (currentTabIndex in tabs.indices) {
             val currentTab = tabs[currentTabIndex]
-            tabs[currentTabIndex] = currentTab.copy(
-                url = webView.url ?: currentTab.url,
-                title = webView.title ?: currentTab.title,
-                thumbnail = captureWebViewThumbnail()
-            )
-        } else if (tabs.isEmpty()) {
-            val defaultTab = TabInfo(
-                id = "default_tab",
-                url = webView.url ?: loginUrl,
-                title = webView.title ?: "Moodle",
-                isPinned = false,
-                isDefault = true,
-                thumbnail = captureWebViewThumbnail()
-            )
-            tabs.add(defaultTab)
-            currentTabIndex = 0
+
+            if (isPdfTab(currentTabIndex)) {
+                val pdfState = pdfViewerManager?.getCurrentState()
+                val bundle = Bundle().apply {
+                    putString("pdf_file_path", pdfState?.file?.absolutePath)
+                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
+                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
+                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
+                }
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = pdfFileUrl ?: currentTab.url,
+                    title = currentTab.title,
+                    thumbnail = capturePdfThumbnail(),
+                    webViewState = bundle
+                )
+            } else {
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = webView.url ?: currentTab.url,
+                    title = webView.title ?: currentTab.title,
+                    thumbnail = captureWebViewThumbnail()
+                )
+            }
         }
 
         isTabViewVisible = true
@@ -4512,7 +5024,7 @@ class MoodleFragment : Fragment() {
 
         tabAdapter = TabAdapter(
             tabs = tabs,
-            currentTabIndex = currentTabIndex,
+            getCurrentTabIndex = { currentTabIndex },
             isCompactLayout = isCompactTabLayout,
             itemWidth = itemWidth,
             itemHeight = itemHeight,
@@ -4736,210 +5248,864 @@ class MoodleFragment : Fragment() {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
-    private fun showPdfViewer(pdfFile: File, fileName: String) {
-        try {
-            val fileDescriptor = ParcelFileDescriptor.open(
-                pdfFile,
-                ParcelFileDescriptor.MODE_READ_ONLY
-            )
-            pdfRenderer = PdfRenderer(fileDescriptor)
-            currentPdfPage = 0
+    private fun showPdfViewer(pdfFile: File, fileName: String, pdfUrl: String) {
+        if (tabs.size >= MAX_TABS) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_max_tabs_reached), Toast.LENGTH_SHORT).show()
+            return
+        }
 
-            saveCurrentTabState()
-            val pdfTab = TabInfo(
-                url = pdfFile.absolutePath,
-                title = fileName.removeSuffix(".pdf")
-            )
-            tabs.add(pdfTab)
-            currentTabIndex = tabs.size - 1
+        val permanentPdfDir = File(requireContext().filesDir, "moodle_pdfs")
+        if (!permanentPdfDir.exists()) {
+            permanentPdfDir.mkdirs()
+        }
 
-            val overlayView = layoutInflater.inflate(R.layout.overlay_pdf_viewer, null)
-            pdfViewerOverlay = overlayView
+        val uniqueFileName = "${System.currentTimeMillis()}_${UUID.randomUUID()}_${fileName}"
+        val permanentPdfFile = File(permanentPdfDir, uniqueFileName)
 
-            val rootView = view as ViewGroup
-            rootView.addView(overlayView)
+        if (permanentPdfFile.exists()) {
+            permanentPdfFile.delete()
+        }
+        pdfFile.copyTo(permanentPdfFile, overwrite = false)
 
-            setupPdfViewerControls(overlayView, pdfFile, fileName)
-            renderPdfPage()
+        saveCurrentTabState()
 
-            isPdfViewerVisible = true
+        if (isPdfTab(currentTabIndex)) {
+            pdfViewerManager?.closePdf()
+            pdfViewerManager = null
+        }
 
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error opening PDF", e)
-            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_render_failed), Toast.LENGTH_SHORT).show()
+        val actualPdfUrl = pdfFileUrl ?: pdfUrl
+        val cleanFileName = fileName.removeSuffix(".pdf")
+
+        val pdfTab = TabInfo(
+            id = "$PDF_TAB_PREFIX${System.currentTimeMillis()}",
+            url = actualPdfUrl,
+            title = cleanFileName,
+            isPinned = false,
+            isDefault = false,
+            thumbnail = null,
+            webViewState = Bundle().apply {
+                putString("pdf_file_path", permanentPdfFile.absolutePath)
+                putInt("pdf_current_page", 0)
+                putBoolean("pdf_scroll_mode", true)
+                putBoolean("pdf_dark_mode", isDarkTheme)
+            }
+        )
+        tabs.add(pdfTab)
+        currentTabIndex = tabs.size - 1
+
+        loadPdfTab(pdfTab)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (currentTabIndex in tabs.indices && tabs[currentTabIndex].id == pdfTab.id) {
+                tabs[currentTabIndex] = tabs[currentTabIndex].copy(
+                    thumbnail = capturePdfThumbnail()
+                )
+                savePinnedTabs()
+            }
+        }, 500)
+
+        if (isTabViewVisible) {
+            hideTabOverlay()
         }
     }
 
-    private fun setupPdfViewerControls(overlayView: View, pdfFile: File, fileName: String) {
-        pdfImageView = overlayView.findViewById(R.id.pdfImageView)
-        pdfPageIndicator = overlayView.findViewById(R.id.pdfPageIndicator)
+    private fun renderAllPdfPages() {
+        pdfPagesContainer.removeAllViews()
 
-        val btnPrevPage = overlayView.findViewById<ImageButton>(R.id.btnPrevPage)
-        val btnNextPage = overlayView.findViewById<ImageButton>(R.id.btnNextPage)
-        val btnClosePdf = overlayView.findViewById<ImageButton>(R.id.btnClosePdf)
-        val btnPdfOptions = overlayView.findViewById<ImageButton>(R.id.btnPdfOptions)
+        val pageCount = pdfViewerManager?.getPageCount() ?: 0
 
-        btnPrevPage.setOnClickListener {
-            if (currentPdfPage > 0) {
-                currentPdfPage--
-                renderPdfPage()
+        for (page in 0 until pageCount) {
+            val imageView = ImageView(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = (16 * resources.displayMetrics.density).toInt()
+                }
+                adjustViewBounds = true
+                tag = page
+
+                setBackgroundColor(android.graphics.Color.LTGRAY)
+                minimumHeight = (800 * resources.displayMetrics.density).toInt()
             }
-        }
 
-        btnNextPage.setOnClickListener {
-            pdfRenderer?.let { renderer ->
-                if (currentPdfPage < renderer.pageCount - 1) {
-                    currentPdfPage++
-                    renderPdfPage()
+            if (page < 3) {
+                val bitmap = pdfViewerManager?.renderPage(page)
+                if (bitmap != null && !bitmap.isRecycled) {
+                    imageView.setImageBitmap(bitmap)
+                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    imageView.minimumHeight = 0
                 }
             }
+
+            pdfPagesContainer.addView(imageView)
         }
 
-        btnClosePdf.setOnClickListener {
-            closePdfViewer()
-            closeTab(currentTabIndex)
-        }
-
-        btnPdfOptions.setOnClickListener {
-            showPdfOptionsMenu(pdfFile, fileName)
+        pdfScrollContainer.viewTreeObserver.addOnScrollChangedListener {
+            loadVisiblePages()
         }
     }
 
-    private fun renderPdfPage() {
-        pdfRenderer?.let { renderer ->
-            if (currentPdfPage >= 0 && currentPdfPage < renderer.pageCount) {
-                val page = renderer.openPage(currentPdfPage)
+    private fun loadVisiblePages() {
+        val scrollY = pdfScrollContainer.scrollY
+        val height = pdfScrollContainer.height
 
-                val bitmap = createBitmap(page.width * 2, page.height * 2)
+        val currentlyVisiblePages = mutableSetOf<Int>()
+        val pagesToLoad = mutableListOf<Pair<Int, Int>>()
 
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                pdfImageView.setImageBitmap(bitmap)
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val childTop = child.top
+            val childBottom = child.bottom
+            val pageNumber = child.tag as? Int ?: continue
 
-                pdfPageIndicator.text = getString(
-                    R.string.moodle_pdf_page_indicator,
-                    currentPdfPage + 1,
-                    renderer.pageCount
-                )
+            val isInViewport = childBottom > scrollY && childTop < scrollY + height
+            val isNearby = childBottom > scrollY - height * 1.5 && childTop < scrollY + height * 2.5
 
-                page.close()
+            if (isInViewport) {
+                currentlyVisiblePages.add(pageNumber)
+            }
+
+            val imageView = child as? ImageView ?: continue
+
+            if (isNearby && imageView.drawable == null) {
+                val distanceFromViewport = when {
+                    childTop > scrollY + height -> childTop - (scrollY + height)
+                    childBottom < scrollY -> scrollY - childBottom
+                    else -> 0
+                }
+                pagesToLoad.add(Pair(pageNumber, distanceFromViewport))
+            }
+        }
+
+        pdfViewerManager?.updateDisplayedPages(currentlyVisiblePages)
+
+        pagesToLoad.sortedBy { it.second }.take(5).forEach { (pageNumber, _) ->
+            loadPageInBackground(pageNumber)
+        }
+    }
+
+    private fun loadPageInBackground(pageNumber: Int) {
+        backgroundExecutor.execute {
+            try {
+                val bitmap = pdfViewerManager?.renderPage(pageNumber, forceRender = false)
+
+                if (bitmap != null && !bitmap.isRecycled) {
+                    activity?.runOnUiThread {
+                        if (bitmap.isRecycled) {
+                            L.w("MoodleFragment", "Bitmap for page $pageNumber was recycled before UI update")
+                            return@runOnUiThread
+                        }
+
+                        val child = pdfPagesContainer.getChildAt(pageNumber)
+                        val imageView = child as? ImageView
+
+                        if (imageView != null && imageView.drawable == null) {
+                            try {
+                                imageView.setImageBitmap(bitmap)
+                                imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+
+                                imageView.minimumHeight = 0
+                                val layoutParams = imageView.layoutParams
+                                layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                                imageView.layoutParams = layoutParams
+                            } catch (e: Exception) {
+                                L.e("MoodleFragment", "Failed to set bitmap on ImageView", e)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error loading page $pageNumber in background", e)
             }
         }
     }
 
-    private fun closePdfViewer() {
-        pdfRenderer?.close()
-        pdfRenderer = null
+    private fun unloadDistantPages() {
+        if (isScrolling || isNavigating) return
 
-        pdfViewerOverlay?.let { overlay ->
-            (view as? ViewGroup)?.removeView(overlay)
-            pdfViewerOverlay = null
+        val scrollY = pdfScrollContainer.scrollY
+        val height = pdfScrollContainer.height
+
+        val pagesToUnload = mutableListOf<Int>()
+
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val childTop = child.top
+            val childBottom = child.bottom
+            val pageNumber = child.tag as? Int ?: continue
+
+            val imageView = child as? ImageView ?: continue
+
+            val isFarAway = (childBottom < scrollY - height * 1.5) || (childTop > scrollY + height * 2.5)
+            val hasContent = imageView.drawable != null
+
+            if (isFarAway && hasContent) {
+                pagesToUnload.add(pageNumber)
+            }
         }
 
-        isPdfViewerVisible = false
+        if (pagesToUnload.isNotEmpty()) {
+            L.d("MoodleFragment", "Unloading ${pagesToUnload.size} distant pages")
+        }
+
+        pagesToUnload.forEach { pageNumber ->
+            val child = pdfPagesContainer.getChildAt(pageNumber)
+            val imageView = child as? ImageView ?: return@forEach
+
+            val currentHeight = imageView.height
+
+            imageView.setImageDrawable(null)
+            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+
+            if (currentHeight > 0) {
+                imageView.minimumHeight = currentHeight
+                val layoutParams = imageView.layoutParams
+                layoutParams.height = currentHeight
+                imageView.layoutParams = layoutParams
+            } else {
+                imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
+            }
+        }
     }
 
-    private fun showPdfOptionsMenu(pdfFile: File, fileName: String) {
-        val options = arrayOf(
-            getString(R.string.moodle_pdf_download),
-            getString(R.string.moodle_pdf_share),
-            getString(R.string.moodle_pdf_copy_text),
-            getString(R.string.moodle_pdf_search)
-        )
+    private fun renderSinglePdfPage(page: Int) {
+        val bitmap = pdfViewerManager?.renderPage(page)
+        pdfSinglePageView.setImageBitmap(bitmap)
+    }
+
+    private fun updatePdfControls() {
+        val currentPage = (pdfViewerManager?.getCurrentPage() ?: 0) + 1
+        val totalPages = pdfViewerManager?.getPageCount() ?: 0
+        pdfPageCounter.text = getString(R.string.moodle_pdf_page_indicator, currentPage, totalPages)
+    }
+
+    private fun isPdfTab(index: Int): Boolean {
+        return index in tabs.indices && tabs[index].id.startsWith(PDF_TAB_PREFIX)
+    }
+
+    private fun showPdfPageMenu() {
+        val popup = PopupMenu(requireContext(), pdfPageCounter)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_pdf_navigate_to_page)).setIcon(R.drawable.ic_navigate)
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_pdf_copy_current_page)).setIcon(R.drawable.ic_copy_text)
+
+        val scrollText = if (pdfViewerManager?.scrollModeEnabled == true) {
+            getString(R.string.moodle_pdf_enable_swipe_mode)
+        } else {
+            getString(R.string.moodle_pdf_enable_scroll_mode)
+        }
+        val scrollIcon = if (pdfViewerManager?.scrollModeEnabled == true) {
+            R.drawable.ic_scroll_horizontal
+        } else {
+            R.drawable.ic_scroll_vertical
+        }
+        popup.menu.add(0, 3, 0, scrollText).setIcon(scrollIcon)
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass.getDeclaredMethod("setForceShowIcon", Boolean::class.java).invoke(mPopup, true)
+        } catch (_: Exception) { }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> showNavigateToPageDialog()
+                2 -> copyCurrentPageText()
+                3 -> togglePdfScrollMode()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun showNavigateToPageDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_pdf_navigate, null)
+        val tvInfo = dialogView.findViewById<TextView>(R.id.tvNavigateInfo)
+        val editText = dialogView.findViewById<EditText>(R.id.editTextPageNumber)
+
+        val pageCount = pdfViewerManager?.getPageCount() ?: 0
+        tvInfo.text = getString(R.string.moodle_pdf_navigate_info, pageCount)
+        editText.hint = getString(R.string.moodle_pdf_page_number_hint)
 
         val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_pdf_options))
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        savePdfToDownloads(pdfFile, fileName)
-                    }
-                    1 -> sharePdf(pdfFile)
-                    2 -> copyPdfText(pdfFile)
-                    3 -> searchInPdf()
+            .setTitle(getString(R.string.moodle_pdf_navigate_to_page))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.moodle_go)) { _, _ ->
+                val pageNum = editText.text.toString().toIntOrNull()
+                if (pageNum != null && pageNum > 0 && pageNum <= pageCount) {
+                    navigateToPdfPage(pageNum - 1)
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_invalid_page), Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton(getString(R.string.moodle_cancel), null)
             .show()
 
         val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
+    private fun navigateToPdfPage(targetPage: Int) {
+        isNavigating = true
 
-    private fun savePdfToDownloads(pdfFile: File, fileName: String) {
-        try {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val destFile = File(downloadsDir, fileName)
+        val currentPagePosition = pdfViewerManager?.getCurrentPage() ?: 0
+        val pageDistance = abs(targetPage - currentPagePosition)
 
-            pdfFile.copyTo(destFile, overwrite = true)
-            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_saved, fileName), Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error saving PDF", e)
-            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_save_failed), Toast.LENGTH_SHORT).show()
+        // close pages -> smooth nav
+        if (pageDistance <= 5) {
+            performSmoothPageNavigation(targetPage)
+        } else {
+            // far away pages -> optimized nav
+            performJumpPageNavigation(targetPage)
         }
     }
 
-    private fun sharePdf(pdfFile: File) {
-        try {
-            val uri = FileProvider.getUriForFile(
-                requireContext(),
-                "${requireContext().packageName}.fileprovider",
-                pdfFile
-            )
+    private fun performSmoothPageNavigation(targetPage: Int) {
+        val loadingDialogView = layoutInflater.inflate(R.layout.dialog_pdf_loading, null)
+        val tvStatus = loadingDialogView.findViewById<TextView>(R.id.tvPdfLoadingStatus)
+        val progressBar = loadingDialogView.findViewById<ProgressBar>(R.id.progressBarPdfLoading)
+        val btnCancel = loadingDialogView.findViewById<Button>(R.id.btnCancelPdfLoading)
 
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+        btnCancel.visibility = View.GONE
 
-            startActivity(Intent.createChooser(intent, getString(R.string.moodle_share_pdf)))
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error sharing PDF", e)
-            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_share_failed), Toast.LENGTH_SHORT).show()
-        }
-    }
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setView(loadingDialogView)
+            .setCancelable(false)
+            .create()
 
-    private fun copyPdfText(pdfFile: File) {
+        loadingDialog.show()
+
         backgroundExecutor.execute {
             try {
-                val fileInputStream = FileInputStream(pdfFile)
-                val pdfReader = PdfReader(fileInputStream)
-                val textBuilder = StringBuilder()
+                activity?.runOnUiThread {
+                    tvStatus.text = getString(R.string.moodle_loading_page, targetPage + 1)
+                    progressBar.progress = 20
+                }
 
-                for (page in 1..pdfReader.numberOfPages) {
-                    val strategy = LocationTextExtractionStrategy()
-                    val pageText = PdfTextExtractor.getTextFromPage(
-                        pdfReader,
-                        page,
-                        strategy
-                    )
-                    textBuilder.append(pageText)
-                    if (page < pdfReader.numberOfPages) {
-                        textBuilder.append("\n\n--- Page ${page + 1} ---\n\n")
+                val pagesToLoad = mutableListOf<Int>()
+
+                if (pdfViewerManager?.scrollModeEnabled == true) {
+                    pagesToLoad.add(targetPage)
+                    if (targetPage > 0) pagesToLoad.add(targetPage - 1)
+                    if (targetPage < (pdfViewerManager?.getPageCount() ?: 0) - 1) {
+                        pagesToLoad.add(targetPage + 1)
+                        if (targetPage < (pdfViewerManager?.getPageCount() ?: 0) - 2) {
+                            pagesToLoad.add(targetPage + 2)
+                        }
+                    }
+                } else {
+                    pagesToLoad.add(targetPage)
+                    if (targetPage > 0) pagesToLoad.add(targetPage - 1)
+                    if (targetPage < (pdfViewerManager?.getPageCount() ?: 0) - 1) {
+                        pagesToLoad.add(targetPage + 1)
                     }
                 }
 
-                pdfReader.close()
-                fileInputStream.close()
+                pagesToLoad.forEachIndexed { index, page ->
+                    pdfViewerManager?.renderPage(page, forceRender = false)
+                    val progress = 20 + ((index + 1) * 60 / pagesToLoad.size)
+                    activity?.runOnUiThread {
+                        progressBar.progress = progress
+                    }
+                }
+
+                pdfViewerManager?.setCurrentPage(targetPage)
 
                 activity?.runOnUiThread {
-                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("PDF Text", textBuilder.toString())
-                    clipboard.setPrimaryClip(clip)
-                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_text_copied), Toast.LENGTH_SHORT).show()
+                    progressBar.progress = 90
+
+                    if (pdfViewerManager?.scrollModeEnabled == true) {
+                        updateAllLoadedPagesInScrollMode(pagesToLoad)
+                        scrollToPage(targetPage)
+                    } else {
+                        renderSinglePdfPage(targetPage)
+                    }
+                    updatePdfControls()
+
+                    progressBar.progress = 100
+                    loadingDialog.dismiss()
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        isNavigating = false
+                    }, 1000)
                 }
             } catch (e: Exception) {
-                L.e("MoodleFragment", "Error copying PDF text", e)
+                L.e("MoodleFragment", "Error navigating to page", e)
                 activity?.runOnUiThread {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_copy_failed), Toast.LENGTH_SHORT).show()
+                    loadingDialog.dismiss()
+                    isNavigating = false
+                    Toast.makeText(requireContext(), getString(R.string.moodle_page_load_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
-    private fun searchInPdf() {
-        Toast.makeText(requireContext(), "PDF search coming soon", Toast.LENGTH_SHORT).show()
+    private fun performJumpPageNavigation(targetPage: Int) {
+        val loadingDialogView = layoutInflater.inflate(R.layout.dialog_pdf_loading, null)
+        val tvStatus = loadingDialogView.findViewById<TextView>(R.id.tvPdfLoadingStatus)
+        val progressBar = loadingDialogView.findViewById<ProgressBar>(R.id.progressBarPdfLoading)
+        val btnCancel = loadingDialogView.findViewById<Button>(R.id.btnCancelPdfLoading)
+
+        btnCancel.visibility = View.GONE
+
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setView(loadingDialogView)
+            .setCancelable(false)
+            .create()
+
+        loadingDialog.show()
+
+        pdfScrollContainer.setOnScrollChangeListener(null)
+
+        backgroundExecutor.execute {
+            try {
+                activity?.runOnUiThread {
+                    tvStatus.text = getString(R.string.moodle_loading_page, targetPage + 1)
+                    progressBar.progress = 10
+                }
+
+                pdfViewerManager?.clearAllCacheForJump()
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 20
+                    tvStatus.text = getString(R.string.moodle_preparing_pages)
+                }
+
+                var averageHeight = 0
+                val samplesToCheck = minOf(3, pdfViewerManager?.getPageCount() ?: 0)
+                for (i in 0 until samplesToCheck) {
+                    val bitmap = pdfViewerManager?.renderPage(i, forceRender = false)
+                    if (bitmap != null && !bitmap.isRecycled) {
+                        averageHeight += bitmap.height
+                    }
+                }
+                averageHeight = if (samplesToCheck > 0) averageHeight / samplesToCheck else (1400 * requireContext().resources.displayMetrics.density).toInt()
+
+                L.d("MoodleFragment", "Average page height: $averageHeight")
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 40
+
+                    for (i in 0 until pdfPagesContainer.childCount) {
+                        val child = pdfPagesContainer.getChildAt(i)
+                        val imageView = child as? ImageView ?: continue
+
+                        imageView.setImageDrawable(null)
+                        imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+
+                        val layoutParams = imageView.layoutParams
+                        layoutParams.height = averageHeight
+                        imageView.layoutParams = layoutParams
+                    }
+                }
+
+                Thread.sleep(100)
+
+                pdfViewerManager?.setCurrentPage(targetPage)
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 50
+                }
+
+                val pagesToLoad = mutableListOf<Int>()
+
+                for (i in (targetPage - 3).coerceAtLeast(0) until (targetPage + 6).coerceAtMost(pdfViewerManager?.getPageCount() ?: 0)) {
+                    pagesToLoad.add(i)
+                }
+
+                pagesToLoad.forEachIndexed { index, page ->
+                    pdfViewerManager?.renderPage(page, forceRender = false)
+                    val progress = 50 + ((index + 1) * 30 / pagesToLoad.size)
+                    activity?.runOnUiThread {
+                        progressBar.progress = progress
+                    }
+                }
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 85
+
+                    updateLoadedPagesAfterJumpWithExplicitHeights(pagesToLoad)
+
+                    progressBar.progress = 90
+
+                    pdfPagesContainer.requestLayout()
+
+                    pdfPagesContainer.viewTreeObserver.addOnGlobalLayoutListener(
+                        object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                            override fun onGlobalLayout() {
+                                pdfPagesContainer.viewTreeObserver.removeOnGlobalLayoutListener(this)
+
+                                val targetChild = pdfPagesContainer.getChildAt(targetPage)
+                                if (targetChild != null) {
+                                    val targetY = targetChild.top
+                                    pdfScrollContainer.scrollTo(0, targetY)
+                                    L.d("MoodleFragment", "Scrolled to page $targetPage at Y=$targetY")
+                                }
+
+                                progressBar.progress = 100
+                                loadingDialog.dismiss()
+
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    setupScrollListener()
+                                    isNavigating = false
+
+                                    backgroundLoadSurroundingPages(targetPage)
+                                }, 800)
+                            }
+                        }
+                    )
+
+                    updatePdfControls()
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error in jump navigation", e)
+                activity?.runOnUiThread {
+                    loadingDialog.dismiss()
+                    setupScrollListener()
+                    isNavigating = false
+                    Toast.makeText(requireContext(), getString(R.string.moodle_page_load_failed), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun backgroundLoadSurroundingPages(centerPage: Int) {
+        backgroundExecutor.execute {
+            try {
+                val pageCount = pdfViewerManager?.getPageCount() ?: 0
+                val pagesToLoad = mutableListOf<Int>()
+
+                for (i in (centerPage - 8).coerceAtLeast(0) until (centerPage + 11).coerceAtMost(pageCount)) {
+                    if (pdfViewerManager?.getCachedPage(i) == null) {
+                        pagesToLoad.add(i)
+                    }
+                }
+
+                L.d("MoodleFragment", "Background loading ${pagesToLoad.size} surrounding pages")
+
+                pagesToLoad.forEach { page ->
+                    val bitmap = pdfViewerManager?.renderPage(page, forceRender = false)
+
+                    if (bitmap != null && !bitmap.isRecycled) {
+                        activity?.runOnUiThread {
+                            try {
+                                val child = pdfPagesContainer.getChildAt(page)
+                                val imageView = child as? ImageView ?: return@runOnUiThread
+
+                                if (!bitmap.isRecycled) {
+                                    imageView.setImageBitmap(bitmap)
+                                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+
+                                    val layoutParams = imageView.layoutParams
+                                    layoutParams.height = bitmap.height
+                                    imageView.layoutParams = layoutParams
+                                }
+                            } catch (e: Exception) {
+                                L.e("MoodleFragment", "Error updating page $page in background", e)
+                            }
+                        }
+                    }
+
+                    Thread.sleep(50)
+                }
+
+                L.d("MoodleFragment", "Background loading complete")
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error in background loading", e)
+            }
+        }
+    }
+
+    private fun updateLoadedPagesAfterJumpWithExplicitHeights(pagesToUpdate: List<Int>) {
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val pageNumber = child.tag as? Int ?: continue
+            val imageView = child as? ImageView ?: continue
+
+            if (pageNumber in pagesToUpdate) {
+                val bitmap = pdfViewerManager?.getCachedPage(pageNumber)
+                if (bitmap != null && !bitmap.isRecycled) {
+                    try {
+                        imageView.setImageBitmap(bitmap)
+                        imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        imageView.minimumHeight = 0
+
+                        val layoutParams = imageView.layoutParams
+                        layoutParams.height = bitmap.height
+                        imageView.layoutParams = layoutParams
+
+                        L.d("MoodleFragment", "Set page $pageNumber to explicit height ${bitmap.height}")
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Failed to set bitmap after jump", e)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun unloadAllPdfPages() {
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val imageView = child as? ImageView ?: continue
+
+            val currentHeight = imageView.height.coerceAtLeast((800 * resources.displayMetrics.density).toInt())
+
+            imageView.setImageDrawable(null)
+            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+            imageView.minimumHeight = currentHeight
+
+            val layoutParams = imageView.layoutParams
+            layoutParams.height = currentHeight
+            imageView.layoutParams = layoutParams
+        }
+    }
+
+    private fun scrollToPage(pageIndex: Int) {
+        var targetY = 0
+        for (i in 0 until pageIndex.coerceAtMost(pdfPagesContainer.childCount)) {
+            val child = pdfPagesContainer.getChildAt(i)
+            targetY += child.height + child.marginBottom
+        }
+        pdfScrollContainer.smoothScrollTo(0, targetY)
+    }
+
+    private fun copyCurrentPageText() {
+        val text = pdfViewerManager?.extractCurrentPageText()
+        if (text != null) {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText(getString(R.string.moodle_pdf_page_text), text)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_page_text_copied), Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_extract_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun togglePdfScrollMode() {
+        pdfViewerManager?.toggleScrollMode()
+        renderPdfContent()
+    }
+
+    private fun copyAllPdfText() {
+        val text = pdfViewerManager?.extractAllText()
+        if (text != null) {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText(getString(R.string.moodle_pdf_text), text)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_all_text_copied), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun downloadCurrentPdf() {
+        if (pdfViewerManager?.downloadPdf() == true) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_downloaded), Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_download_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun shareCurrentPdf() {
+        pdfViewerManager?.sharePdf()?.let { intent ->
+            startActivity(Intent.createChooser(intent, getString(R.string.moodle_pdf_share)))
+        }
+    }
+
+    private fun togglePdfDarkMode() {
+        val loadingDialogView = layoutInflater.inflate(R.layout.dialog_pdf_loading, null)
+        val tvStatus = loadingDialogView.findViewById<TextView>(R.id.tvPdfLoadingStatus)
+        val progressBar = loadingDialogView.findViewById<ProgressBar>(R.id.progressBarPdfLoading)
+        val btnCancel = loadingDialogView.findViewById<Button>(R.id.btnCancelPdfLoading)
+
+        btnCancel.visibility = View.GONE
+
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setView(loadingDialogView)
+            .setCancelable(false)
+            .create()
+
+        loadingDialog.show()
+
+        backgroundExecutor.execute {
+            try {
+                activity?.runOnUiThread {
+                    tvStatus.text = getString(R.string.moodle_applying_theme)
+                    progressBar.progress = 20
+                }
+
+                val visiblePages = getVisiblePageIndices()
+
+                pdfViewerManager?.toggleDarkMode()
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 40
+                    tvStatus.text = getString(R.string.moodle_clearing_pages)
+                }
+
+                activity?.runOnUiThread {
+                    clearAllPdfPageViews()
+                    progressBar.progress = 60
+                    tvStatus.text = getString(R.string.moodle_reloading_pages)
+                }
+
+                visiblePages.forEachIndexed { index, page ->
+                    pdfViewerManager?.renderPage(page, forceRender = true)
+                    val progress = 60 + ((index + 1) * 30 / visiblePages.size)
+                    activity?.runOnUiThread {
+                        progressBar.progress = progress
+                    }
+                }
+
+                activity?.runOnUiThread {
+                    progressBar.progress = 90
+
+                    if (pdfViewerManager?.scrollModeEnabled == true) {
+                        updateVisiblePdfPages(visiblePages)
+                        loadVisiblePages()
+                    } else {
+                        renderSinglePdfPage(pdfViewerManager?.getCurrentPage() ?: 0)
+                    }
+
+                    progressBar.progress = 100
+                    loadingDialog.dismiss()
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error toggling dark mode", e)
+                activity?.runOnUiThread {
+                    loadingDialog.dismiss()
+                }
+            }
+        }
+    }
+
+    private fun clearAllPdfPageViews() {
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val imageView = child as? ImageView ?: continue
+
+            (imageView.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap?.recycle()
+
+            imageView.setImageDrawable(null)
+            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+            imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
+        }
+    }
+
+    private fun updateVisiblePdfPages(pagesToUpdate: List<Int>) {
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val pageNumber = child.tag as? Int ?: continue
+
+            if (pageNumber in pagesToUpdate) {
+                val imageView = child as? ImageView ?: continue
+                val bitmap = pdfViewerManager?.getCachedPage(pageNumber)
+
+                if (bitmap != null && !bitmap.isRecycled) {
+                    imageView.setImageBitmap(bitmap)
+                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    imageView.minimumHeight = 0
+                }
+            }
+        }
+    }
+
+    private fun getVisiblePageIndices(): List<Int> {
+        val visiblePages = mutableListOf<Int>()
+
+        if (pdfViewerManager?.scrollModeEnabled == true) {
+            val scrollY = pdfScrollContainer.scrollY
+            val height = pdfScrollContainer.height
+
+            for (i in 0 until pdfPagesContainer.childCount) {
+                val child = pdfPagesContainer.getChildAt(i)
+                val childTop = child.top
+                val childBottom = child.bottom
+
+                if (childBottom > scrollY && childTop < scrollY + height) {
+                    val pageNumber = child.tag as? Int
+                    if (pageNumber != null) {
+                        visiblePages.add(pageNumber)
+                    }
+                }
+            }
+        } else {
+            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+            visiblePages.add(currentPage)
+        }
+
+        return visiblePages
+    }
+
+    private fun updateAllLoadedPagesInScrollMode(pagesToUpdate: List<Int>) {
+        for (i in 0 until pdfPagesContainer.childCount) {
+            val child = pdfPagesContainer.getChildAt(i)
+            val pageNumber = child.tag as? Int ?: continue
+
+            if (pageNumber in pagesToUpdate) {
+                val imageView = child as? ImageView ?: continue
+                val bitmap = pdfViewerManager?.getCachedPage(pageNumber)
+
+                if (bitmap != null && !bitmap.isRecycled) {
+                    try {
+                        imageView.setImageBitmap(bitmap)
+                        imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        imageView.minimumHeight = 0
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Bitmap was recycled while setting on ImageView", e)
+                        imageView.setImageDrawable(null)
+                        imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+                        imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun searchInPdfImplemented() {
+        Toast.makeText(requireContext(), getString(R.string.moodle_pdf_search_coming_soon), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showPdfOptionsMenu() {
+        val popup = PopupMenu(requireContext(), pdfKebabMenu)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_pdf_search)).setIcon(R.drawable.ic_search)
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_pdf_copy_all_text)).setIcon(R.drawable.ic_copy_text)
+        popup.menu.add(0, 3, 0, getString(R.string.moodle_pdf_download)).setIcon(R.drawable.ic_download)
+        popup.menu.add(0, 4, 0, getString(R.string.moodle_pdf_share)).setIcon(R.drawable.ic_share)
+
+        val darkModeText = if (pdfViewerManager?.forceDarkMode == true) {
+            getString(R.string.moodle_pdf_disable_dark_mode)
+        } else {
+            getString(R.string.moodle_pdf_enable_dark_mode)
+        }
+        val darkModeIcon = if (pdfViewerManager?.forceDarkMode == true) {
+            R.drawable.ic_light_mode
+        } else {
+            R.drawable.ic_dark_mode
+        }
+        popup.menu.add(0, 5, 0, darkModeText).setIcon(darkModeIcon)
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass.getDeclaredMethod("setForceShowIcon", Boolean::class.java).invoke(mPopup, true)
+        } catch (_: Exception) { }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> searchInPdfImplemented()
+                2 -> copyAllPdfText()
+                3 -> downloadCurrentPdf()
+                4 -> shareCurrentPdf()
+                5 -> togglePdfDarkMode()
+            }
+            true
+        }
+        popup.show()
     }
 
     private fun handleInterceptedDownload(
@@ -4949,9 +6115,6 @@ class MoodleFragment : Fragment() {
         mimetype: String? = null
     ) {
         L.d("MoodleFragment", "Handling intercepted download")
-        L.d("MoodleFragment", "URL: $url")
-        L.d("MoodleFragment", "MimeType: $mimetype")
-        L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
 
         val fileName = when {
             contentDisposition.contains("filename=") -> {
@@ -4967,24 +6130,14 @@ class MoodleFragment : Fragment() {
             }
         }
 
-        L.d("MoodleFragment", "Extracted filename: $fileName")
-
-        val isPdf = mimetype == "application/pdf" ||
-                fileName.endsWith(".pdf", ignoreCase = true) ||
-                url.contains(".pdf", ignoreCase = true)
-
+        val isPdf = mimetype == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)
         val isDocx = mimetype?.contains("wordprocessingml") == true ||
-                fileName.endsWith(".docx", ignoreCase = true) ||
-                url.contains(".docx", ignoreCase = true)
+                fileName.endsWith(".docx", ignoreCase = true)
 
-        L.d("MoodleFragment", "File type detection - PDF: $isPdf, DOCX: $isDocx")
-
-        if (isPdf && tabs.size < MAX_TABS) {
-            L.d("MoodleFragment", "Opening PDF in viewer")
-            handlePdfForViewerWithCookies(url, cookies)
-        } else {
-            L.d("MoodleFragment", "Starting download to device")
-            downloadToDeviceWithCookies(url, cookies, contentDisposition)
+        when {
+            isPdf && tabs.size < MAX_TABS -> handlePdfForViewerWithCookies(url, cookies)
+            isDocx && tabs.size < MAX_TABS -> handleDocxFile(url, cookies, forceDownload = false)
+            else -> downloadToDeviceWithCookies(url, cookies, contentDisposition)
         }
     }
 
@@ -5033,90 +6186,141 @@ class MoodleFragment : Fragment() {
     }
 
     private fun handlePdfForViewerWithCookies(url: String, cookies: String?) {
+        pdfFileUrl = url
+
+        var loadingCancelled = false
+        val dialogView = layoutInflater.inflate(R.layout.dialog_pdf_loading, null)
+        val tvStatus = dialogView.findViewById<TextView>(R.id.tvPdfLoadingStatus)
+        val progressBar = dialogView.findViewById<ProgressBar>(R.id.progressBarPdfLoading)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelPdfLoading)
+
         val progressDialog = AlertDialog.Builder(requireContext())
-            .setMessage(getString(R.string.moodle_loading_pdf))
+            .setView(dialogView)
             .setCancelable(false)
             .show()
 
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        progressDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        progressDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-        progressDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+        btnCancel.setOnClickListener {
+            loadingCancelled = true
+            progressDialog.dismiss()
+        }
 
         backgroundExecutor.execute {
             try {
+                activity?.runOnUiThread {
+                    tvStatus.text = getString(R.string.moodle_downloading_pdf)
+                    progressBar.progress = 0
+                }
+
                 val connection = URL(url).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
 
                 if (!cookies.isNullOrBlank()) {
                     connection.setRequestProperty("Cookie", cookies)
-                    L.d("MoodleFragment", "Using pre-captured cookies for PDF")
-                } else {
-                    L.w("MoodleFragment", "WARNING: No cookies for PDF download!")
                 }
 
                 connection.setRequestProperty("User-Agent", userAgent)
                 connection.setRequestProperty("Referer", moodleBaseUrl)
-                connection.setRequestProperty("Accept", "application/pdf,*/*")
                 connection.connectTimeout = 30000
                 connection.readTimeout = 30000
-                connection.instanceFollowRedirects = false
 
-                val responseCode = connection.responseCode
-                L.d("MoodleFragment", "PDF download response: $responseCode")
+                if (connection.responseCode == 200 && !loadingCancelled) {
+                    val contentLength = connection.contentLength
+                    val inputStream = connection.inputStream
+                    val outputStream = ByteArrayOutputStream()
 
-                if (responseCode == 200) {
-                    val cacheDir = requireContext().cacheDir
-                    val pdfFile = File(cacheDir, "moodle_pdf_${System.currentTimeMillis()}.pdf")
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
 
-                    connection.inputStream.use { input ->
-                        pdfFile.outputStream().use { output ->
-                            input.copyTo(output)
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1 && !loadingCancelled) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+
+                        if (contentLength > 0) {
+                            val progress = ((totalBytesRead * 50) / contentLength).toInt()
+                            activity?.runOnUiThread {
+                                progressBar.progress = progress
+                            }
                         }
                     }
 
+                    inputStream.close()
                     connection.disconnect()
 
-                    val fileName = try {
-                        URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
-                    } catch (_: Exception) {
-                        "document.pdf"
-                    }
+                    val pdfBytes = outputStream.toByteArray()
 
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        showPdfViewer(pdfFile, fileName)
+                    if (!loadingCancelled) {
+                        activity?.runOnUiThread {
+                            tvStatus.text = getString(R.string.moodle_saving_pdf)
+                            progressBar.progress = 50
+                        }
+
+                        val cacheDir = requireContext().cacheDir
+                        val pdfFile = File(cacheDir, "moodle_pdf_${System.currentTimeMillis()}.pdf")
+
+                        pdfFile.outputStream().use { output ->
+                            output.write(pdfBytes)
+                        }
+
+                        val fileName = try {
+                            URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                        } catch (_: Exception) {
+                            "document.pdf"
+                        }
+
+                        if (!loadingCancelled) {
+                            activity?.runOnUiThread {
+                                tvStatus.text = getString(R.string.moodle_opening_pdf)
+                                progressBar.progress = 80
+                            }
+
+                            Thread.sleep(200)
+
+                            activity?.runOnUiThread {
+                                progressBar.progress = 100
+                                progressDialog.dismiss()
+                                showPdfViewer(pdfFile, fileName, url)
+                            }
+                        }
+                    } else {
+                        connection.disconnect()
                     }
                 } else {
                     connection.disconnect()
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        val message = if (responseCode in 300..399) {
-                            "Session expired during download"
-                        } else {
-                            "HTTP error: $responseCode"
+                    if (!loadingCancelled) {
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            Toast.makeText(requireContext(),
+                                getString(R.string.moodle_pdf_load_failed),
+                                Toast.LENGTH_SHORT).show()
                         }
-                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
                 L.e("MoodleFragment", "Error downloading PDF", e)
-                activity?.runOnUiThread {
-                    progressDialog.dismiss()
-                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_load_failed), Toast.LENGTH_SHORT).show()
+                if (!loadingCancelled) {
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(),
+                            getString(R.string.moodle_pdf_load_failed),
+                            Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
     }
 
     private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
+        if (pdfFileUrl == null) {
+            pdfFileUrl = viewUrl
+        }
+
         backgroundExecutor.execute {
             try {
                 L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
                 L.d("MoodleFragment", "Initial URL: $viewUrl")
                 L.d("MoodleFragment", "Force download to device: $forceDownload")
 
-                // Get fresh cookies from CookieManager
                 val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
                 val cookiesToUse = freshCookies ?: cookies
 
@@ -5236,6 +6440,7 @@ class MoodleFragment : Fragment() {
 
                 if (finalUrl != null) {
                     L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
+                    pdfFileUrl = finalUrl
 
                     activity?.runOnUiThread {
                         if (forceDownload) {
@@ -5950,7 +7155,7 @@ class MoodleFragment : Fragment() {
 
         updateFetchProgress(85, getString(R.string.moodle_locating_timetable_file))
 
-        val tempPrefs = requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
+        val tempPrefs = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
         val klasse = tempPrefs.getString("temp_fetch_class", "") ?: ""
         val klasseBase = klasse.replace(Regex("\\d+$"), "")
 
@@ -6065,7 +7270,7 @@ class MoodleFragment : Fragment() {
                     L.e("MoodleFragment", "Timetable not found. Reason: $reason, Found $count timetables")
                     L.e("MoodleFragment", "Available timetables: $availableList")
 
-                    handleFetchError(getString(R.string.moodle_timetable_not_found_for_class, klasse))
+                    handleFetchError(getString(R.string.moodle_timetable_not_found_for_class_detail, klasse))
                 }
             } catch (e: Exception) {
                 L.e("MoodleFragment", "Error parsing timetable search result", e)
@@ -6398,11 +7603,14 @@ class MoodleFragment : Fragment() {
                         val pdfFile = File(cacheDir, "moodle_timetable_${System.currentTimeMillis()}.pdf")
                         pdfFile.outputStream().use { it.write(pdfBytes) }
 
-                        requireActivity().getSharedPreferences("AppPrefs", android.content.Context.MODE_PRIVATE)
-                            .edit()
-                            .putString("pending_timetable_pdf_path", pdfFile.absolutePath)
-                            .remove("temp_fetch_class")
-                            .apply()
+                        val pdfUrl = tabs.getOrNull(currentTabIndex)?.url ?: ""
+
+                        requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                            .edit {
+                                putString("pending_timetable_pdf_path", pdfFile.absolutePath)
+                                .putString("pending_timetable_pdf_url", pdfUrl)
+                                .remove("temp_fetch_class")
+                            }
 
                         cleanupFetchProcess()
 
@@ -6474,5 +7682,222 @@ class MoodleFragment : Fragment() {
         userProvidedProgramName = null
         moodleFetchProgressDialog?.dismiss()
         moodleFetchProgressDialog = null
+    }
+
+    private fun detectCurrentTheme() {
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+
+        isDarkTheme = if (followSystemTheme) {
+            val nightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        } else {
+            sharedPreferences.getBoolean("dark_mode_enabled", false)
+        }
+    }
+
+    private fun handleDocxFile(url: String, cookies: String?, forceDownload: Boolean = false) {
+        if (forceDownload) {
+            downloadToDeviceWithCookies(url, cookies)
+        } else {
+            convertDocxToPdfAndOpen(url, cookies)
+        }
+    }
+
+    private fun convertDocxToPdfAndOpen(url: String, cookies: String?) {
+        var loadingCancelled = false
+        val dialogView = layoutInflater.inflate(R.layout.dialog_pdf_loading, null)
+        val tvStatus = dialogView.findViewById<TextView>(R.id.tvPdfLoadingStatus)
+        val progressBar = dialogView.findViewById<ProgressBar>(R.id.progressBarPdfLoading)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelPdfLoading)
+
+        val progressDialog = AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .setCancelable(false)
+            .show()
+
+        btnCancel.setOnClickListener {
+            loadingCancelled = true
+            progressDialog.dismiss()
+        }
+
+        backgroundExecutor.execute {
+            try {
+                activity?.runOnUiThread {
+                    tvStatus.text = getString(R.string.moodle_downloading_docx)
+                    progressBar.progress = 0
+                }
+
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (!cookies.isNullOrBlank()) {
+                    connection.setRequestProperty("Cookie", cookies)
+                }
+
+                connection.setRequestProperty("User-Agent", userAgent)
+                connection.setRequestProperty("Referer", moodleBaseUrl)
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
+
+                if (connection.responseCode == 200 && !loadingCancelled) {
+                    val contentLength = connection.contentLength
+                    val inputStream = connection.inputStream
+                    val outputStream = ByteArrayOutputStream()
+
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
+
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1 && !loadingCancelled) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+
+                        if (contentLength > 0) {
+                            val progress = ((totalBytesRead * 30) / contentLength).toInt()
+                            activity?.runOnUiThread {
+                                progressBar.progress = progress
+                            }
+                        }
+                    }
+
+                    val docxBytes = outputStream.toByteArray()
+                    inputStream.close()
+                    connection.disconnect()
+
+                    if (!loadingCancelled) {
+                        activity?.runOnUiThread {
+                            tvStatus.text = getString(R.string.moodle_converting_docx)
+                            progressBar.progress = 30
+                        }
+
+                        val pdfBytes = convertDocxByteArrayToPdf(docxBytes)
+
+                        if (pdfBytes != null && !loadingCancelled) {
+                            activity?.runOnUiThread {
+                                progressBar.progress = 80
+                                tvStatus.text = getString(R.string.moodle_saving_pdf)
+                            }
+
+                            val cacheDir = requireContext().cacheDir
+                            val pdfFile = File(cacheDir, "converted_${System.currentTimeMillis()}.pdf")
+                            pdfFile.outputStream().use { it.write(pdfBytes) }
+
+                            val fileName = try {
+                                URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                                    .replace(".docx", ".pdf")
+                            } catch (_: Exception) {
+                                "document.pdf"
+                            }
+
+                            if (!loadingCancelled) {
+                                activity?.runOnUiThread {
+                                    progressBar.progress = 100
+                                    progressDialog.dismiss()
+                                    showPdfViewer(pdfFile, fileName, url)
+                                }
+                            }
+                        } else {
+                            throw Exception("Failed to convert DOCX to PDF")
+                        }
+                    }
+                } else {
+                    connection.disconnect()
+                    throw Exception("HTTP error: ${connection.responseCode}")
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error converting DOCX", e)
+                if (!loadingCancelled) {
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(),
+                            getString(R.string.moodle_docx_conversion_failed),
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun convertDocxByteArrayToPdf(docxBytes: ByteArray): ByteArray? {
+        return try {
+            val zipInputStream = ZipInputStream(docxBytes.inputStream())
+            var entry: ZipEntry?
+            val images = mutableMapOf<String, ByteArray>()
+            var documentXml = ""
+
+            // get document.xml and images
+            while (zipInputStream.nextEntry.also { entry = it } != null) {
+                when {
+                    entry?.name == "word/document.xml" -> {
+                        documentXml = zipInputStream.bufferedReader().readText()
+                    }
+                    entry?.name?.startsWith("word/media/") == true -> {
+                        val imageName = entry.name?.substringAfterLast("/") ?: continue
+                        images[imageName] = zipInputStream.readBytes()
+                    }
+                }
+            }
+            zipInputStream.close()
+
+            // create pdf
+            val outputStream = ByteArrayOutputStream()
+            val document = com.itextpdf.text.Document()
+            com.itextpdf.text.pdf.PdfWriter.getInstance(document, outputStream)
+
+            document.open()
+
+            // text and basic structure
+            val textPattern = "<w:t[^>]*>([^<]+)</w:t>".toRegex()
+            val paragraphPattern = "<w:p[^>]*>.*?</w:p>".toRegex()
+            val tablePattern = "<w:tbl>.*?</w:tbl>".toRegex()
+
+            // paragraphs
+            paragraphPattern.findAll(documentXml).forEach { paragraphMatch ->
+                val paragraphXml = paragraphMatch.value
+                val texts = textPattern.findAll(paragraphXml)
+                val paragraphText = texts.joinToString("") { it.groupValues[1] }
+
+                if (paragraphText.isNotEmpty()) {
+                    document.add(com.itextpdf.text.Paragraph(paragraphText))
+                }
+            }
+
+            // tables (basic, definitely wont work most of the times)
+            tablePattern.findAll(documentXml).forEach { tableMatch ->
+                val tableXml = tableMatch.value
+                val rowPattern = "<w:tr[^>]*>.*?</w:tr>".toRegex()
+                val cellPattern = "<w:tc[^>]*>.*?</w:tc>".toRegex()
+
+                val rows = rowPattern.findAll(tableXml).toList()
+                if (rows.isNotEmpty()) {
+                    val maxCells = rows.maxOfOrNull { row ->
+                        cellPattern.findAll(row.value).count()
+                    } ?: 1
+
+                    val table = com.itextpdf.text.pdf.PdfPTable(maxCells)
+                    table.widthPercentage = 100f
+
+                    rows.forEach { rowMatch ->
+                        cellPattern.findAll(rowMatch.value).forEach { cellMatch ->
+                            val cellTexts = textPattern.findAll(cellMatch.value)
+                            val cellText = cellTexts.joinToString(" ") { it.groupValues[1] }
+                            table.addCell(com.itextpdf.text.pdf.PdfPCell(
+                                com.itextpdf.text.Phrase(cellText)
+                            ))
+                        }
+                    }
+
+                    document.add(table)
+                    document.add(com.itextpdf.text.Paragraph(" "))
+                }
+            }
+
+            document.close()
+            outputStream.toByteArray()
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error in DOCX to PDF conversion", e)
+            null
+        }
     }
 }
