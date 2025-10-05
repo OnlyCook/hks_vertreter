@@ -57,6 +57,7 @@ import android.widget.ScrollView
 import androidx.core.graphics.toColorInt
 import android.widget.CheckBox
 import androidx.annotation.AttrRes
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -67,6 +68,7 @@ import java.io.File
 class SettingsActivity : BaseActivity() {
 
     private var isInitializing = true
+    private var isUpdatingThemeSettings = false
     private lateinit var btnResetData: Button
     private lateinit var btnScanTimetable: Button
     private lateinit var tvCurrentSelection: TextView
@@ -2622,82 +2624,138 @@ class SettingsActivity : BaseActivity() {
         val switchFollowSystem = findViewById<Switch>(R.id.switchFollowSystemTheme)
 
         val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
-        val darkModeEnabled = if (followSystemTheme) false else sharedPreferences.getBoolean("dark_mode_enabled", false)
+        val darkModeEnabled = sharedPreferences.getBoolean("dark_mode_enabled", false)
 
-        switchDarkMode.isChecked = darkModeEnabled
         switchFollowSystem.isChecked = followSystemTheme
         switchDarkMode.isEnabled = !followSystemTheme
 
+        if (followSystemTheme) {
+            val isSystemDark = getSystemDarkMode()
+            switchDarkMode.isChecked = isSystemDark
+        } else {
+            switchDarkMode.isChecked = darkModeEnabled
+        }
+
         switchFollowSystem.setOnCheckedChangeListener { _, isChecked ->
-            if (!isInitializing) {
+            if (!isInitializing && !isUpdatingThemeSettings) {
+                isUpdatingThemeSettings = true
+
                 val previousFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
 
                 if (previousFollowSystem != isChecked) {
-                    val willThemeChange = willThemeActuallyChange(isChecked, switchDarkMode.isChecked)
+                    val isSystemDark = getSystemDarkMode()
 
-                    sharedPreferences.edit().apply {
-                        putBoolean("follow_system_theme", isChecked)
-                        if (isChecked) {
-                            remove("dark_mode_enabled")
+                    if (isChecked) {
+                        switchDarkMode.isChecked = isSystemDark
+                    } else {
+                        val currentDisplayedDark = switchDarkMode.isChecked
+                        sharedPreferences.edit {
+                            putBoolean("dark_mode_enabled", currentDisplayedDark)
                         }
-                        apply()
+                    }
+
+                    val willThemeChange = willThemeActuallyChange(isChecked, if (isChecked) isSystemDark else switchDarkMode.isChecked)
+
+                    sharedPreferences.edit {
+                        putBoolean("follow_system_theme", isChecked)
                     }
 
                     switchDarkMode.isEnabled = !isChecked
-                    if (isChecked) {
-                        switchDarkMode.isChecked = false
-                    }
 
-                    android.util.Log.d("Settings", "Saved follow_system_theme: $isChecked")
+                    L.d("Settings", "Saved follow_system_theme: $isChecked, system is dark: $isSystemDark, willThemeChange: $willThemeChange")
 
                     if (willThemeChange) {
-                        restartAppSafely()
+                        showThemeChangeRestartDialog()
                     }
                 }
+
+                isUpdatingThemeSettings = false
             }
         }
 
         switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-            if (!isInitializing) {
+            if (!isInitializing && !isUpdatingThemeSettings) {
                 val currentFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
 
                 if (!currentFollowSystem) {
                     val previousDarkMode = sharedPreferences.getBoolean("dark_mode_enabled", false)
 
                     if (previousDarkMode != isChecked) {
-                        sharedPreferences.edit().apply {
+                        val willThemeChange = willThemeActuallyChange(false, isChecked)
+
+                        sharedPreferences.edit {
                             putBoolean("dark_mode_enabled", isChecked)
-                            apply()
                         }
 
-                        android.util.Log.d("Settings", "Saved dark_mode_enabled: $isChecked")
-                        restartAppSafely()
+                        L.d("Settings", "Saved dark_mode_enabled: $isChecked, willThemeChange: $willThemeChange")
+
+                        if (willThemeChange) {
+                            showThemeChangeRestartDialog()
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun willThemeActuallyChange(newFollowSystem: Boolean, currentDarkModeEnabled: Boolean): Boolean {
-        val currentFollowSystem = sharedPreferences.getBoolean("follow_system_theme", true)
+    private fun getSystemDarkMode(): Boolean {
+        val appContext = applicationContext
+        val uiModeManager = appContext.getSystemService(android.app.UiModeManager::class.java)
 
-        if (currentFollowSystem && !newFollowSystem) {
-            val isSystemDark = (resources.configuration.uiMode and
-                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                    android.content.res.Configuration.UI_MODE_NIGHT_YES
-            return isSystemDark != currentDarkModeEnabled
-        } else if (!currentFollowSystem && newFollowSystem) {
-            val currentManualDark = sharedPreferences.getBoolean("dark_mode_enabled", false)
-            val isSystemDark = (resources.configuration.uiMode and
-                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                    android.content.res.Configuration.UI_MODE_NIGHT_YES
-            return currentManualDark != isSystemDark
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            uiModeManager?.nightMode == android.app.UiModeManager.MODE_NIGHT_YES
+        } else {
+            val baseConfig = appContext.resources.configuration
+            val nightMode = baseConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+    }
+
+    private fun willThemeActuallyChange(newFollowSystem: Boolean, newDarkModeValue: Boolean): Boolean {
+        val currentNightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val currentAppIsDisplayingDark = currentNightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        val willShowDark = if (newFollowSystem) {
+            getSystemDarkMode()
+        } else {
+            newDarkModeValue
         }
 
-        return false
+        L.d("Settings", "Theme check - Currently displaying: $currentAppIsDisplayingDark, Will show: $willShowDark")
+
+        return currentAppIsDisplayingDark != willShowDark
+    }
+
+    private fun showThemeChangeRestartDialog() {
+        val alertDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.set_act_theme_changed))
+            .setMessage(getString(R.string.set_act_theme_change_restart_message))
+            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
+                restartAppSafely()
+            }
+            .setNegativeButton(getString(R.string.restart_later), null)
+            .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun restartAppSafely() {
+        val sharedPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        val followSystemTheme = sharedPrefs.getBoolean("follow_system_theme", true)
+
+        if (followSystemTheme) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        } else {
+            val darkModeEnabled = sharedPrefs.getBoolean("dark_mode_enabled", false)
+            AppCompatDelegate.setDefaultNightMode(
+                if (darkModeEnabled) AppCompatDelegate.MODE_NIGHT_YES
+                else AppCompatDelegate.MODE_NIGHT_NO
+            )
+        }
+
         Toast.makeText(this, getString(R.string.set_act_settings_saved), Toast.LENGTH_LONG).show()
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -3234,15 +3292,96 @@ class SettingsActivity : BaseActivity() {
         btnSelectLanguage.text = languageName
 
         switchAutoDetectLanguage.setOnCheckedChangeListener { _, isChecked ->
-            sharedPreferences.edit { putBoolean("language_auto_detect", isChecked) }
-            layoutManualLanguage.visibility = if (isChecked) View.GONE else View.VISIBLE
-            updateCurrentLanguageDisplay(tvCurrentLanguage)
-            showRestartDialog()
+            if (!isInitializing) {
+                val currentManualLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+                val willLanguageChange = willLanguageActuallyChange(isChecked, currentManualLanguage)
+
+                sharedPreferences.edit { putBoolean("language_auto_detect", isChecked) }
+                layoutManualLanguage.visibility = if (isChecked) View.GONE else View.VISIBLE
+                updateCurrentLanguageDisplay(tvCurrentLanguage)
+
+                if (willLanguageChange) {
+                    showLanguageChangeRestartDialog()
+                }
+            }
         }
 
         btnSelectLanguage.setOnClickListener {
             showLanguageSelectionDialog(btnSelectLanguage)
         }
+    }
+
+    private fun getCurrentActiveLanguage(): String {
+        val currentLocale = resources.configuration.locales[0]
+        return currentLocale.language
+    }
+
+    private fun willLanguageActuallyChange(newAutoDetect: Boolean, newManualLanguage: String): Boolean {
+        val currentDisplayedLanguage = getCurrentActiveLanguage()
+
+        val newDisplayedLanguage = if (newAutoDetect) {
+            val systemLocale = resources.configuration.locales[0]
+            systemLocale.language
+        } else {
+            newManualLanguage
+        }
+
+        L.d("Settings", "Language check - Currently displayed: $currentDisplayedLanguage, Will display: $newDisplayedLanguage")
+
+        return currentDisplayedLanguage != newDisplayedLanguage
+    }
+
+    private fun showLanguageSelectionDialog(btnSelectLanguage: Button) {
+        val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
+
+        val languages = arrayOf("de", "en")
+        val languageNames = arrayOf(
+            "🇩🇪 ${getString(R.string.german)}",
+            "🇺🇸 ${getString(R.string.english)}"
+        )
+
+        val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
+
+        val alertDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.select_language))
+            .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
+                val selectedLanguageCode = languages[which]
+                val selectedLanguageName = languageNames[which]
+
+                val willLanguageChange = willLanguageActuallyChange(false, selectedLanguageCode)
+
+                sharedPreferences.edit { putString("selected_language", selectedLanguageCode) }
+                btnSelectLanguage.text = selectedLanguageName
+
+                if (willLanguageChange) {
+                    showLanguageChangeRestartDialog()
+                }
+
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+    }
+
+    private fun showLanguageChangeRestartDialog() {
+        val alertDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.set_act_language_changed))
+            .setMessage(getString(R.string.set_act_language_change_restart_message))
+            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
+                restartAppSafely()
+            }
+            .setNegativeButton(getString(R.string.restart_later), null)
+            .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun updateCurrentLanguageDisplay(tvCurrentLanguage: TextView) {
@@ -3266,54 +3405,6 @@ class SettingsActivity : BaseActivity() {
         }
 
         tvCurrentLanguage.text = displayText
-    }
-
-    private fun showLanguageSelectionDialog(btnSelectLanguage: Button) {
-        val currentLanguage = sharedPreferences.getString("selected_language", "de") ?: "de"
-
-        val languages = arrayOf("de", "en")
-        val languageNames = arrayOf(
-            "🇩🇪 ${getString(R.string.german)}",
-            "🇺🇸 ${getString(R.string.english)}"
-        )
-
-        val currentIndex = languages.indexOf(currentLanguage).let { if (it == -1) 0 else it }
-
-        val alertDialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.select_language))
-            .setSingleChoiceItems(languageNames, currentIndex) { dialog, which ->
-                val selectedLanguageCode = languages[which]
-                val selectedLanguageName = languageNames[which]
-
-                sharedPreferences.edit { putString("selected_language", selectedLanguageCode) }
-                btnSelectLanguage.text = selectedLanguageName
-                showRestartDialog()
-
-                dialog.dismiss()
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-
-        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
-    }
-
-    private fun showRestartDialog() {
-        val alertDialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.restart_required))
-            .setMessage(getString(R.string.restart_required_message))
-            .setPositiveButton(getString(R.string.restart_now)) { _, _ ->
-                restartApp()
-            }
-            .setNegativeButton(getString(R.string.restart_later), null)
-            .show()
-
-        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
 
     private fun storeOriginalBackground(view: View) {
@@ -3767,6 +3858,12 @@ class SettingsActivity : BaseActivity() {
         settingsToPreserve["left_filter_lift"] = sharedPreferences.getBoolean("left_filter_lift", false)
         settingsToPreserve["moodle_dont_show_login_dialog"] = sharedPreferences.getBoolean("moodle_dont_show_login_dialog", true)
         settingsToPreserve["moodle_auto_dismiss_confirm"] = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
+        settingsToPreserve["skip_moodle_fetch_dialog"] = sharedPreferences.getBoolean("skip_moodle_fetch_dialog", false)
+        settingsToPreserve["fetch_from_moodle_preference"] = sharedPreferences.getBoolean("fetch_from_moodle_preference", false)
+        settingsToPreserve["skip_moodle_timetable_fetch_dialog"] = sharedPreferences.getBoolean("skip_moodle_timetable_fetch_dialog", false)
+        settingsToPreserve["fetch_timetable_from_moodle_preference"] = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
+        settingsToPreserve["saved_program_course_name"] = sharedPreferences.getString("saved_program_course_name", "")
+        settingsToPreserve["saved_timetable_entry_name"] = sharedPreferences.getString("saved_timetable_entry_name", "")
 
         sharedPreferences.edit { clear() }
 
@@ -3991,9 +4088,7 @@ class SettingsActivity : BaseActivity() {
             File(applicationInfo.dataDir, "app_webview").deleteRecursively()
             File(applicationInfo.dataDir, "app_WebView").deleteRecursively()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                codeCacheDir.deleteRecursively()
-            }
+            codeCacheDir.deleteRecursively()
 
             Toast.makeText(this, "Moodle cache cleared", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {

@@ -162,7 +162,7 @@
     <string name="act_set_school_address">Heinrich-Kleyer-Schule\nKühhornshofweg 27\n60320 Frankfurt am Main</string>
     <string name="act_set_privacy_terms">Datenschutz &amp; Nutzungsbedingungen</string>
     <string name="act_set_privacy">Datenschutz</string>
-    <string name="act_set_privacy_details">• Keine Datensammlung durch den Entwickler\n• Alle Daten bleiben auf deinem Gerät\n• Internetverbindung nur zu: heinrich-kleyer-schule.de (und optional zu: kultus.hessen.de)</string>
+    <string name="act_set_privacy_details">• Keine Datensammlung durch den Entwickler\n• Alle Daten bleiben auf deinem Gerät\n• Internetverbindung nur zu: \'heinrich-kleyer-schule.de\' (und optional zu: \'moodle.kleyer.eu\' sowie \'kultus.hessen.de\')</string>
     <string name="act_set_app_features">App-Features</string>
     <string name="act_set_features_details">• Keine Werbung oder In-App-Käufe\n• Hintergrundprozesse nur bei manueller Aktivierung\n• Benachrichtigungen standardmäßig deaktiviert\n• Völlig kostenlos und Open Source</string>
     <string name="act_set_disclaimer">Hinweis</string>
@@ -619,6 +619,10 @@
     <string name="settings_reset_saved_timetable_entry">Gespeicherter Stundenplaneintrags-Name</string>
     <string name="settings_clear_selected">Ausgewählte löschen</string>
     <string name="settings_preferences_reset_success">Ausgewählte Einstellungen wurden zurückgesetzt</string>
+    <string name="set_act_theme_changed">Theme geändert</string>
+    <string name="set_act_theme_change_restart_message">Die Theme-Änderung wird erst nach einem Neustart der App wirksam.</string>
+    <string name="set_act_language_changed">Sprache geändert</string>
+    <string name="set_act_language_change_restart_message">Die Sprachänderung wird erst nach einem Neustart der App wirksam.</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>

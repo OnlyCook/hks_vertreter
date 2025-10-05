@@ -6,14 +6,14 @@
     android:padding="16dp">
 
     <TextView
-        android:id="@+id/tvNavigateInfo"
+        android:id="@+id/tvInputInfo"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="14sp"
         android:layout_marginBottom="12dp" />
 
     <EditText
-        android:id="@+id/editTextPageNumber"
+        android:id="@+id/editTextSingleInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"

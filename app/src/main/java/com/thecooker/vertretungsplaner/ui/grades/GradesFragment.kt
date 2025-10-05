@@ -1646,16 +1646,22 @@ class GradesFragment : Fragment() {
     private fun showSetGoalGradeDialog() {
         val currentGoal = sharedPreferences.getFloat(PREFS_GOAL_GRADE, 2.0f)
 
-        val editText = EditText(requireContext()).apply {
+        val dialogBuilder = AlertDialog.Builder(requireContext())
+        val dialogView = layoutInflater.inflate(R.layout.dialog_single_input, null)
+
+        val tvInputInfo = dialogView.findViewById<TextView>(R.id.tvInputInfo)
+        val editText = dialogView.findViewById<EditText>(R.id.editTextSingleInput)
+
+        tvInputInfo.text = getString(R.string.grades_set_goal_message)
+        editText.apply {
             setText(DecimalFormat("0.0").format(currentGoal))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             hint = "1.0 - 6.0"
         }
 
-        val alertDialog = AlertDialog.Builder(requireContext())
+        val alertDialog = dialogBuilder
             .setTitle(getString(R.string.grades_menu_set_goal))
-            .setMessage(getString(R.string.grades_set_goal_message))
-            .setView(editText)
+            .setView(dialogView)
             .setPositiveButton(getString(R.string.grades_save)) { _, _ ->
                 try {
                     val goalGrade = editText.text.toString().replace(",", ".").toFloat()

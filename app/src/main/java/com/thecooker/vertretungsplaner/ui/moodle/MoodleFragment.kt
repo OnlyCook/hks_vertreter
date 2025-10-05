@@ -5522,9 +5522,9 @@ class MoodleFragment : Fragment() {
     }
 
     private fun showNavigateToPageDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_pdf_navigate, null)
-        val tvInfo = dialogView.findViewById<TextView>(R.id.tvNavigateInfo)
-        val editText = dialogView.findViewById<EditText>(R.id.editTextPageNumber)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_single_input, null)
+        val tvInfo = dialogView.findViewById<TextView>(R.id.tvInputInfo)
+        val editText = dialogView.findViewById<EditText>(R.id.editTextSingleInput)
 
         val pageCount = pdfViewerManager?.getPageCount() ?: 0
         tvInfo.text = getString(R.string.moodle_pdf_navigate_info, pageCount)

@@ -162,7 +162,7 @@
     <string name="act_set_school_address">Heinrich-Kleyer-School\nKühhornshofweg 27\n60320 Frankfurt am Main</string>
     <string name="act_set_privacy_terms">Privacy &amp; Terms of Use</string>
     <string name="act_set_privacy">Privacy</string>
-    <string name="act_set_privacy_details">• No data collection by the developer\n• All data remains on your device\n• Internet connection only to: heinrich-kleyer-schule.de (and optionally to: kultus.hessen.de)</string>
+    <string name="act_set_privacy_details">• No data collection by the developer\n• All data remains on your device\n• Internet connection only to: \'heinrich-kleyer-schule.de\' (and optionally to: \'moodle.kleyer.eu\' as well as \'kultus.hessen.de\')</string>
     <string name="act_set_app_features">App Features</string>
     <string name="act_set_features_details">• No ads or in-app purchases\n• Background processes only when manually activated\n• Notifications disabled by default\n• Completely free and open source</string>
     <string name="act_set_disclaimer">Disclaimer</string>
@@ -619,6 +619,10 @@
     <string name="settings_scan_timetable">Scan Timetable</string>
     <string name="settings_no_class_selected">No class selected</string>
     <string name="settings_moodle_fetch_error">Error starting Moodle fetch</string>
+    <string name="set_act_theme_changed">Theme Changed</string>
+    <string name="set_act_theme_change_restart_message">The theme change will only take effect after restarting the app.</string>
+    <string name="set_act_language_changed">Language Changed</string>
+    <string name="set_act_language_change_restart_message">The language change will only take effect after restarting the app.</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>

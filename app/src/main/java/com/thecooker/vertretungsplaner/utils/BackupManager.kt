@@ -585,6 +585,12 @@ class BackupManager(private val context: Context) {
         val calendarColorLegend = sharedPreferences.getBoolean("calendar_color_legend_enabled", true)
         val moodleDontShowLoginDialog = sharedPreferences.getBoolean("moodle_dont_show_login_dialog", true)
         val moodleAutoDismissConfirm = sharedPreferences.getBoolean("moodle_auto_dismiss_confirm", true)
+        val skipMoodleFetchDialog = sharedPreferences.getBoolean("skip_moodle_fetch_dialog", false)
+        val fetchFromMoodlePreference = sharedPreferences.getBoolean("fetch_from_moodle_preference", false)
+        val skipMoodleTimetableFetchDialog = sharedPreferences.getBoolean("skip_moodle_timetable_fetch_dialog", false)
+        val fetchTimetableFromMoodlePreference = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
+        val savedProgramCourseName = sharedPreferences.getString("saved_program_course_name", "") ?: ""
+        val savedTimetableEntryName = sharedPreferences.getString("saved_timetable_entry_name", "") ?: ""
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -616,6 +622,12 @@ class BackupManager(private val context: Context) {
             appendLine("CALENDAR_COLOR_LEGEND=$calendarColorLegend")
             appendLine("MOODLE_DONT_SHOW_LOGIN_DIALOG=$moodleDontShowLoginDialog")
             appendLine("MOODLE_AUTO_DISMISS_CONFIRM=$moodleAutoDismissConfirm")
+            appendLine("SKIP_MOODLE_FETCH_DIALOG=$skipMoodleFetchDialog")
+            appendLine("FETCH_FROM_MOODLE_PREFERENCE=$fetchFromMoodlePreference")
+            appendLine("SKIP_MOODLE_TIMETABLE_FETCH_DIALOG=$skipMoodleTimetableFetchDialog")
+            appendLine("FETCH_TIMETABLE_FROM_MOODLE_PREFERENCE=$fetchTimetableFromMoodlePreference")
+            appendLine("SAVED_PROGRAM_COURSE_NAME=$savedProgramCourseName")
+            appendLine("SAVED_TIMETABLE_ENTRY_NAME=$savedTimetableEntryName")
         }
     }
 
@@ -767,6 +779,36 @@ class BackupManager(private val context: Context) {
                     line.startsWith("MOODLE_AUTO_DISMISS_CONFIRM=") -> putBoolean(
                         "moodle_auto_dismiss_confirm",
                         line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("SKIP_MOODLE_FETCH_DIALOG=") -> putBoolean(
+                        "skip_moodle_fetch_dialog",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("FETCH_FROM_MOODLE_PREFERENCE=") -> putBoolean(
+                        "fetch_from_moodle_preference",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("SKIP_MOODLE_TIMETABLE_FETCH_DIALOG=") -> putBoolean(
+                        "skip_moodle_timetable_fetch_dialog",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("FETCH_TIMETABLE_FROM_MOODLE_PREFERENCE=") -> putBoolean(
+                        "fetch_timetable_from_moodle_preference",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("SAVED_PROGRAM_COURSE_NAME=") -> putString(
+                        "saved_program_course_name",
+                        line.substringAfter("=")
+                    )
+
+                    line.startsWith("SAVED_TIMETABLE_ENTRY_NAME=") -> putString(
+                        "saved_timetable_entry_name",
+                        line.substringAfter("=")
                     )
                 }
             }
