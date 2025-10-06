@@ -1628,5 +1628,11 @@
     <string name="moodle_stay_page">Auf dieser Seite bleiben</string>
     <string name="moodle_offline_error">Du bist offline. Bitte verbinde dich mit dem Internet und versuche es erneut.</string>
     <string name="moodle_please_login">Bitte anmelden, um fortzufahren</string>
+    <string name="moodle_logged_out_successfully">Erfolgreich ausgeloggt</string>
+    <string name="moodle_logout_confirm_title">Abmelden</string>
+    <string name="moodle_logout_confirm_message">Bist du sicher, dass du dich abmelden möchtest?</string>
+    <string name="moodle_login_info">Bitte gebe deine Moodle-Anmeldedaten ein</string>
+    <string name="moodle_toggle_password_visibility">Passwort anzeigen/verbergen</string>
+    <string name="moodle_show_dialog">Dialog zeigen</string>
 
 </resources>

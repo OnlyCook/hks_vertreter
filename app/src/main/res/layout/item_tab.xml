@@ -54,6 +54,15 @@
             android:background="?attr/settingsColorPrimary"
             android:visibility="gone" />
 
+        <!-- PDF Indicator Triangle -->
+        <ImageView
+            android:id="@+id/pdfTabIndicator"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="top|start"
+            android:src="@drawable/triangle_indicator"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

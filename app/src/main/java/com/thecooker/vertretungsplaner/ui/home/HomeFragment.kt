@@ -121,11 +121,6 @@ class HomeFragment : Fragment() {
                     loadCooldownSetting()
                     loadColorBlindSettings()
 
-                    showLoadingState()
-                    if (::lastUpdateText.isInitialized) {
-                        lastUpdateText.text = ""
-                    }
-
                     if (isFirstStartup && !isFromNavigationDrawer) {
                         L.d("HomeFragment", "First startup - using clean startup flow with single UI update")
                         isCleanStartupInProgress = true
@@ -148,7 +143,8 @@ class HomeFragment : Fragment() {
     }
 
     private fun performCleanStartupSingleUpdate() {
-        L.d("HomeFragment", "Performing clean startup with single UI update")
+        L.d("HomeFragment", "====== CLEAN STARTUP START ======")
+        L.d("HomeFragment", "Thread: ${Thread.currentThread().name}")
 
         val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
         if (klasse == getString(R.string.home_not_selected)) {
@@ -161,12 +157,18 @@ class HomeFragment : Fragment() {
             classText.text = getString(R.string.home_class_prefix, klasse)
         }
 
+        // STATE 1 (loading)
+
+        L.d("HomeFragment", ">>> Preparing STATE 1: LOADING (not displayed yet)")
+
         setLastLoadTime(0)
         hasShownOfflineMessage = false
         currentJsonData = null
+        L.d("HomeFragment", "Reset state variables")
 
         scope?.launch(Dispatchers.IO) {
             try {
+                L.d("HomeFragment", "Starting background data fetch")
                 var finalData: JSONObject? = null
                 var finalLastUpdate: String? = null
                 var isFromCache = false
@@ -192,6 +194,7 @@ class HomeFragment : Fragment() {
                                 finalData = filterPastDates(substitutePlan)
                                 finalLastUpdate = lastUpdate
                                 isFromCache = false
+                                L.d("HomeFragment", "Network data fetched successfully")
                                 break
 
                             } catch (e: Exception) {
@@ -226,6 +229,7 @@ class HomeFragment : Fragment() {
                             finalData = filterPastDates(JSONObject(cachedData))
                             finalLastUpdate = lastUpdate
                             isFromCache = true
+                            L.d("HomeFragment", "Loaded cached data as fallback")
                         }
                     }
                 } else {
@@ -239,53 +243,74 @@ class HomeFragment : Fragment() {
                         finalData = filterPastDates(JSONObject(cachedData))
                         finalLastUpdate = lastUpdate
                         isFromCache = true
+                        L.d("HomeFragment", "Loaded cached data (offline)")
                     }
                 }
 
-                // update tables only from here -> please fix this flickering issue!
+                L.d("HomeFragment", "Data fetch complete, waiting 150ms before UI update")
+                delay(150)
+
+                // STATE 2 (final)
+
                 withContext(Dispatchers.Main) {
-                    if (isAdded && _binding != null) {
-                        if (finalData != null && finalLastUpdate != null) {
-                            L.d("HomeFragment", "Clean startup: Updating UI with final data (fromCache: $isFromCache)")
+                    if (!isAdded || _binding == null) {
+                        L.w("HomeFragment", "Fragment destroyed during data fetch, aborting UI update")
+                        isCleanStartupInProgress = false
+                        return@withContext
+                    }
 
-                            if (!isFromCache) {
-                                onConnectivityRestored()
-                            }
+                    L.d("HomeFragment", ">>> DISPLAYING FINAL STATE (single update)")
 
-                            if (::lastUpdateText.isInitialized) {
-                                lastUpdateText.text = if (isFromCache) {
-                                    getString(R.string.home_last_update_offline, finalLastUpdate)
-                                } else {
-                                    getString(R.string.home_last_update, finalLastUpdate)
-                                }
-                            }
+                    if (finalData != null && finalLastUpdate != null) {
+                        L.d("HomeFragment", "Clean startup: Updating UI with final data (fromCache: $isFromCache)")
 
-                            if (::contentLayout.isInitialized) {
-                                contentLayout.removeAllViews()
-                                displaySubstitutePlan(finalData)
-                            }
+                        if (!isFromCache) {
+                            onConnectivityRestored()
+                        }
 
-                            currentJsonData = finalData
-                            setLastLoadTime(System.currentTimeMillis())
-                            setFirstAppLoadCompleted()
-
-                            if (isFromCache && !hasShownOfflineMessage) {
-                                showOfflineMessageIfNeeded()
-                            }
-
-                            L.d("HomeFragment", "Clean startup completed successfully - single UI update completed")
-                        } else {
-                            L.d("HomeFragment", "No data available - showing appropriate message")
-                            if (!hasBasicConnectivity()) {
-                                showOfflineNoDataMessage()
+                        if (::lastUpdateText.isInitialized) {
+                            lastUpdateText.text = if (isFromCache) {
+                                getString(R.string.home_last_update_offline, finalLastUpdate)
                             } else {
-                                showNoDataMessage()
+                                getString(R.string.home_last_update, finalLastUpdate)
                             }
+                            L.d("HomeFragment", "Updated lastUpdateText: ${lastUpdateText.text}")
+                        }
+
+                        if (::contentLayout.isInitialized) {
+                            contentLayout.removeAllViews()
+                            L.d("HomeFragment", "Cleared contentLayout for final display")
+
+                            contentLayout.postDelayed({
+                                if (isAdded && _binding != null && ::contentLayout.isInitialized) {
+                                    contentLayout.removeAllViews()
+                                    displaySubstitutePlan(finalData)
+                                    L.d("HomeFragment", "Displayed final substitute plan")
+                                }
+                            }, 75)
+                        }
+
+                        currentJsonData = finalData
+                        setLastLoadTime(System.currentTimeMillis())
+                        setFirstAppLoadCompleted()
+
+                        if (isFromCache && !hasShownOfflineMessage) {
+                            showOfflineMessageIfNeeded()
+                        }
+
+                        L.d("HomeFragment", "====== CLEAN STARTUP COMPLETE ======")
+                    } else {
+                        L.d("HomeFragment", "No data available - showing appropriate message")
+                        if (!hasBasicConnectivity()) {
+                            showOfflineNoDataMessage()
+                        } else {
+                            showNoDataMessage()
                         }
                     }
                 }
             } catch (e: Exception) {
                 L.e("HomeFragment", "Critical error in clean startup", e)
+                delay(150)
                 withContext(Dispatchers.Main) {
                     if (isAdded && _binding != null) {
                         showOfflineNoDataMessage()
@@ -293,6 +318,7 @@ class HomeFragment : Fragment() {
                 }
             } finally {
                 isCleanStartupInProgress = false
+                L.d("HomeFragment", "Clean startup flag cleared")
             }
         }
     }
@@ -1030,7 +1056,8 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        L.d("HomeFragment", "onResume called")
+        L.d("HomeFragment", "===== onResume called =====")
+        L.d("HomeFragment", "isCleanStartupInProgress: $isCleanStartupInProgress, isFirstStartup: $isFirstStartup")
 
         try {
             if (!isAdded || _binding == null) {
@@ -1039,7 +1066,7 @@ class HomeFragment : Fragment() {
             }
 
             if (isCleanStartupInProgress || isFirstStartup) {
-                L.d("HomeFragment", "onResume: Blocked due to clean startup in progress")
+                L.d("HomeFragment", "onResume: BLOCKED - clean startup in progress, doing nothing")
                 return
             }
 
@@ -1073,6 +1100,7 @@ class HomeFragment : Fragment() {
             }
 
             if (!isInSharedContentMode && isInitialized) {
+                L.d("HomeFragment", "===== onResume: Regular resume path =====")
                 binding.root.post {
                     if (isAdded && _binding != null) {
                         loadStudentSubjects()
@@ -1097,7 +1125,7 @@ class HomeFragment : Fragment() {
 
                 when {
                     hasConnectivity && shouldReload -> {
-                        L.d("HomeFragment", "Connectivity available and cooldown allows reload")
+                        L.d("HomeFragment", ">>> onResume triggering reload")
                         binding.root.post {
                             if (isAdded && _binding != null && ::contentLayout.isInitialized) {
                                 showLoadingState()
@@ -1110,7 +1138,7 @@ class HomeFragment : Fragment() {
                         }
                     }
                     !hasCurrentData && hasConnectivity -> {
-                        L.d("HomeFragment", "No current data and connectivity available - loading regardless of cooldown")
+                        L.d("HomeFragment", ">>> onResume loading (no data)")
                         binding.root.post {
                             if (isAdded && _binding != null && ::contentLayout.isInitialized) {
                                 showLoadingState()
@@ -1123,7 +1151,7 @@ class HomeFragment : Fragment() {
                         }
                     }
                     !hasCurrentData && !hasConnectivity -> {
-                        L.d("HomeFragment", "No current data and offline - attempting cached data load")
+                        L.d("HomeFragment", ">>> onResume loading cached (offline, no data)")
                         binding.root.post {
                             if (isAdded && _binding != null && !isInSharedContentMode) {
                                 val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
@@ -1145,7 +1173,7 @@ class HomeFragment : Fragment() {
                         }
                     }
                     hasCurrentData && !hasConnectivity -> {
-                        L.d("HomeFragment", "Have cached data and offline - updating offline status")
+                        L.d("HomeFragment", ">>> onResume updating offline status")
                         binding.root.post {
                             if (isAdded && _binding != null) {
                                 val klasse = sharedPreferences.getString("selected_klasse", getString(R.string.home_not_selected))
@@ -1161,7 +1189,7 @@ class HomeFragment : Fragment() {
                         }
                     }
                     else -> {
-                        L.d("HomeFragment", "Data preserved, cooldown active - no reload needed")
+                        L.d("HomeFragment", ">>> onResume preserving existing data")
                         binding.root.post {
                             if (isAdded && _binding != null && currentJsonData != null) {
                                 displaySubstitutePlan(currentJsonData!!)
@@ -1477,10 +1505,17 @@ class HomeFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
-        L.d("HomeFragment", "onStart called, isInitialized: $isInitialized")
+        L.d("HomeFragment", "===== onStart called =====")
+        L.d("HomeFragment", "isInitialized: $isInitialized, isCleanStartupInProgress: $isCleanStartupInProgress, isFirstStartup: $isFirstStartup")
+        L.d("HomeFragment", "_binding null: ${_binding == null}, isAdded: $isAdded") // NEW LOG
 
         if (isCleanStartupInProgress || isFirstStartup) {
-            L.d("HomeFragment", "onStart: Blocked due to clean startup")
+            L.d("HomeFragment", "onStart: BLOCKED - clean startup in progress")
+            return
+        }
+
+        if (_binding == null || !isAdded) {
+            L.w("HomeFragment", "onStart: Fragment not properly initialized, skipping")
             return
         }
 
@@ -1488,8 +1523,8 @@ class HomeFragment : Fragment() {
         loadFilterSetting()
         loadCooldownSetting()
 
-        if (!isInitialized && _binding != null && !isFirstStartup && !isCleanStartupInProgress && !isInSharedContentMode) {
-            L.d("HomeFragment", "Initialization needed in onStart")
+        if (!isInitialized && !isFirstStartup && !isCleanStartupInProgress && !isInSharedContentMode) {
+            L.d("HomeFragment", ">>> onStart triggering initialization")
             startBackgroundDataLoad()
             isInitialized = true
         } else if (isInitialized) {
@@ -1499,9 +1534,14 @@ class HomeFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        L.d("HomeFragment", "onDestroyView called")
+        L.d("HomeFragment", "onDestroyView called, isCleanStartupInProgress: $isCleanStartupInProgress")
 
         try {
+            if (isCleanStartupInProgress) {
+                L.w("HomeFragment", "Fragment being destroyed during clean startup - canceling operations")
+                isCleanStartupInProgress = false
+            }
+
             cleanupRefreshIndicator()
             scope?.cancel()
         } catch (e: Exception) {
@@ -1696,7 +1736,7 @@ class HomeFragment : Fragment() {
             // Extract the "Stand" information
             val regex = """<div class="vpstand">Stand: ([^<]+)</div>""".toRegex()
             val matchResult = regex.find(html)
-            val originalText = matchResult?.groups?.get(1)?.value ?: "Unbekannt"
+            val originalText = matchResult?.groups?.get(1)?.value ?: getString(R.string.unknown)
 
             translateWeekdayInText(originalText)
         } finally {
@@ -1743,7 +1783,9 @@ class HomeFragment : Fragment() {
     }
 
     private fun displaySubstitutePlan(jsonData: JSONObject) {
+        L.d("HomeFragment", ">>> displaySubstitutePlan called, caller: ${Thread.currentThread().stackTrace[3]}")
         currentJsonData = jsonData
+
         if (!::contentLayout.isInitialized || !isAdded) {
             L.w("HomeFragment", "Cannot display substitute plan - fragment not properly initialized")
             return

@@ -15,7 +15,15 @@
         android:textColor="@android:color/holo_red_dark"
         android:textSize="14sp"
         android:visibility="gone"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_login_info"
+        android:textSize="14sp"
+        android:textColor="?attr/dialogAddSubjectTextColor"
+        android:layout_marginBottom="12dp" />
 
     <EditText
         android:id="@+id/etUsername"
@@ -23,26 +31,56 @@
         android:layout_height="wrap_content"
         android:hint="@string/moodle_username_hint"
         android:inputType="text"
-        android:layout_marginBottom="8dp" />
+        android:maxLines="1"
+        android:padding="12dp"
+        android:background="@drawable/subtle_search_background"
+        android:textSize="16sp"
+        android:textColorHint="#757575"
+        android:layout_marginBottom="12dp" />
 
-    <EditText
-        android:id="@+id/etPassword"
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/moodle_password_hint"
-        android:inputType="textPassword"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="16dp">
+
+        <EditText
+            android:id="@+id/etPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/moodle_password_hint"
+            android:inputType="textPassword"
+            android:maxLines="1"
+            android:padding="12dp"
+            android:paddingEnd="48dp"
+            android:background="@drawable/subtle_search_background"
+            android:textSize="16sp"
+            android:textColorHint="#757575" />
+
+        <ImageButton
+            android:id="@+id/btnTogglePasswordVisibility"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_eye_closed"
+            android:contentDescription="@string/moodle_toggle_password_visibility"
+            android:scaleType="centerInside" />
+    </RelativeLayout>
 
     <CheckBox
         android:id="@+id/cbSaveCredentials"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/moodle_save_credentials" />
+        android:text="@string/moodle_save_credentials"
+        android:textSize="14sp" />
 
     <CheckBox
         android:id="@+id/cbDontShowAgain"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/moodle_dont_show_again" />
+        android:text="@string/moodle_dont_show_again"
+        android:textSize="14sp" />
 
 </LinearLayout>

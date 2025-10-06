@@ -234,41 +234,6 @@ class PdfViewerManager(private val context: Context) {
         }
     }
 
-    fun downloadPdf(): Boolean {
-        return try {
-            currentPdfFile?.let { file ->
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val destFile = File(downloadsDir, file.name)
-                file.copyTo(destFile, overwrite = true)
-                true
-            } ?: false
-        } catch (e: Exception) {
-            L.e("PdfViewerManager", "Error downloading PDF", e)
-            false
-        }
-    }
-
-    fun sharePdf(): Intent? {
-        return try {
-            currentPdfFile?.let { file ->
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            }
-        } catch (e: Exception) {
-            L.e("PdfViewerManager", "Error sharing PDF", e)
-            null
-        }
-    }
-
     fun toggleScrollMode() {
         scrollModeEnabled = !scrollModeEnabled
     }

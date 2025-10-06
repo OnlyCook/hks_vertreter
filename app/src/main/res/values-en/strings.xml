@@ -1627,5 +1627,11 @@
     <string name="moodle_stay_page">Stay on this page</string>
     <string name="moodle_offline_error">You are offline. Please connect to the internet and try again.</string>
     <string name="moodle_please_login">Please log in to continue</string>
+    <string name="moodle_logged_out_successfully">Logged out successfully</string>
+    <string name="moodle_logout_confirm_title">Logout</string>
+    <string name="moodle_logout_confirm_message">Are you sure you want to log out?</string>
+    <string name="moodle_login_info">Please enter your Moodle login credentials</string>
+    <string name="moodle_toggle_password_visibility">Show/hide password</string>
+    <string name="moodle_show_dialog">Show dialog</string>
 
 </resources>

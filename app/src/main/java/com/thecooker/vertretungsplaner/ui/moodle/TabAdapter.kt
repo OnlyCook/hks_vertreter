@@ -46,6 +46,8 @@ class TabAdapter(
         val pinButton: ImageButton? = view.findViewById(R.id.btnPinTab)
         val container: MaterialCardView = view.findViewById(R.id.tabContainer)
         val defaultIndicator: View? = view.findViewById(R.id.defaultTabIndicator)
+
+        val pdfIndicator: View? = itemView.findViewById(R.id.pdfTabIndicator)
     }
 
     class NewTabViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -112,6 +114,7 @@ class TabAdapter(
         }
 
         tabHolder.defaultIndicator?.visibility = if (isDefaultTab) View.VISIBLE else View.GONE
+        tabHolder.pdfIndicator?.visibility = if (tab.id.startsWith("pdf_tab_")) View.VISIBLE else View.GONE
 
         if (!isCompactLayout && !isDefaultTab) {
             tabHolder.pinButton?.apply {
@@ -149,7 +152,7 @@ class TabAdapter(
             tabHolder.closeButton?.visibility = View.GONE
         }
 
-        if (!isDefaultTab && !isCompactLayout) {
+        if (!isDefaultTab) {
             tabHolder.container.setOnLongClickListener { view ->
                 draggedPosition = actualPosition
                 onTabDragStart(actualPosition)

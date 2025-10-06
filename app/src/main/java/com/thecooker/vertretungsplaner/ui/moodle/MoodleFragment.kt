@@ -94,6 +94,7 @@ import kotlin.math.sqrt
 
 class MoodleFragment : Fragment() {
 
+    private var isFragmentActive = false
     private lateinit var webView: WebView
     private lateinit var searchBarMoodle: EditText
     private lateinit var searchLayout: LinearLayout
@@ -111,6 +112,11 @@ class MoodleFragment : Fragment() {
     private lateinit var spinnerSearchType: Spinner
     private lateinit var tvNotificationCount: TextView
     private lateinit var tvMessageCount: TextView
+
+    companion object {
+        private const val CACHE_SIZE_LIMIT = 50 * 1024 * 1024L // 50mb
+        private const val CACHE_RETENTION_DAYS = 7L
+    }
 
     private lateinit var sharedPrefs: SharedPreferences
     private lateinit var encryptedPrefs: SharedPreferences
@@ -314,6 +320,41 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun configureCacheManagement() {
+        backgroundExecutor.execute {
+            try {
+                val cacheDir = requireContext().cacheDir
+                val now = System.currentTimeMillis()
+                val retentionMillis = CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000L
+
+                var totalSize = 0L
+                val files = cacheDir.listFiles()?.sortedByDescending { it.lastModified() } ?: return@execute
+
+                files.forEach { file ->
+                    if (now - file.lastModified() > retentionMillis) {
+                        file.deleteRecursively()
+                    } else {
+                        totalSize += file.length()
+                    }
+                }
+
+                if (totalSize > CACHE_SIZE_LIMIT) {
+                    var removedSize = 0L
+                    files.reversed().forEach { file ->
+                        if (totalSize - removedSize > CACHE_SIZE_LIMIT) {
+                            removedSize += file.length()
+                            file.deleteRecursively()
+                        }
+                    }
+                }
+
+                L.d("MoodleFragment", "Cache management: kept ${totalSize / 1024 / 1024}MB")
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error in cache management", e)
+            }
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -330,6 +371,8 @@ class MoodleFragment : Fragment() {
         if (!isWebViewInitialized) {
             Handler(Looper.getMainLooper()).post {
                 setupWebView()
+                configureCacheManagement()
+                ensureCleanDefaultTab()
                 initializeTabSystem()
                 setupClickListeners()
                 isWebViewInitialized = true
@@ -423,18 +466,20 @@ class MoodleFragment : Fragment() {
             displayZoomControls = isDebugMode
             setSupportZoom(true)
 
-            cacheMode = if (isDebugMode) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
+            cacheMode = WebSettings.LOAD_DEFAULT
             setRenderPriority(WebSettings.RenderPriority.HIGH)
+
+            databaseEnabled = true
+            domStorageEnabled = true
 
             allowFileAccess = true
             allowContentAccess = true
+        }
 
-            if (isDebugMode) {
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                allowFileAccessFromFileURLs = true
-                allowUniversalAccessFromFileURLs = true
-                setGeolocationEnabled(true)
-            }
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, false)
+            flush()
         }
 
         userAgent = webView.settings.userAgentString
@@ -494,6 +539,11 @@ class MoodleFragment : Fragment() {
                 L.d("MoodleFragment", "URL: $url")
                 L.d("MoodleFragment", "Current page: ${webView.url}")
 
+                if (url.contains("/login/logout.php?sesskey=")) {
+                    L.d("MoodleFragment", "Detected one-click logout with session key")
+                    return false
+                }
+
                 if (url.contains("/mod/resource/view.php")) {
                     L.d("MoodleFragment", "Intercepted resource view URL: $url")
                     val cookies = CookieManager.getInstance().getCookie(url)
@@ -545,9 +595,79 @@ class MoodleFragment : Fragment() {
                 }
                 isPageFullyLoaded = true
 
-                if (url?.contains("logout.php") == true) {
+                if (url?.contains("/login/logout.php?sesskey=") == true) {
+                    L.d("MoodleFragment", "One-click logout completed, clearing data and redirecting")
                     handleLogout()
                     return
+                }
+
+                if (url?.contains("/login/logout.php") == true && !url.contains("sesskey=")) {
+                    L.d("MoodleFragment", "On logout confirmation page")
+                    activity?.runOnUiThread {
+                        updateUrlBar(url)
+                    }
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        monitorLogoutConfirmation()
+                    }, 300)
+                    return
+                }
+
+                if (!wasOnLoginPage && (url == loginUrl || url?.contains("login/index.php") == true)) {
+                    val previousUrl = webView.copyBackForwardList().getItemAtIndex(
+                        webView.copyBackForwardList().currentIndex - 1
+                    )?.url
+
+                    if (previousUrl?.contains("/login/logout.php") == true) {
+                        L.d("MoodleFragment", "Detected navigation from logout to login - logout completed")
+                        handleLogout()
+                        return
+                    }
+                }
+
+                if (url == loginUrl || url?.contains("login/index.php") == true) {
+                    if (!wasOnLoginPage) {
+                        wasOnLoginPage = true
+                        loginSuccessConfirmed = false
+
+                        waitForPageReady { pageReady ->
+                            if (pageReady) {
+                                isConfirmDialogPage { isConfirmDialog ->
+                                    if (isConfirmDialog) {
+                                        checkConfirmDialog()
+                                    } else {
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            injectDialogButtonOnLoginPage()
+                                        }, 500)
+
+                                        checkLoginFailure { loginFailed ->
+                                            hasLoginFailed = loginFailed
+                                            if (!isLoginDialogShown && !loginSuccessConfirmed) {
+                                                checkAutoLogin()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    wasOnLoginPage = false
+                    isLoginDialogShown = false
+                    hasLoginFailed = false
+                    isUserLoggedIn { isLoggedIn ->
+                        if (isLoggedIn) {
+                            loginSuccessConfirmed = true
+                            loginRetryCount = 0
+                            lastSuccessfulLoginCheck = System.currentTimeMillis()
+                        }
+                    }
+                }
+
+                if (url != null) {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        injectMobileOptimizations(url)
+                    }, 100)
                 }
 
                 activity?.runOnUiThread {
@@ -564,38 +684,6 @@ class MoodleFragment : Fragment() {
                 Handler(Looper.getMainLooper()).postDelayed({
                     updateCounters()
                     checkLoginTransition(url)
-
-                    if (url == loginUrl || url?.contains("login/index.php") == true) {
-                        wasOnLoginPage = true
-                        loginSuccessConfirmed = false
-
-                        waitForPageReady { pageReady ->
-                            if (pageReady) {
-                                isConfirmDialogPage { isConfirmDialog ->
-                                    if (isConfirmDialog) {
-                                        checkConfirmDialog()
-                                    } else {
-                                        checkLoginFailure { loginFailed ->
-                                            hasLoginFailed = loginFailed
-                                            if (!isLoginDialogShown && !loginSuccessConfirmed) {
-                                                checkAutoLogin()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        isLoginDialogShown = false
-                        hasLoginFailed = false
-                        isUserLoggedIn { isLoggedIn ->
-                            if (isLoggedIn) {
-                                loginSuccessConfirmed = true
-                                loginRetryCount = 0
-                                lastSuccessfulLoginCheck = System.currentTimeMillis()
-                            }
-                        }
-                    }
                 }, 300)
             }
 
@@ -630,6 +718,13 @@ class MoodleFragment : Fragment() {
 
         webView.setOnTouchListener { _, event ->
             if (isPdfTab(currentTabIndex)) {
+                return@setOnTouchListener false
+            }
+
+            val currentUrl = webView.url ?: ""
+            val isOnMessagesPage = currentUrl.contains("/message/index.php")
+
+            if (isOnMessagesPage && event.action == MotionEvent.ACTION_DOWN) {
                 return@setOnTouchListener false
             }
 
@@ -739,6 +834,84 @@ class MoodleFragment : Fragment() {
             }
             Handler(Looper.getMainLooper()).postDelayed(scrollEndCheckRunnable!!, 150)
         }
+    }
+
+    private fun monitorLogoutConfirmation() {
+        val jsCode = """
+        (function() {
+            try {
+                var continueButton = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div[3]/div/div[2]/form/button',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (continueButton) {
+                    continueButton.addEventListener('click', function() {
+                        window.logoutConfirmed = true;
+                    });
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Logout confirmation button listener attached")
+                checkLogoutConfirmationStatus()
+            } else {
+                L.w("MoodleFragment", "Could not find logout confirmation button")
+            }
+        }
+    }
+
+    private fun checkLogoutConfirmationStatus() {
+        val handler = Handler(Looper.getMainLooper())
+        val checkInterval = 500L
+        val maxChecks = 60 // 30 seconds time to decide
+        var checkCount = 0
+
+        val checkRunnable = object : Runnable {
+            override fun run() {
+                val currentUrl = webView.url ?: ""
+
+                if (!currentUrl.contains("/login/logout.php")) {
+                    L.d("MoodleFragment", "User left logout page without confirming")
+                    return
+                }
+
+                checkCount++
+                if (checkCount >= maxChecks) {
+                    L.d("MoodleFragment", "Logout confirmation check timeout")
+                    return
+                }
+
+                val jsCode = """
+                (function() {
+                    return window.logoutConfirmed === true;
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (result == "true") {
+                        L.d("MoodleFragment", "Logout CONFIRMED - user clicked Continue button")
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            handleLogout()
+                        }, 500)
+                    } else {
+                        handler.postDelayed(this, checkInterval)
+                    }
+                }
+            }
+        }
+
+        handler.postDelayed(checkRunnable, checkInterval)
     }
 
     private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
@@ -909,6 +1082,8 @@ class MoodleFragment : Fragment() {
     }
 
     private fun handleLogout() {
+        L.d("MoodleFragment", "Handling logout - clearing all login data")
+
         isLoginDialogShown = false
         hasLoginFailed = false
         loginRetryCount = 0
@@ -917,12 +1092,50 @@ class MoodleFragment : Fragment() {
         consecutiveLoginFailures = 0
         isLoginInProgress = false
         loginAttemptCount = 0
+        sessionExpiredDetected = false
+        sessionExpiredRetryCount = 0
+        lastSessionExpiredTime = 0L
 
-        encryptedPrefs.edit { clear() }
+        encryptedPrefs.edit {
+            clear()
+            apply()
+        }
+
+        L.d("MoodleFragment", "Cleared encrypted credentials")
 
         sharedPrefs.edit {
             remove("moodle_dont_show_login_dialog")
+            apply()
         }
+
+        L.d("MoodleFragment", "Cleared login-related preferences")
+
+        CookieManager.getInstance().apply {
+            removeAllCookies { success ->
+                L.d("MoodleFragment", "Cleared all cookies: $success")
+            }
+            removeSessionCookies { success ->
+                L.d("MoodleFragment", "Cleared session cookies: $success")
+            }
+            flush()
+        }
+
+        webView.clearHistory()
+        webView.clearFormData()
+        WebStorage.getInstance().deleteAllData()
+
+        L.d("MoodleFragment", "Logout complete - all login data cleared")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            webView.loadUrl(loginUrl)
+            activity?.runOnUiThread {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_logged_out_successfully),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }, 300)
     }
 
     private fun showExtendedHeaderInitially() {
@@ -1100,6 +1313,12 @@ class MoodleFragment : Fragment() {
             webView.loadUrl(url)
         } else {
             loadUrlInBackground(url)
+        }
+
+        if (url.contains("/message/index.php")) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                clickMessageDrawerToggle()
+            }, 500)
         }
     }
 
@@ -1705,6 +1924,24 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun ensureCleanDefaultTab() {
+        if (tabs.isNotEmpty() && tabs[0].isDefault) {
+            val defaultTab = tabs[0]
+
+            tabs[0] = defaultTab.copy(
+                webViewState = null,
+                thumbnail = null
+            )
+
+            if (currentTabIndex == 0) {
+                webView.clearHistory()
+                webView.clearCache(false)
+            }
+
+            L.d("MoodleFragment", "Cleaned default tab state")
+        }
+    }
+
     private fun checkAutoLogin() {
         if (isLoginInProgress) {
             L.d("MoodleFragment", "Login already in progress, skipping checkAutoLogin")
@@ -1730,6 +1967,8 @@ class MoodleFragment : Fragment() {
             L.d("MoodleFragment", "In session expired cooldown, skipping auto-login")
             return
         }
+
+        ensureCleanDefaultTab()
 
         isConfirmDialogPage { isConfirmDialog ->
             if (isConfirmDialog) {
@@ -1760,6 +1999,8 @@ class MoodleFragment : Fragment() {
                         sessionExpiredDetected = true
                         lastSessionExpiredTime = System.currentTimeMillis()
                         consecutiveLoginFailures++
+
+                        CookieManager.getInstance().removeSessionCookies(null)
 
                         activity?.runOnUiThread {
                             Toast.makeText(
@@ -1939,12 +2180,6 @@ class MoodleFragment : Fragment() {
             return
         }
 
-        val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
-        if (dontShowDialog && consecutiveLoginFailures < MAX_LOGIN_ATTEMPTS) {
-            isLoginDialogShown = true
-            return
-        }
-
         isLoginDialogShown = true
         loginRetryCount++
 
@@ -1954,10 +2189,32 @@ class MoodleFragment : Fragment() {
         val cbSaveCredentials = dialogView.findViewById<CheckBox>(R.id.cbSaveCredentials)
         val cbDontShowAgain = dialogView.findViewById<CheckBox>(R.id.cbDontShowAgain)
         val tvErrorMessage = dialogView.findViewById<TextView>(R.id.tvErrorMessage)
+        val btnTogglePassword = dialogView.findViewById<ImageButton>(R.id.btnTogglePasswordVisibility)
+
+        val monoFont = Typeface.MONOSPACE
+        etUsername.typeface = monoFont
+        etPassword.typeface = monoFont
+
+        cbSaveCredentials.isChecked = encryptedPrefs.contains("moodle_username")
+        cbDontShowAgain.isChecked = false
 
         if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
             cbSaveCredentials.isChecked = false
             cbDontShowAgain.isChecked = false
+        }
+
+        var isPasswordVisible = false
+        btnTogglePassword.setOnClickListener {
+            isPasswordVisible = !isPasswordVisible
+            if (isPasswordVisible) {
+                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                btnTogglePassword.setImageResource(R.drawable.ic_eye_open)
+            } else {
+                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                btnTogglePassword.setImageResource(R.drawable.ic_eye_closed)
+            }
+            etPassword.typeface = monoFont
+            etPassword.setSelection(etPassword.text.length)
         }
 
         checkLoginError { errorMessage ->
@@ -1972,7 +2229,9 @@ class MoodleFragment : Fragment() {
             }
 
             extractUsernameFromForm { extractedUsername ->
-                val savedUsername = encryptedPrefs.getString("moodle_username", "") ?: ""
+                val savedUsername = if (encryptedPrefs.contains("moodle_username")) {
+                    encryptedPrefs.getString("moodle_username", "") ?: ""
+                } else ""
 
                 val usernameToShow = if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
                     extractedUsername ?: ""
@@ -1986,7 +2245,6 @@ class MoodleFragment : Fragment() {
 
                 val dialog = AlertDialog.Builder(requireContext())
                     .setTitle(getString(R.string.moodle_auto_login_title))
-                    .setMessage(getString(R.string.moodle_auto_login_message))
                     .setView(dialogView)
                     .setPositiveButton(getString(R.string.moodle_continue)) { _, _ ->
                         val username = etUsername.text.toString()
@@ -1997,17 +2255,24 @@ class MoodleFragment : Fragment() {
 
                         if (cbSaveCredentials.isChecked && username.isNotEmpty() && password.isNotEmpty()) {
                             saveCredentials(username, password)
+                            L.d("MoodleFragment", "Credentials saved by user choice")
                         } else {
-                            encryptedPrefs.edit { clear() }
+                            encryptedPrefs.edit {
+                                clear()
+                                apply()
+                            }
+                            L.d("MoodleFragment", "Credentials not saved or cleared")
                         }
 
                         if (cbDontShowAgain.isChecked) {
                             sharedPrefs.edit {
                                 putBoolean("moodle_dont_show_login_dialog", true)
+                                apply()
                             }
                         } else {
                             sharedPrefs.edit {
                                 remove("moodle_dont_show_login_dialog")
+                                apply()
                             }
                         }
 
@@ -2028,7 +2293,6 @@ class MoodleFragment : Fragment() {
                 val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
                 dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
             }
         }
     }
@@ -2075,6 +2339,24 @@ class MoodleFragment : Fragment() {
         loginAttemptCount++
         L.d("MoodleFragment", "Starting login attempt #$loginAttemptCount")
 
+        val escapedUsername = username
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+
+        val escapedPassword = password
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+
         val jsCode = """
         (function() {
             var usernameField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
@@ -2086,15 +2368,16 @@ class MoodleFragment : Fragment() {
             if (!submitButton) submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
             
             if (usernameField && passwordField && submitButton) {
-                usernameField.value = '$username';
-                passwordField.value = '$password';
+                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                nativeInputValueSetter.call(usernameField, '$escapedUsername');
+                nativeInputValueSetter.call(passwordField, '$escapedPassword');
 
                 usernameField.dispatchEvent(new Event('input', { bubbles: true }));
                 passwordField.dispatchEvent(new Event('input', { bubbles: true }));
 
                 setTimeout(function() {
                     submitButton.click();
-                }, 500);
+                }, 200);
                 
                 return true;
             } else {
@@ -2464,6 +2747,7 @@ class MoodleFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        isFragmentActive = true
         setupSharedPreferences()
         performPeriodicCacheCleanup()
 
@@ -2995,6 +3279,7 @@ class MoodleFragment : Fragment() {
         super.onDestroy()
 
         pdfViewerManager?.closePdf()
+        resetDefaultTabToLogin()
         savePinnedTabs()
         tabs.forEach { it.thumbnail?.recycle() }
         pdfRenderer?.close()
@@ -3003,7 +3288,6 @@ class MoodleFragment : Fragment() {
         scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
         cleanupFetchProcess()
-
         cleanupTemporaryPdfs()
     }
 
@@ -3831,7 +4115,6 @@ class MoodleFragment : Fragment() {
         }
 
         webView.reload()
-        //Toast.makeText(requireContext(), getString(R.string.moodle_refreshing), Toast.LENGTH_SHORT).show()
 
         Handler(Looper.getMainLooper()).postDelayed({
             animateRefreshIndicatorAway()
@@ -4276,8 +4559,10 @@ class MoodleFragment : Fragment() {
 
         val cookies = CookieManager.getInstance().getCookie(url)
 
-        // open in new tab (add only when not downloadable file)
-        if (!linkInfo.isDownloadable || linkInfo.isImage) {
+        val isMoodleUrl = url.startsWith("https://moodle.kleyer.eu/")
+
+        // open in new tab (only for moodle URLs and when not downloadable file)
+        if (isMoodleUrl && (!linkInfo.isDownloadable || linkInfo.isImage)) {
             options.add(Pair(getString(R.string.moodle_open_in_new_tab), R.drawable.ic_tab_background))
             actions.add {
                 createNewTab(url)
@@ -4383,23 +4668,21 @@ class MoodleFragment : Fragment() {
 
         tabs.clear()
 
-        val currentUrl = webView.url ?: loginUrl
-        val currentTitle = webView.title ?: "Moodle"
-
         val defaultTab = TabInfo(
             id = "default_tab",
-            url = currentUrl,
-            title = currentTitle,
+            url = loginUrl,
+            title = "Moodle",
             isPinned = false,
             isDefault = true,
-            thumbnail = captureWebViewThumbnail()
+            thumbnail = null,
+            webViewState = null
         )
         tabs.add(defaultTab)
         currentTabIndex = 0
 
         loadSavedTabs()
 
-        L.d("MoodleFragment", "Initialized tab system with ${tabs.size} tabs")
+        L.d("MoodleFragment", "Initialized tab system with ${tabs.size} tabs (clean default tab)")
     }
 
     private fun savePinnedTabs() {
@@ -4615,6 +4898,7 @@ class MoodleFragment : Fragment() {
 
     private fun loadPdfTab(tab: TabInfo) {
         val pdfFilePath = tab.webViewState?.getString("pdf_file_path")
+        pdfFileUrl = tab.webViewState?.getString("pdf_url") ?: tab.url
 
         if (pdfFilePath != null) {
             val pdfFile = File(pdfFilePath)
@@ -4630,9 +4914,12 @@ class MoodleFragment : Fragment() {
                     val scrollMode = tab.webViewState.getBoolean("pdf_scroll_mode", true)
                     val darkMode = tab.webViewState.getBoolean("pdf_dark_mode", isDarkTheme)
 
+                    if (darkMode != (pdfViewerManager?.forceDarkMode ?: false)) {
+                        pdfViewerManager?.toggleDarkMode()
+                    }
+
                     pdfViewerManager?.setCurrentPage(savedPage)
                     if (!scrollMode) pdfViewerManager?.toggleScrollMode()
-                    if (darkMode != isDarkTheme) pdfViewerManager?.toggleDarkMode()
 
                     webView.visibility = View.GONE
                     pdfContainer.visibility = View.VISIBLE
@@ -5044,17 +5331,70 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "Tab overlay shown with ${tabs.size} tabs")
     }
 
+    private fun resetDefaultTab() {
+        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+
+        if (defaultTabIndex != -1) {
+            L.d("MoodleFragment", "Resetting default tab at index $defaultTabIndex")
+
+            val defaultTab = tabs[defaultTabIndex]
+            tabs[defaultTabIndex] = defaultTab.copy(
+                url = loginUrl,
+                title = "Moodle",
+                thumbnail = null,
+                webViewState = null
+            )
+
+            if (currentTabIndex == defaultTabIndex) {
+                webView.clearHistory()
+                webView.clearCache(false)
+            }
+
+            L.d("MoodleFragment", "Default tab reset to login page")
+        }
+    }
+
     override fun onPause() {
         super.onPause()
+        isFragmentActive = false
         saveCurrentTabState()
         savePinnedTabs()
-        L.d("MoodleFragment", "onPause - saved tabs")
+
+        resetDefaultTab()
+
+        L.d("MoodleFragment", "onPause - saved tabs and reset default tab")
+    }
+
+    private fun resetDefaultTabToLogin() {
+        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+
+        if (defaultTabIndex != -1) {
+            L.d("MoodleFragment", "Resetting default tab to login page")
+
+            val defaultTab = tabs[defaultTabIndex]
+            tabs[defaultTabIndex] = defaultTab.copy(
+                url = loginUrl,
+                title = "Moodle",
+                thumbnail = null,
+                webViewState = null
+            )
+
+            if (currentTabIndex == defaultTabIndex) {
+                webView.clearHistory()
+                webView.clearCache(false)
+                webView.loadUrl(loginUrl)
+            }
+
+            savePinnedTabs()
+            L.d("MoodleFragment", "Default tab reset complete")
+        }
     }
 
     override fun onStop() {
         super.onStop()
+        resetDefaultTabToLogin()
         savePinnedTabs()
-        L.d("MoodleFragment", "onStop - saved tabs")
+        L.d("MoodleFragment", "onStop - reset default tab and saved pinned tabs")
     }
 
     private fun setupTabOverlayControls(overlayView: View) {
@@ -5437,7 +5777,7 @@ class MoodleFragment : Fragment() {
                 }
             },
             onTabDragStart = { index ->
-                if (index in tabs.indices && !tabs[index].isDefault && !isCompactTabLayout) {
+                if (index in tabs.indices && !tabs[index].isDefault) {
                     isDraggingTab = true
                     draggedTabIndex = index
 
@@ -5504,7 +5844,7 @@ class MoodleFragment : Fragment() {
                 }
             },
             onTabDragUpdate = { index, x, y ->
-                if (!isCompactTabLayout && isDraggingTab) {
+                if (isDraggingTab) {
                     floatingDeleteIcon?.let { icon ->
                         val iconLocation = IntArray(2)
                         icon.getLocationOnScreen(iconLocation)
@@ -5521,7 +5861,6 @@ class MoodleFragment : Fragment() {
 
                         when {
                             distance < hitRadius -> {
-                                // shake
                                 icon.clearAnimation()
                                 icon.animate()
                                     .translationY(-10f * density)
@@ -5542,7 +5881,6 @@ class MoodleFragment : Fragment() {
                                 icon.startAnimation(shake)
                             }
                             distance < hoverRadius -> {
-                                // slight hover
                                 icon.clearAnimation()
                                 icon.animate()
                                     .translationY(-5f * density)
@@ -5552,7 +5890,6 @@ class MoodleFragment : Fragment() {
                                     .start()
                             }
                             else -> {
-                                // resting state
                                 icon.clearAnimation()
                                 icon.animate()
                                     .translationY(0f)
@@ -5663,18 +6000,18 @@ class MoodleFragment : Fragment() {
             pdfViewerManager = null
         }
 
-        val actualPdfUrl = pdfFileUrl ?: pdfUrl
         val cleanFileName = fileName.removeSuffix(".pdf")
 
         val pdfTab = TabInfo(
             id = "$PDF_TAB_PREFIX${System.currentTimeMillis()}",
-            url = actualPdfUrl,
+            url = pdfUrl,
             title = cleanFileName,
             isPinned = false,
             isDefault = false,
             thumbnail = null,
             webViewState = Bundle().apply {
                 putString("pdf_file_path", permanentPdfFile.absolutePath)
+                putString("pdf_url", pdfUrl)
                 putInt("pdf_current_page", 0)
                 putBoolean("pdf_scroll_mode", true)
                 putBoolean("pdf_dark_mode", isDarkTheme)
@@ -5682,6 +6019,8 @@ class MoodleFragment : Fragment() {
         )
         tabs.add(pdfTab)
         currentTabIndex = tabs.size - 1
+
+        pdfFileUrl = pdfUrl
 
         loadPdfTab(pdfTab)
 
@@ -6290,15 +6629,67 @@ class MoodleFragment : Fragment() {
     }
 
     private fun downloadCurrentPdf() {
-        if (pdfViewerManager?.downloadPdf() == true) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_pdf_downloaded), Toast.LENGTH_SHORT).show()
+        val pdfState = pdfViewerManager?.getCurrentState()
+        val pdfFile = pdfState?.file
+
+        if (pdfFile != null && pdfFile.exists()) {
+            try {
+                val pdfUrl = tabs.getOrNull(currentTabIndex)?.url ?: ""
+                val originalFileName = try {
+                    URLDecoder.decode(pdfUrl.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                } catch (_: Exception) {
+                    "document.pdf"
+                }.removeSuffix(".pdf")
+
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val fileName = "${originalFileName}_$timestamp.pdf"
+
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val destFile = File(downloadsDir, fileName)
+
+                pdfFile.copyTo(destFile, overwrite = true)
+
+                Toast.makeText(requireContext(), getString(R.string.moodle_pdf_downloaded), Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error downloading PDF", e)
+                Toast.makeText(requireContext(), getString(R.string.moodle_pdf_download_failed), Toast.LENGTH_SHORT).show()
+            }
         } else {
             Toast.makeText(requireContext(), getString(R.string.moodle_pdf_download_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun shareCurrentPdf() {
-        pdfViewerManager?.sharePdf()?.let { intent ->
+        val pdfState = pdfViewerManager?.getCurrentState()
+        val pdfFile = pdfState?.file
+
+        if (pdfFile != null && pdfFile.exists()) {
+            val pdfUrl = tabs.getOrNull(currentTabIndex)?.url ?: ""
+            val originalFileName = try {
+                URLDecoder.decode(pdfUrl.substringAfterLast("/").substringBefore("?"), "UTF-8")
+            } catch (_: Exception) {
+                "document.pdf"
+            }.removeSuffix(".pdf")
+
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "${originalFileName}_$timestamp.pdf"
+
+            val cacheDir = requireContext().cacheDir
+            val shareFile = File(cacheDir, fileName)
+            pdfFile.copyTo(shareFile, overwrite = true)
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                requireContext(),
+                "${requireContext().packageName}.fileprovider",
+                shareFile
+            )
+
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
             startActivity(Intent.createChooser(intent, getString(R.string.moodle_pdf_share)))
         }
     }
@@ -8640,5 +9031,329 @@ class MoodleFragment : Fragment() {
                 getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
                 getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
             }
+    }
+
+    private fun injectDialogButtonOnLoginPage() {
+        val jsCode = """
+        (function() {
+            try {
+                var loginHeading = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/h1',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!loginHeading || !loginHeading.textContent.toLowerCase().includes('login')) {
+                    return false;
+                }
+
+                var existingButton = document.getElementById('logindialogbtn');
+                if (existingButton) {
+                    existingButton.remove();
+                }
+
+                var submitContainer = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[3]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!submitContainer) {
+                    return false;
+                }
+
+                var dialogButton = document.createElement('button');
+                dialogButton.id = 'logindialogbtn';
+                dialogButton.type = 'button';
+                dialogButton.className = 'btn btn-secondary btn-lg';
+                dialogButton.textContent = '${getString(R.string.moodle_show_dialog)}';
+                dialogButton.style.marginLeft = '8px';
+
+                dialogButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.showLoginDialogFromApp = true;
+                });
+
+                submitContainer.appendChild(dialogButton);
+                
+                return true;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Dialog button injected successfully")
+                monitorDialogButtonClick()
+            } else {
+                L.d("MoodleFragment", "Could not inject dialog button (might not be on login page)")
+            }
+        }
+    }
+
+    private fun monitorDialogButtonClick() {
+        val checkInterval = 300L
+        val handler = Handler(Looper.getMainLooper())
+
+        val checkRunnable = object : Runnable {
+            override fun run() {
+                val currentUrl = webView.url ?: ""
+
+                if (!currentUrl.contains("login/index.php")) {
+                    return
+                }
+
+                val jsCode = """
+                (function() {
+                    if (window.showLoginDialogFromApp === true) {
+                        window.showLoginDialogFromApp = false;
+                        return true;
+                    }
+                    
+                    var button = document.getElementById('logindialogbtn');
+                    if (!button) {
+                        return 'reinject';
+                    }
+                    
+                    return false;
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    when (result.trim('"')) {
+                        "true" -> {
+                            L.d("MoodleFragment", "Dialog button clicked - showing login dialog")
+                            activity?.runOnUiThread {
+                                showLoginDialog()
+                            }
+                            handler.postDelayed(this, checkInterval)
+                        }
+                        "reinject" -> {
+                            L.d("MoodleFragment", "Button missing, re-injecting")
+                            injectDialogButtonOnLoginPage()
+                        }
+                        else -> {
+                            handler.postDelayed(this, checkInterval)
+                        }
+                    }
+                }
+            }
+        }
+
+        handler.post(checkRunnable)
+    }
+
+    private fun injectMobileOptimizations(url: String) {
+        when {
+            url.contains("/message/index.php") -> optimizeMessagesPage()
+            //url.contains("/my/") && !url.contains("/my/index.php?edit=") -> optimizeDashboardPage()
+            // tried (switching dashboard header with recent side bar) but failed to preserve js functionality
+        }
+    }
+
+    private fun optimizeMessagesPage() {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('Optimizing messages page for mobile...');
+
+                if (!window.moodleOptimizationState) {
+                    window.moodleOptimizationState = {
+                        div2Removed: 0,
+                        footerRemoved: 0
+                    };
+                }
+
+                function removeElementByXPath(xpath, elementName) {
+                    var element = document.evaluate(
+                        xpath,
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (element) {
+                        element.remove();
+                        console.log('Removed ' + elementName);
+                        return true;
+                    }
+                    return false;
+                }
+                
+                // col-4 to col-5 for conversation list
+                var conversationContainer = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[1]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (conversationContainer) {
+                    conversationContainer.className = conversationContainer.className.replace('col-4', 'col-5');
+                    console.log('Updated conversation container to col-5');
+                }
+                
+                // col-8 to col-7 for message area
+                var messageContainer = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (messageContainer) {
+                    messageContainer.className = messageContainer.className.replace('col-8', 'col-7');
+                    console.log('Updated message container to col-7');
+                }
+                
+                // modify message box rows
+                var textarea = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/textarea',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (textarea) {
+                    textarea.setAttribute('rows', '5');
+                    textarea.setAttribute('data-min-rows', '5');
+                    textarea.setAttribute('data-max-rows', '12');
+                    console.log('Updated textarea rows to 5-12');
+                }
+                
+                // remove div[2] (can reappear once)
+                if (window.moodleOptimizationState.div2Removed < 2) {
+                    if (removeElementByXPath('/html/body/div[1]/div[2]/div/div[2]', 'div[2]')) {
+                        window.moodleOptimizationState.div2Removed++;
+                    }
+                }
+                
+                // remove div[3] (only once)
+                removeElementByXPath('/html/body/div[1]/div[2]/div/div[3]', 'div[3]');
+                
+                // remove footer (can also reappear once)
+                if (window.moodleOptimizationState.footerRemoved < 2) {
+                    if (removeElementByXPath('/html/body/div[1]/footer', 'footer')) {
+                        window.moodleOptimizationState.footerRemoved++;
+                    }
+                }
+                
+                function setupObserver() {
+                    var targetNode = document.body;
+                    
+                    var observer = new MutationObserver(function(mutations) {
+                        mutations.forEach(function(mutation) {
+                            if (mutation.addedNodes.length > 0) {
+                                if (window.moodleOptimizationState.div2Removed < 2) {
+                                    var div2 = document.evaluate(
+                                        '/html/body/div[1]/div[2]/div/div[2]',
+                                        document,
+                                        null,
+                                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                                        null
+                                    ).singleNodeValue;
+                                    
+                                    if (div2) {
+                                        console.log('div[2] reappeared, removing again');
+                                        div2.remove();
+                                        window.moodleOptimizationState.div2Removed++;
+                                    }
+                                }
+
+                                if (window.moodleOptimizationState.footerRemoved < 2) {
+                                    var footer = document.evaluate(
+                                        '/html/body/div[1]/footer',
+                                        document,
+                                        null,
+                                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                                        null
+                                    ).singleNodeValue;
+                                    
+                                    if (footer) {
+                                        console.log('Footer reappeared, removing again');
+                                        footer.remove();
+                                        window.moodleOptimizationState.footerRemoved++;
+                                    }
+                                }
+
+                                if (window.moodleOptimizationState.div2Removed >= 2 && 
+                                    window.moodleOptimizationState.footerRemoved >= 2) {
+                                    console.log('All removals complete, stopping observer');
+                                    observer.disconnect();
+                                }
+                            }
+                        });
+                    });
+                    
+                    observer.observe(targetNode, {
+                        childList: true,
+                        subtree: true
+                    });
+                    
+                    console.log('MutationObserver set up to watch for reappearing elements');
+                }
+                
+                setupObserver();
+                
+                return true;
+            } catch(e) {
+                console.error('Error optimizing messages page: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Messages page optimized with persistent monitoring")
+            } else {
+                L.w("MoodleFragment", "Failed to optimize messages page")
+            }
+        }
+    }
+
+    private fun clickMessageDrawerToggle() {
+        val jsCode = """
+        (function() {
+            try {
+                var messageToggle = document.evaluate(
+                    '/html/body/div[1]/nav/div/div/div[3]/a',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (messageToggle) {
+                    messageToggle.click();
+                    console.log('Clicked message drawer toggle');
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                console.error('Error clicking message toggle: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Message drawer toggle clicked")
+            } else {
+                L.w("MoodleFragment", "Failed to click message drawer toggle")
+            }
+        }
     }
 }
