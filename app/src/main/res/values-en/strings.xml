@@ -1545,7 +1545,6 @@
     <string name="moodle_fetching_exam_schedule">Fetching Exam Schedule</string>
     <string name="moodle_fetching_timetable">Fetching Timetable</string>
     <string name="moodle_waiting_for_login">Waiting for login…</string>
-    <string name="moodle_please_login">Please log in to Moodle</string>
     <string name="moodle_please_login_to_continue">Please log in to Moodle to continue fetching</string>
     <string name="moodle_login_successful">Login successful</string>
     <string name="moodle_navigating_to_my_page">Navigating to My Courses…</string>
@@ -1618,5 +1617,15 @@
     <string name="moodle_clearing_cache">Clearing cache…</string>
     <string name="moodle_preparing_pages">Preparing pages…</string>
     <string name="moodle_downloading_docx">Downloading DOCX…</string>
+    <string name="moodle_image_options">Image Options</string>
+    <string name="moodle_download_image">Download Image</string>
+    <string name="moodle_image_download_started">Downloading %s</string>
+    <string name="moodle_image_page_detected">Image Page Detected</string>
+    <string name="moodle_image_page_message">This is a Moodle image page that may cause session issues when opened in-app. Would you like to open it in your external browser instead?</string>
+    <string name="moodle_confirm_navigation">Confirm Navigation</string>
+    <string name="moodle_leave_page">Leave this page</string>
+    <string name="moodle_stay_page">Stay on this page</string>
+    <string name="moodle_offline_error">You are offline. Please connect to the internet and try again.</string>
+    <string name="moodle_please_login">Please log in to continue</string>
 
 </resources>

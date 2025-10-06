@@ -38,6 +38,8 @@ import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.pdf.PdfRenderer
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
@@ -406,7 +408,7 @@ class MoodleFragment : Fragment() {
         pdfKebabMenu = root.findViewById(R.id.pdfKebabMenu)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     private fun setupWebView() {
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
@@ -438,6 +440,35 @@ class MoodleFragment : Fragment() {
         userAgent = webView.settings.userAgentString
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                val dialog = AlertDialog.Builder(requireActivity())
+                    .setTitle(getString(R.string.moodle_confirm_navigation))
+                    .setMessage(message)
+                    .setPositiveButton(getString(R.string.moodle_leave_page)) { _, _ ->
+                        result?.confirm()
+                    }
+                    .setNegativeButton(getString(R.string.moodle_stay_page)) { _, _ ->
+                        result?.cancel()
+                    }
+                    .setOnCancelListener {
+                        result?.cancel()
+                    }
+                    .show()
+
+                dialog.setOnShowListener {
+                    val buttonColor = requireActivity().getThemeColor(R.attr.dialogSectionButtonColor)
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+                }
+
+                return true
+            }
+
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 activity?.runOnUiThread {
@@ -459,16 +490,25 @@ class MoodleFragment : Fragment() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
 
+                L.d("MoodleFragment", "=== shouldOverrideUrlLoading ===")
+                L.d("MoodleFragment", "URL: $url")
+                L.d("MoodleFragment", "Current page: ${webView.url}")
+
                 if (url.contains("/mod/resource/view.php")) {
                     L.d("MoodleFragment", "Intercepted resource view URL: $url")
                     val cookies = CookieManager.getInstance().getCookie(url)
+                    L.d("MoodleFragment", "Cookie preview: ${cookies?.take(50)}...")
 
                     verifyFileLink(url) { isFileLink ->
+                        L.d("MoodleFragment", "verifyFileLink returned: $isFileLink")
+
                         if (isFileLink) {
+                            L.d("MoodleFragment", "Treating as file download, resolving URL")
                             resolveDownloadUrl(url, cookies)
                         } else {
+                            L.d("MoodleFragment", "Detected image page - NOT opening to avoid session loss")
                             activity?.runOnUiThread {
-                                webView.loadUrl(url)
+                                showImagePageDialog(url)
                             }
                         }
                     }
@@ -705,51 +745,112 @@ class MoodleFragment : Fragment() {
         val idMatch = "id=(\\d+)".toRegex().find(url)
         val resourceId = idMatch?.groupValues?.get(1)
 
+        L.d("MoodleFragment", "=== verifyFileLink Debug ===")
+        L.d("MoodleFragment", "URL: $url")
+        L.d("MoodleFragment", "Resource ID: $resourceId")
+        L.d("MoodleFragment", "Current WebView URL: ${webView.url}")
+
         if (resourceId == null) {
+            L.e("MoodleFragment", "No resource ID found in URL")
             callback(false)
             return
         }
 
         val jsCode = """
-        (function() {
-            try {
-                var links = document.querySelectorAll('a[href*="id=$resourceId"]');
-                
-                for (var i = 0; i < links.length; i++) {
-                    var link = links[i];
+    (function() {
+        try {
+            console.log('=== Starting File Verification ===');
+            console.log('Checking resource ID: $resourceId');
+            console.log('Document URL: ' + document.location.href);
+            console.log('Document ready state: ' + document.readyState);
+            
+            var links = document.querySelectorAll('a[href*="id=$resourceId"]');
+            console.log('Found ' + links.length + ' links with this ID');
+            
+            for (var i = 0; i < links.length; i++) {
+                var link = links[i];
+                console.log('Link ' + i + ' href: ' + link.href);
+                console.log('Link ' + i + ' HTML: ' + link.outerHTML.substring(0, 200));
 
-                    var accessHideSpan = link.querySelector('span.accesshide');
-                    if (accessHideSpan) {
-                        var text = accessHideSpan.textContent.trim().toLowerCase();
-                        if (text.includes('datei') || text.includes('file')) {
-                            return true;
-                        }
-                    }
+                var accessHideSpan = link.querySelector('span.accesshide');
+                if (accessHideSpan) {
+                    var text = accessHideSpan.textContent.trim().toLowerCase();
+                    console.log('AccessHide text: "' + text + '"');
+                    
+                    if (text.includes('datei') || text.includes('file')) {
+                        var container = link.closest('.activity-item, .activityinstance');
+                        if (container) {
+                            console.log('Found container');
+                            var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
+                            if (activityIcon && activityIcon.src) {
+                                var imgSrc = activityIcon.src.toLowerCase();
+                                console.log('Activity icon src: ' + imgSrc);
 
-                    var container = link.closest('.activity-item, .activityinstance');
-                    if (container) {
-                        var activityIcon = container.querySelector('img.activityicon');
-                        if (activityIcon && activityIcon.src) {
-                            var imgSrc = activityIcon.src.toLowerCase();
-                            if (imgSrc.includes('/f/pdf') || 
-                                imgSrc.includes('/f/document') || 
-                                imgSrc.includes('/f/archive') ||
-                                imgSrc.includes('resource')) {
-                                return true;
+                                if (imgSrc.includes('/f/image?')) {
+                                    console.log('*** DETECTED IMAGE PAGE ***');
+                                    return JSON.stringify({isFile: false, isImagePage: true, iconSrc: imgSrc});
+                                }
+
+                                if (imgSrc.includes('/f/pdf') || 
+                                    imgSrc.includes('/f/document') || 
+                                    imgSrc.includes('/f/archive') ||
+                                    imgSrc.includes('resource')) {
+                                    console.log('*** DETECTED DOWNLOADABLE FILE ***');
+                                    return JSON.stringify({isFile: true, isImagePage: false, iconSrc: imgSrc});
+                                }
+                            } else {
+                                console.log('No activity icon found in container');
                             }
+                        } else {
+                            console.log('No container found for link');
                         }
+                        console.log('Has file/datei tag but no definitive icon match');
+                        return JSON.stringify({isFile: true, isImagePage: false, iconSrc: 'none'});
+                    } else {
+                        console.log('AccessHide text does not contain file/datei keywords');
                     }
+                } else {
+                    console.log('Link ' + i + ' has no accesshide span');
                 }
-                
-                return false;
-            } catch(e) {
-                return false;
             }
-        })();
+            
+            console.log('*** NO FILE INDICATORS FOUND - DEFAULTING TO IMAGE PAGE ***');
+            return JSON.stringify({isFile: false, isImagePage: false, iconSrc: 'none'});
+        } catch(e) {
+            console.error('Error in verifyFileLink: ' + e.message);
+            console.error('Stack: ' + e.stack);
+            return JSON.stringify({isFile: false, error: e.message, stack: e.stack});
+        }
+    })();
     """.trimIndent()
 
         webView.evaluateJavascript(jsCode) { result ->
-            callback(result == "true")
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Raw JS result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+
+                val isFile = jsonResult.optBoolean("isFile", false)
+                val isImagePage = jsonResult.optBoolean("isImagePage", false)
+                val iconSrc = jsonResult.optString("iconSrc", "unknown")
+                val error = jsonResult.optString("error", "")
+
+                L.d("MoodleFragment", "Verification result - isFile: $isFile, isImagePage: $isImagePage, iconSrc: $iconSrc")
+                if (error.isNotEmpty()) {
+                    L.e("MoodleFragment", "JS Error: $error")
+                    val stack = jsonResult.optString("stack", "")
+                    if (stack.isNotEmpty()) {
+                        L.e("MoodleFragment", "JS Stack: $stack")
+                    }
+                }
+
+                callback(isFile)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing verification result", e)
+                L.e("MoodleFragment", "Raw result was: $result")
+                callback(false)
+            }
         }
     }
 
@@ -866,6 +967,39 @@ class MoodleFragment : Fragment() {
         }
 
         btnSubmitSearch.setOnClickListener {
+            if (!isNetworkAvailable()) {
+                Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            btnSubmitSearch.animate()
+                .scaleX(0.85f)
+                .scaleY(0.85f)
+                .setDuration(100)
+                .withEndAction {
+                    btnSubmitSearch.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(100)
+                        .start()
+                }
+                .start()
+
+            btnSubmitSearch.isEnabled = false
+            Handler(Looper.getMainLooper()).postDelayed({
+                btnSubmitSearch.isEnabled = true
+            }, 1000)
+
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchBarMoodle.windowToken, 0)
+
+            val originalDrawable = btnSubmitSearch.drawable
+            btnSubmitSearch.setImageResource(R.drawable.ic_check)
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                btnSubmitSearch.setImageDrawable(originalDrawable)
+            }, 800)
+
             performSearch()
         }
 
@@ -878,6 +1012,34 @@ class MoodleFragment : Fragment() {
         })
 
         searchBarMoodle.setOnEditorActionListener { _, _, _ ->
+            if (!isNetworkAvailable()) {
+                Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_SHORT).show()
+                return@setOnEditorActionListener true
+            }
+
+            btnSubmitSearch.animate()
+                .scaleX(0.85f)
+                .scaleY(0.85f)
+                .setDuration(100)
+                .withEndAction {
+                    btnSubmitSearch.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(100)
+                        .start()
+                }
+                .start()
+
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(searchBarMoodle.windowToken, 0)
+
+            val originalDrawable = btnSubmitSearch.drawable
+            btnSubmitSearch.setImageResource(R.drawable.ic_check)
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                btnSubmitSearch.setImageDrawable(originalDrawable)
+            }, 800)
+
             performSearch()
             true
         }
@@ -1554,6 +1716,11 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        if (!isNetworkAvailable()) {
+            L.d("MoodleFragment", "No network connection, skipping auto-login")
+            return
+        }
+
         if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
             L.d("MoodleFragment", "Max login failures reached, skipping auto-login")
             return
@@ -1710,25 +1877,48 @@ class MoodleFragment : Fragment() {
 
     private fun checkSessionExpired(callback: (Boolean) -> Unit) {
         val jsCode = """
-        (function() {
-            try {
-                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (errorDiv && errorDiv.classList.contains('alert')) {
-                    var errorText = errorDiv.textContent.trim().toLowerCase();
-                    if (errorText.includes('sitzung') || errorText.includes('session') || 
-                        errorText.includes('expired') || errorText.includes('abgelaufen')) {
-                        return true;
-                    }
+    (function() {
+        try {
+            console.log('=== Checking for session expired ===');
+            console.log('Current URL: ' + window.location.href);
+            console.log('Document title: ' + document.title);
+            console.log('Referrer: ' + document.referrer);
+            
+            var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            
+            if (errorDiv && errorDiv.classList.contains('alert')) {
+                var errorText = errorDiv.textContent.trim().toLowerCase();
+                console.log('Found error alert: "' + errorText + '"');
+                
+                if (errorText.includes('sitzung') || errorText.includes('session') || 
+                    errorText.includes('expired') || errorText.includes('abgelaufen')) {
+                    console.log('*** SESSION EXPIRED DETECTED ***');
+                    return true;
                 }
-                return false;
-            } catch(e) {
-                return false;
             }
-        })();
+
+            if (window.location.href.includes('/login/')) {
+                console.log('*** ON LOGIN PAGE - Possible session loss ***');
+                var loginForm = document.querySelector('form[action*="login"]');
+                if (loginForm) {
+                    console.log('Login form detected - session likely expired');
+                }
+            }
+            
+            console.log('No session expiry detected');
+            return false;
+        } catch(e) {
+            console.error('Error checking session: ' + e.message);
+            return false;
+        }
+    })();
     """.trimIndent()
 
         webView.evaluateJavascript(jsCode) { result ->
-            callback(result == "true")
+            val isExpired = result == "true"
+            L.d("MoodleFragment", "Session expired check result: $isExpired")
+            L.d("MoodleFragment", "WebView URL when checking: ${webView.url}")
+            callback(isExpired)
         }
     }
 
@@ -1743,6 +1933,11 @@ class MoodleFragment : Fragment() {
 
     private fun showLoginDialog() {
         if (isLoginDialogShown) return
+
+        if (!isNetworkAvailable()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
+            return
+        }
 
         val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
         if (dontShowDialog && consecutiveLoginFailures < MAX_LOGIN_ATTEMPTS) {
@@ -2131,22 +2326,14 @@ class MoodleFragment : Fragment() {
         try {
             webView.clearCache(true)
             webView.clearHistory()
-            webView.clearFormData()
-
-            CookieManager.getInstance().apply {
-                removeAllCookies(null)
-                flush()
-            }
 
             WebStorage.getInstance().deleteAllData()
 
             context?.let { ctx ->
                 ctx.cacheDir.deleteRecursively()
-
-                File(ctx.cacheDir.parent, "app_webview").deleteRecursively()
-                File(ctx.cacheDir.parent, "app_WebView").deleteRecursively()
-
                 ctx.codeCacheDir.deleteRecursively()
+
+                cleanupOldCachedPdfs()
 
                 Toast.makeText(ctx, getString(R.string.moodle_cache_cleared), Toast.LENGTH_SHORT).show()
             }
@@ -2156,25 +2343,59 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun cleanupOldCachedPdfs() {
+        try {
+            context?.let { ctx ->
+                val currentTime = System.currentTimeMillis()
+                val maxAge = 24 * 60 * 60 * 1000L // 24 hours
+
+                ctx.cacheDir.listFiles()?.filter { file ->
+                    file.name.startsWith("moodle_pdf_") &&
+                            (currentTime - file.lastModified()) > maxAge
+                }?.forEach { it.delete() }
+            }
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error cleaning cached PDFs", e)
+        }
+    }
+
     fun clearMoodleData() {
         try {
-            clearMoodleCache()
+            // clear webview cache
+            webView.clearCache(true)
+            webView.clearHistory()
+            webView.clearFormData()
+
+            // clear cookies
+            CookieManager.getInstance().apply {
+                removeAllCookies(null)
+                flush()
+            }
+
+            WebStorage.getInstance().deleteAllData()
 
             context?.let { ctx ->
-                val dataDir = File(ctx.applicationInfo.dataDir)
+                // clear cache
+                ctx.cacheDir.deleteRecursively()
+                ctx.codeCacheDir.deleteRecursively()
 
+                // clear webview (general) data
+                val dataDir = File(ctx.applicationInfo.dataDir)
                 File(dataDir, "app_webview").deleteRecursively()
                 File(dataDir, "app_WebView").deleteRecursively()
 
+                // clear webview databases
                 File(dataDir, "databases").listFiles()?.filter {
-                    it.name.contains("webview", ignoreCase = true) ||
-                            it.name.contains("WebView", ignoreCase = true)
+                    it.name.contains("webview", ignoreCase = true)
                 }?.forEach { it.deleteRecursively() }
 
+                // clear shared prefs
                 File(dataDir, "shared_prefs").listFiles()?.filter {
-                    it.name.contains("webview", ignoreCase = true) ||
-                            it.name.contains("WebView", ignoreCase = true)
+                    it.name.contains("webview", ignoreCase = true)
                 }?.forEach { it.delete() }
+
+                // clear saved pdfs
+                File(ctx.filesDir, "moodle_pdfs").deleteRecursively()
             }
 
             encryptedPrefs.edit { clear() }
@@ -2183,6 +2404,11 @@ class MoodleFragment : Fragment() {
                 remove("moodle_dont_show_login_dialog")
                 remove("moodle_auto_dismiss_confirm")
                 remove("moodle_debug_mode")
+                remove("saved_program_course_name")
+                remove("saved_timetable_entry_name")
+                remove("saved_tabs")
+                remove("moodle_tab_layout_compact")
+                remove("last_moodle_cache_cleanup")
             }
 
             Toast.makeText(requireContext(), getString(R.string.moodle_data_cleared), Toast.LENGTH_SHORT).show()
@@ -2195,10 +2421,51 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun performPeriodicCacheCleanup() {
+        val lastCleanup = sharedPrefs.getLong("last_moodle_cache_cleanup", 0L)
+        val now = System.currentTimeMillis()
+        val cleanupInterval = 7 * 24 * 60 * 60 * 1000L
+
+        if (now - lastCleanup > cleanupInterval) {
+            backgroundExecutor.execute {
+                try {
+                    context?.let { ctx ->
+                        ctx.cacheDir.listFiles()?.filter { file ->
+                            (now - file.lastModified()) > cleanupInterval
+                        }?.forEach { it.deleteRecursively() }
+
+                        val permanentPdfDir = File(ctx.filesDir, "moodle_pdfs")
+                        if (permanentPdfDir.exists()) {
+                            val activePdfPaths = tabs.filter { isPdfTab(tabs.indexOf(it)) }
+                                .mapNotNull { it.webViewState?.getString("pdf_file_path") }
+                                .toSet()
+
+                            permanentPdfDir.listFiles()?.forEach { file ->
+                                if (file.absolutePath !in activePdfPaths &&
+                                    (now - file.lastModified()) > cleanupInterval) {
+                                    file.delete()
+                                    L.d("MoodleFragment", "Deleted orphaned PDF: ${file.name}")
+                                }
+                            }
+                        }
+
+                        sharedPrefs.edit {
+                            putLong("last_moodle_cache_cleanup", now)
+                        }
+
+                        L.d("MoodleFragment", "Periodic cache cleanup completed")
+                    }
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Error in periodic cleanup", e)
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-
         setupSharedPreferences()
+        performPeriodicCacheCleanup()
 
         if (webView.url == loginUrl) {
             Handler(Looper.getMainLooper()).postDelayed({
@@ -2700,8 +2967,33 @@ class MoodleFragment : Fragment() {
             .trim()
     }
 
+    private fun cleanupTemporaryPdfs() {
+        try {
+            context?.let { ctx ->
+                val cacheDir = ctx.cacheDir
+                val currentTime = System.currentTimeMillis()
+                val maxAge = 24 * 60 * 60 * 1000L
+
+                cacheDir.listFiles()?.filter { file ->
+                    file.name.startsWith("moodle_pdf_") &&
+                            (currentTime - file.lastModified()) > maxAge
+                }?.forEach { file ->
+                    try {
+                        file.delete()
+                        L.d("MoodleFragment", "Deleted old cached PDF: ${file.name}")
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Failed to delete cached PDF: ${file.name}", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error cleaning temporary PDFs", e)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+
         pdfViewerManager?.closePdf()
         savePinnedTabs()
         tabs.forEach { it.thumbnail?.recycle() }
@@ -2711,6 +3003,8 @@ class MoodleFragment : Fragment() {
         scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
         cleanupFetchProcess()
+
+        cleanupTemporaryPdfs()
     }
 
     private fun showDebugMenu() {
@@ -2727,7 +3021,7 @@ class MoodleFragment : Fragment() {
             "Clear All Data"
         )
 
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext()) // debug only
             .setTitle("🔧 Debug Menu")
             .setItems(debugItems) { _, which ->
                 when (which) {
@@ -2782,7 +3076,7 @@ class MoodleFragment : Fragment() {
                         checkFormElementsDebug()
                     }
                     7 -> {
-                        AlertDialog.Builder(requireContext())
+                        AlertDialog.Builder(requireContext()) // debug only
                             .setTitle("Clear All Data")
                             .setMessage("This will clear all Moodle data and restart. Continue?")
                             .setPositiveButton("Yes") { _, _ ->
@@ -2808,7 +3102,7 @@ class MoodleFragment : Fragment() {
         }
         scrollView.addView(textView)
 
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext()) // debug only
             .setTitle(title)
             .setView(scrollView)
             .setPositiveButton("Close", null)
@@ -2827,7 +3121,7 @@ class MoodleFragment : Fragment() {
             setText("document.title")
         }
 
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext()) // debug only
             .setTitle("Execute JavaScript")
             .setView(editText)
             .setPositiveButton("Execute") { _, _ ->
@@ -2922,7 +3216,7 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun showSearchProgressDialog(category: String): AlertDialog {
+    private fun showSearchProgressDialog(category: String, summary: String): AlertDialog {
         val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_search_progress, null)
         val tvSearchTitle = dialogView.findViewById<TextView>(R.id.tvSearchTitle)
         val tvSearchStatus = dialogView.findViewById<TextView>(R.id.tvSearchStatus)
@@ -2969,11 +3263,81 @@ class MoodleFragment : Fragment() {
         searchCancelled = false
     }
 
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
     private fun searchForMoodleEntry(category: String, summary: String, entryId: String) {
         L.d("MoodleFragment", "Searching for Moodle entry - Category: $category, Summary: $summary (ID: $entryId)")
 
+        if (!isNetworkAvailable()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
+            return
+        }
+
         searchCancelled = false
-        searchProgressDialog = showSearchProgressDialog(category)
+        searchProgressDialog = showSearchProgressDialog(category, summary)
+
+        val currentUrl = webView.url ?: ""
+        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+        if (isOnLoginPage) {
+            updateSearchProgress(15, getString(R.string.moodle_please_login))
+            searchProgressDialog?.hide()
+
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.moodle_please_login_to_continue),
+                Toast.LENGTH_LONG
+            ).show()
+
+            monitorLoginCompletionForSearch(category, summary, entryId)
+        } else {
+            continueSearchAfterLogin(category, summary, entryId)
+        }
+    }
+
+    private fun monitorLoginCompletionForSearch(category: String, summary: String, entryId: String) {
+        val searchStartTime = System.currentTimeMillis()
+        val checkInterval = 1000L
+        val timeout = 180000L // 3 minutes
+        val handler = Handler(Looper.getMainLooper())
+
+        val loginCheckRunnable = object : Runnable {
+            override fun run() {
+                if (searchCancelled || System.currentTimeMillis() - searchStartTime > timeout) {
+                    hideSearchProgressDialog()
+                    if (!searchCancelled) {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_search_timeout), Toast.LENGTH_SHORT).show()
+                    }
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+                val isStillOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+                if (!isStillOnLoginPage) {
+                    searchProgressDialog?.show()
+                    updateSearchProgress(20, getString(R.string.moodle_login_successful))
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        continueSearchAfterLogin(category, summary, entryId)
+                    }, 500)
+                } else {
+                    handler.postDelayed(this, checkInterval)
+                }
+            }
+        }
+
+        handler.post(loginCheckRunnable)
+    }
+
+    private fun continueSearchAfterLogin(category: String, summary: String, entryId: String) {
+        if (searchCancelled) return
 
         val currentUrl = webView.url ?: ""
         val isOnMyCoursesPage = currentUrl.contains("/my/") || currentUrl == "$moodleBaseUrl/my/"
@@ -2998,11 +3362,14 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "Using category as search query: $category")
         updateSearchProgress(30, getString(R.string.moodle_searching_course))
 
+        val currentUrl = webView.url ?: ""
+        val isOnMyCoursesPage = currentUrl.contains("/my/") || currentUrl == "$moodleBaseUrl/my/"
+        val initialDelay = if (isOnMyCoursesPage) 300L else 1000L
+
         waitForPageLoadComplete {
             if (searchCancelled) return@waitForPageLoadComplete
 
             updateSearchProgress(35, getString(R.string.moodle_preparing_search))
-
             resetSearchState()
 
             Handler(Looper.getMainLooper()).postDelayed({
@@ -3021,6 +3388,13 @@ class MoodleFragment : Fragment() {
 
                                 Handler(Looper.getMainLooper()).postDelayed({
                                     if (searchCancelled) return@postDelayed
+
+                                    searchProgressDialog?.let { dialog ->
+                                        val dialogView = dialog.findViewById<View>(android.R.id.content)
+                                        val tvSearchTitle = dialogView?.findViewById<TextView>(R.id.tvSearchTitle)
+                                        tvSearchTitle?.text = getString(R.string.moodle_searching_for, summary)
+                                    }
+
                                     clickFirstCourseResult(category, summary, entryId)
                                 }, 1500)
                             } else {
@@ -3035,7 +3409,7 @@ class MoodleFragment : Fragment() {
                         Toast.makeText(requireContext(), getString(R.string.moodle_search_not_available), Toast.LENGTH_SHORT).show()
                     }
                 }
-            }, 1000)
+            }, initialDelay)
         }
     }
 
@@ -3825,32 +4199,34 @@ class MoodleFragment : Fragment() {
                     if (accessHideSpan) {
                         var text = accessHideSpan.textContent.trim().toLowerCase();
                         if (text.includes('datei') || text.includes('file')) {
-                            linkInfo.isDownloadable = true;
-                        }
-                    }
+                            var container = link.closest('.activity-item, .activityinstance');
+                            if (container) {
+                                var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
+                                if (activityIcon && activityIcon.src) {
+                                    var imgSrc = activityIcon.src.toLowerCase();
 
-                    var container = link.closest('.activity-item, .activityinstance');
-                    if (container) {
-                        var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
-                        if (activityIcon && activityIcon.src) {
-                            var imgSrc = activityIcon.src.toLowerCase();
-
-                            if (imgSrc.includes('/f/image?')) {
-                                linkInfo.isImage = true;
-                                linkInfo.isDownloadable = false;
-                            }
-                            else if (imgSrc.includes('/f/pdf')) {
-                                linkInfo.isCopyable = true;
-                                linkInfo.fileType = 'pdf';
-                            }
-                            else if (imgSrc.includes('/f/document') || imgSrc.includes('/f/docx')) {
-                                linkInfo.isCopyable = true;
-                                linkInfo.fileType = 'docx';
+                                    if (imgSrc.includes('/f/image?')) {
+                                        linkInfo.isImage = true;
+                                        linkInfo.isDownloadable = false;
+                                        linkInfo.isCopyable = false;
+                                        break;
+                                    }
+                                    else if (imgSrc.includes('/f/pdf')) {
+                                        linkInfo.isDownloadable = true;
+                                        linkInfo.isCopyable = true;
+                                        linkInfo.fileType = 'pdf';
+                                    }
+                                    else if (imgSrc.includes('/f/document') || imgSrc.includes('/f/docx')) {
+                                        linkInfo.isDownloadable = true;
+                                        linkInfo.isCopyable = true;
+                                        linkInfo.fileType = 'docx';
+                                    }
+                                }
                             }
                         }
                     }
                     
-                    if (linkInfo.isDownloadable || linkInfo.isCopyable) {
+                    if (linkInfo.isDownloadable || linkInfo.isCopyable || linkInfo.isImage) {
                         break;
                     }
                 }
@@ -4558,6 +4934,18 @@ class MoodleFragment : Fragment() {
 
         val wasClosingCurrentTab = (index == currentTabIndex)
 
+        val tabToClose = tabs[index]
+        if (isPdfTab(index) && !tabToClose.isPinned) {
+            tabToClose.webViewState?.getString("pdf_file_path")?.let { pdfPath ->
+                try {
+                    File(pdfPath).delete()
+                    L.d("MoodleFragment", "Deleted PDF file for closed tab: $pdfPath")
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Failed to delete PDF file", e)
+                }
+            }
+        }
+
         tabs[index].thumbnail?.recycle()
         tabs.removeAt(index)
 
@@ -4744,6 +5132,7 @@ class MoodleFragment : Fragment() {
         setupLayoutToggle(layoutToggleHandle, overlayView)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupLayoutToggle(handle: View, overlayView: View) {
         handle.alpha = 0.6f
         handle.scaleX = 1f
@@ -6838,6 +7227,11 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        if (!isNetworkAvailable()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
+            return
+        }
+
         isFetchingFromMoodle = true
         fetchCancelled = false
         fetchStartTime = System.currentTimeMillis()
@@ -7821,83 +8215,430 @@ class MoodleFragment : Fragment() {
 
     private fun convertDocxByteArrayToPdf(docxBytes: ByteArray): ByteArray? {
         return try {
-            val zipInputStream = ZipInputStream(docxBytes.inputStream())
-            var entry: ZipEntry?
-            val images = mutableMapOf<String, ByteArray>()
-            var documentXml = ""
+            L.d("MoodleFragment", "Starting DOCX to PDF conversion")
 
-            // get document.xml and images
-            while (zipInputStream.nextEntry.also { entry = it } != null) {
-                when {
-                    entry?.name == "word/document.xml" -> {
-                        documentXml = zipInputStream.bufferedReader().readText()
-                    }
-                    entry?.name?.startsWith("word/media/") == true -> {
-                        val imageName = entry.name?.substringAfterLast("/") ?: continue
-                        images[imageName] = zipInputStream.readBytes()
-                    }
-                }
-            }
-            zipInputStream.close()
-
-            // create pdf
             val outputStream = ByteArrayOutputStream()
-            val document = com.itextpdf.text.Document()
-            com.itextpdf.text.pdf.PdfWriter.getInstance(document, outputStream)
+            val pdfDocument = com.itextpdf.text.Document(com.itextpdf.text.PageSize.A4, 50f, 50f, 50f, 50f)
+            com.itextpdf.text.pdf.PdfWriter.getInstance(pdfDocument, outputStream)
+            pdfDocument.open()
 
-            document.open()
+            val docxData = parseDocxStructure(docxBytes)
 
-            // text and basic structure
-            val textPattern = "<w:t[^>]*>([^<]+)</w:t>".toRegex()
-            val paragraphPattern = "<w:p[^>]*>.*?</w:p>".toRegex()
-            val tablePattern = "<w:tbl>.*?</w:tbl>".toRegex()
+            renderDocxToPdf(docxData, pdfDocument)
 
-            // paragraphs
-            paragraphPattern.findAll(documentXml).forEach { paragraphMatch ->
-                val paragraphXml = paragraphMatch.value
-                val texts = textPattern.findAll(paragraphXml)
-                val paragraphText = texts.joinToString("") { it.groupValues[1] }
+            pdfDocument.close()
 
-                if (paragraphText.isNotEmpty()) {
-                    document.add(com.itextpdf.text.Paragraph(paragraphText))
-                }
-            }
+            val result = outputStream.toByteArray()
+            L.d("MoodleFragment", "Conversion successful: ${result.size} bytes")
+            result
 
-            // tables (basic, definitely wont work most of the times)
-            tablePattern.findAll(documentXml).forEach { tableMatch ->
-                val tableXml = tableMatch.value
-                val rowPattern = "<w:tr[^>]*>.*?</w:tr>".toRegex()
-                val cellPattern = "<w:tc[^>]*>.*?</w:tc>".toRegex()
-
-                val rows = rowPattern.findAll(tableXml).toList()
-                if (rows.isNotEmpty()) {
-                    val maxCells = rows.maxOfOrNull { row ->
-                        cellPattern.findAll(row.value).count()
-                    } ?: 1
-
-                    val table = com.itextpdf.text.pdf.PdfPTable(maxCells)
-                    table.widthPercentage = 100f
-
-                    rows.forEach { rowMatch ->
-                        cellPattern.findAll(rowMatch.value).forEach { cellMatch ->
-                            val cellTexts = textPattern.findAll(cellMatch.value)
-                            val cellText = cellTexts.joinToString(" ") { it.groupValues[1] }
-                            table.addCell(com.itextpdf.text.pdf.PdfPCell(
-                                com.itextpdf.text.Phrase(cellText)
-                            ))
-                        }
-                    }
-
-                    document.add(table)
-                    document.add(com.itextpdf.text.Paragraph(" "))
-                }
-            }
-
-            document.close()
-            outputStream.toByteArray()
         } catch (e: Exception) {
             L.e("MoodleFragment", "Error in DOCX to PDF conversion", e)
             null
         }
+    }
+
+    private data class DocxData(
+        val paragraphs: List<DocxParagraph>,
+        val images: Map<String, ByteArray>
+    )
+
+    private data class DocxParagraph(
+        val runs: List<DocxRun>,
+        val alignment: String? = null,
+        val spacingBefore: Int = 0,
+        val spacingAfter: Int = 0,
+        val isTable: Boolean = false,
+        val tableData: List<List<String>>? = null
+    )
+
+    private data class DocxRun(
+        val text: String,
+        val isBold: Boolean = false,
+        val isItalic: Boolean = false,
+        val isUnderline: Boolean = false,
+        val fontSize: Float = 11f,
+        val color: String? = null,
+        val imageRef: String? = null
+    )
+
+    private fun parseDocxStructure(docxBytes: ByteArray): DocxData {
+        val zipInputStream = ZipInputStream(docxBytes.inputStream())
+        var entry: ZipEntry?
+        val images = mutableMapOf<String, ByteArray>()
+        val imageRelations = mutableMapOf<String, String>()
+        var documentXml = ""
+
+        while (zipInputStream.nextEntry.also { entry = it } != null) {
+            when {
+                entry?.name == "word/document.xml" -> {
+                    documentXml = zipInputStream.bufferedReader().readText()
+                }
+                entry?.name == "word/_rels/document.xml.rels" -> {
+                    val relsXml = zipInputStream.bufferedReader().readText()
+                    parseImageRelationships(relsXml, imageRelations)
+                }
+                entry?.name?.startsWith("word/media/") == true -> {
+                    val imageName = entry.name.substringAfterLast("/")
+                    images[imageName] = zipInputStream.readBytes()
+                }
+            }
+        }
+        zipInputStream.close()
+
+        L.d("MoodleFragment", "Found ${images.size} images in DOCX")
+        L.d("MoodleFragment", "Found ${imageRelations.size} image relationships")
+
+        val mappedImages = mutableMapOf<String, ByteArray>()
+        imageRelations.forEach { (relId, imagePath) ->
+            val imageName = imagePath.substringAfterLast("/")
+            images[imageName]?.let { imageData ->
+                mappedImages[relId] = imageData
+                L.d("MoodleFragment", "Mapped image: $relId -> $imageName")
+            }
+        }
+
+        val paragraphs = parseDocumentXml(documentXml)
+
+        return DocxData(paragraphs, mappedImages)
+    }
+
+    private fun parseImageRelationships(relsXml: String, relations: MutableMap<String, String>) {
+        val relRegex = "<Relationship[^>]+Id=\"([^\"]+)\"[^>]+Target=\"([^\"]+)\"[^>]*>".toRegex()
+        relRegex.findAll(relsXml).forEach { match ->
+            val id = match.groupValues[1]
+            val target = match.groupValues[2]
+            if (target.contains("media/")) {
+                relations[id] = target
+                L.d("MoodleFragment", "Found image relationship: $id -> $target")
+            }
+        }
+    }
+
+    private fun parseDocumentXml(xml: String): List<DocxParagraph> {
+        val paragraphs = mutableListOf<DocxParagraph>()
+
+        try {
+            val bodyRegex = "<w:body>(.*?)</w:body>".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val bodyMatch = bodyRegex.find(xml)
+            val bodyContent = bodyMatch?.groupValues?.get(1) ?: xml
+
+            data class ElementWithPosition(val position: Int, val paragraph: DocxParagraph)
+            val allElements = mutableListOf<ElementWithPosition>()
+
+            val paragraphRegex = "<w:p[\\s>](.*?)</w:p>".toRegex(RegexOption.DOT_MATCHES_ALL)
+            paragraphRegex.findAll(bodyContent).forEach { paraMatch ->
+                val paraXml = paraMatch.value
+                val alignment = extractAlignment(paraXml)
+                val runs = parseRuns(paraXml)
+
+                if (runs.isNotEmpty()) {
+                    allElements.add(ElementWithPosition(
+                        paraMatch.range.first,
+                        DocxParagraph(runs = runs, alignment = alignment)
+                    ))
+                } else {
+                    allElements.add(ElementWithPosition(
+                        paraMatch.range.first,
+                        DocxParagraph(runs = listOf(DocxRun(" ")))
+                    ))
+                }
+            }
+
+            val tableRegex = "<w:tbl>(.*?)</w:tbl>".toRegex(RegexOption.DOT_MATCHES_ALL)
+            tableRegex.findAll(bodyContent).forEach { tableMatch ->
+                val tableXml = tableMatch.value
+                val tableData = parseTable(tableXml)
+                if (tableData.isNotEmpty()) {
+                    allElements.add(ElementWithPosition(
+                        tableMatch.range.first,
+                        DocxParagraph(runs = emptyList(), isTable = true, tableData = tableData)
+                    ))
+                }
+            }
+
+            allElements.sortBy { it.position }
+            paragraphs.addAll(allElements.map { it.paragraph })
+
+            L.d("MoodleFragment", "Parsed ${paragraphs.size} elements from DOCX in correct order")
+
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error parsing document XML", e)
+        }
+
+        return paragraphs
+    }
+
+    private fun parseTable(tableXml: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+
+        val rowRegex = "<w:tr[\\s>](.*?)</w:tr>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+        rowRegex.findAll(tableXml).forEach { rowMatch ->
+            val rowXml = rowMatch.value
+            val cells = mutableListOf<String>()
+
+            val cellRegex = "<w:tc>(.*?)</w:tc>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+            cellRegex.findAll(rowXml).forEach { cellMatch ->
+                val cellXml = cellMatch.value
+                val cellText = extractTextFromXml(cellXml)
+                cells.add(cellText)
+            }
+
+            if (cells.isNotEmpty()) {
+                rows.add(cells)
+            }
+        }
+
+        return rows
+    }
+
+    private fun extractAlignment(paraXml: String): String? {
+        val alignRegex = "<w:jc\\s+w:val=\"([^\"]+)\"".toRegex()
+        return alignRegex.find(paraXml)?.groupValues?.get(1)
+    }
+
+    private fun parseRuns(paraXml: String): List<DocxRun> {
+        val runs = mutableListOf<DocxRun>()
+
+        val runRegex = "<w:r[\\s>](.*?)</w:r>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+        runRegex.findAll(paraXml).forEach { runMatch ->
+            val runXml = runMatch.value
+
+            if (runXml.contains("<w:drawing>") || runXml.contains("<w:pict>") || runXml.contains("<a:blip")) {
+                val imageRef = extractImageReference(runXml)
+                if (imageRef != null) {
+                    L.d("MoodleFragment", "Found image reference in run: $imageRef")
+                    runs.add(DocxRun("", imageRef = imageRef))
+                    return@forEach
+                }
+            }
+
+            val text = extractTextFromXml(runXml)
+            if (text.isNotEmpty()) {
+                val isBold = runXml.contains("<w:b/>") || runXml.contains("<w:b ")
+                val isItalic = runXml.contains("<w:i/>") || runXml.contains("<w:i ")
+                val isUnderline = runXml.contains("<w:u ")
+                val fontSize = extractFontSize(runXml)
+                val color = extractColor(runXml)
+
+                runs.add(DocxRun(
+                    text = text,
+                    isBold = isBold,
+                    isItalic = isItalic,
+                    isUnderline = isUnderline,
+                    fontSize = fontSize,
+                    color = color
+                ))
+            }
+        }
+
+        return runs
+    }
+
+    private fun extractTextFromXml(xml: String): String {
+        val textRegex = "<w:t[^>]*>([^<]*)</w:t>".toRegex()
+        return textRegex.findAll(xml)
+            .joinToString("") { it.groupValues[1] }
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+    }
+
+    private fun extractFontSize(runXml: String): Float {
+        val sizeRegex = "<w:sz\\s+w:val=\"(\\d+)\"".toRegex()
+        val match = sizeRegex.find(runXml)
+        return if (match != null) {
+            val halfPoints = match.groupValues[1].toFloatOrNull() ?: 22f
+            (halfPoints / 2f).coerceIn(6f, 72f)
+        } else {
+            11f
+        }
+    }
+
+    private fun extractColor(runXml: String): String? {
+        val colorRegex = "<w:color\\s+w:val=\"([^\"]+)\"".toRegex()
+        return colorRegex.find(runXml)?.groupValues?.get(1)
+    }
+
+    private fun extractImageReference(runXml: String): String? {
+        // Format 1: r:embed in drawing (what does that even mean)
+        var embedRegex = "r:embed=\"([^\"]+)\"".toRegex()
+        var match = embedRegex.find(runXml)
+        if (match != null) {
+            return match.groupValues[1]
+        }
+
+        // Format 2: r:id in blip
+        embedRegex = "r:id=\"([^\"]+)\"".toRegex()
+        match = embedRegex.find(runXml)
+        if (match != null) {
+            return match.groupValues[1]
+        }
+
+        return null
+    }
+
+    private fun renderDocxToPdf(docxData: DocxData, pdfDocument: com.itextpdf.text.Document) {
+        for (paragraph in docxData.paragraphs) {
+            if (paragraph.isTable && paragraph.tableData != null) {
+                renderTable(paragraph.tableData, pdfDocument)
+            } else {
+                renderParagraph(paragraph, docxData.images, pdfDocument)
+            }
+        }
+    }
+
+    private fun renderParagraph(
+        paragraph: DocxParagraph,
+        images: Map<String, ByteArray>,
+        pdfDocument: com.itextpdf.text.Document
+    ) {
+        val pdfPara = com.itextpdf.text.Paragraph()
+
+        when (paragraph.alignment) {
+            "center" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_CENTER
+            "right" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_RIGHT
+            "both" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_JUSTIFIED
+            else -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_LEFT
+        }
+
+        pdfPara.spacingBefore = paragraph.spacingBefore * 0.35f
+        pdfPara.spacingAfter = if (paragraph.spacingAfter > 0) paragraph.spacingAfter * 0.35f else 3f
+
+        var hasContent = false
+
+        for (run in paragraph.runs) {
+            if (run.imageRef != null) {
+                val imageData = images[run.imageRef]
+                if (imageData != null) {
+                    try {
+                        val image = com.itextpdf.text.Image.getInstance(imageData)
+
+                        val maxWidth = pdfDocument.pageSize.width - pdfDocument.leftMargin() - pdfDocument.rightMargin()
+                        val maxHeight = (pdfDocument.pageSize.height - pdfDocument.topMargin() - pdfDocument.bottomMargin()) * 0.4f
+
+                        val widthScale = maxWidth / image.width
+                        val heightScale = maxHeight / image.height
+                        val scale = minOf(widthScale, heightScale, 1f)
+
+                        if (scale < 1f) {
+                            image.scalePercent(scale * 100)
+                        }
+
+                        image.alignment = when (paragraph.alignment) {
+                            "center" -> com.itextpdf.text.Element.ALIGN_CENTER
+                            "right" -> com.itextpdf.text.Element.ALIGN_RIGHT
+                            else -> com.itextpdf.text.Element.ALIGN_LEFT
+                        }
+
+                        if (hasContent) {
+                            pdfDocument.add(pdfPara)
+                            pdfPara.clear()
+                            hasContent = false
+                        }
+
+                        pdfDocument.add(image)
+                        L.d("MoodleFragment", "Added image: ${image.width}x${image.height} scaled to ${image.scaledWidth}x${image.scaledHeight}")
+
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Error adding image with ref ${run.imageRef}", e)
+                    }
+                } else {
+                    L.w("MoodleFragment", "Image data not found for reference: ${run.imageRef}")
+                }
+            } else if (run.text.isNotEmpty()) {
+                val fontStyle = when {
+                    run.isBold && run.isItalic -> com.itextpdf.text.Font.BOLDITALIC
+                    run.isBold -> com.itextpdf.text.Font.BOLD
+                    run.isItalic -> com.itextpdf.text.Font.ITALIC
+                    else -> com.itextpdf.text.Font.NORMAL
+                }
+
+                val font = com.itextpdf.text.FontFactory.getFont(
+                    com.itextpdf.text.FontFactory.HELVETICA,
+                    run.fontSize,
+                    fontStyle
+                )
+
+                if (run.color != null && run.color != "auto") {
+                    try {
+                        val colorInt = Integer.parseInt(run.color, 16)
+                        val r = (colorInt shr 16 and 0xFF) / 255f
+                        val g = (colorInt shr 8 and 0xFF) / 255f
+                        val b = (colorInt and 0xFF) / 255f
+                        font.color = com.itextpdf.text.BaseColor(r, g, b)
+                    } catch (_: Exception) {
+                        // stay on default color
+                    }
+                }
+
+                val chunk = com.itextpdf.text.Chunk(run.text, font)
+                if (run.isUnderline) {
+                    chunk.setUnderline(0.5f, -2f)
+                }
+
+                pdfPara.add(chunk)
+                hasContent = true
+            }
+        }
+
+        if (hasContent || paragraph.runs.isEmpty()) {
+            pdfDocument.add(pdfPara)
+        }
+    }
+
+    private fun renderTable(
+        tableData: List<List<String>>,
+        pdfDocument: com.itextpdf.text.Document
+    ) {
+        if (tableData.isEmpty()) return
+
+        val maxCols = tableData.maxOfOrNull { it.size } ?: return
+        val table = com.itextpdf.text.pdf.PdfPTable(maxCols)
+        table.widthPercentage = 100f
+        table.spacingBefore = 10f
+        table.spacingAfter = 10f
+
+        val font = com.itextpdf.text.FontFactory.getFont(
+            com.itextpdf.text.FontFactory.HELVETICA,
+            10f
+        )
+
+        for (row in tableData) {
+            for (cellText in row) {
+                val cell = com.itextpdf.text.pdf.PdfPCell(com.itextpdf.text.Phrase(cellText, font))
+                cell.setPadding(5f)
+                cell.borderWidth = 1f
+                table.addCell(cell)
+            }
+            repeat(maxCols - row.size) {
+                val emptyCell = com.itextpdf.text.pdf.PdfPCell()
+                emptyCell.setPadding(5f)
+                table.addCell(emptyCell)
+            }
+        }
+
+        pdfDocument.add(table)
+    }
+
+    private fun showImagePageDialog(url: String) { // may be temporary, as i cant figure out how to preserve session cookies on moodle image pages
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_image_page_detected))
+            .setMessage(getString(R.string.moodle_image_page_message))
+            .setPositiveButton(getString(R.string.moodle_open_browser)) { _, _ ->
+                openInExternalBrowser(url)
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+            .apply {
+                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
     }
 }

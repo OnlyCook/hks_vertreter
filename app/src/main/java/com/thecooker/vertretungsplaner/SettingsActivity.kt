@@ -4084,10 +4084,6 @@ class SettingsActivity : BaseActivity() {
     private fun clearMoodleCacheManually() {
         try {
             cacheDir.deleteRecursively()
-
-            File(applicationInfo.dataDir, "app_webview").deleteRecursively()
-            File(applicationInfo.dataDir, "app_WebView").deleteRecursively()
-
             codeCacheDir.deleteRecursively()
 
             Toast.makeText(this, "Moodle cache cleared", Toast.LENGTH_SHORT).show()
@@ -4099,18 +4095,30 @@ class SettingsActivity : BaseActivity() {
 
     private fun clearMoodleDataManually() {
         try {
-            clearMoodleCacheManually()
+            // clear cache
+            cacheDir.deleteRecursively()
+            codeCacheDir.deleteRecursively()
 
             val dataDir = File(applicationInfo.dataDir)
 
+            // clear webview data dirs
             File(dataDir, "app_webview").deleteRecursively()
             File(dataDir, "app_WebView").deleteRecursively()
 
+            // clear webview databases
             File(dataDir, "databases").listFiles()?.filter {
-                it.name.contains("webview", ignoreCase = true) ||
-                        it.name.contains("WebView", ignoreCase = true)
+                it.name.contains("webview", ignoreCase = true)
             }?.forEach { it.deleteRecursively() }
 
+            // clear webview sharedprefs
+            File(dataDir, "shared_prefs").listFiles()?.filter {
+                it.name.contains("webview", ignoreCase = true)
+            }?.forEach { it.delete() }
+
+            // clear saved pdfs
+            File(filesDir, "moodle_pdfs").deleteRecursively()
+
+            // clear credentials
             try {
                 val masterKey = MasterKey.Builder(this)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -4128,10 +4136,16 @@ class SettingsActivity : BaseActivity() {
                 L.e("SettingsActivity", "Error clearing encrypted prefs", e)
             }
 
+            // clear moodle preferences
             sharedPreferences.edit {
                 remove("moodle_dont_show_login_dialog")
                 remove("moodle_auto_dismiss_confirm")
                 remove("moodle_debug_mode")
+                remove("saved_program_course_name")
+                remove("saved_timetable_entry_name")
+                remove("saved_tabs")
+                remove("moodle_tab_layout_compact")
+                remove("last_moodle_cache_cleanup")
             }
 
             Toast.makeText(this, "All Moodle data cleared", Toast.LENGTH_SHORT).show()

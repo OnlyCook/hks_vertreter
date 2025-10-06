@@ -1549,7 +1549,6 @@
     <string name="moodle_fetching_exam_schedule">Klausurplan wird abgerufen</string>
     <string name="moodle_fetching_timetable">Stundenplan wird abgerufen</string>
     <string name="moodle_waiting_for_login">Warte auf Login…</string>
-    <string name="moodle_please_login">Bitte bei Moodle anmelden</string>
     <string name="moodle_please_login_to_continue">Bitte bei Moodle anmelden, um den Abruf fortzusetzen</string>
     <string name="moodle_login_successful">Login erfolgreich</string>
     <string name="moodle_navigating_to_my_page">Navigiere zu Meine Kurse…</string>
@@ -1619,5 +1618,15 @@
     <string name="moodle_clearing_cache">Cache wird gelöscht…</string>
     <string name="moodle_preparing_pages">Seiten werden vorbereitet…</string>
     <string name="moodle_downloading_docx">DOCX wird heruntergeladen…</string>
+    <string name="moodle_image_options">Bild-Optionen</string>
+    <string name="moodle_download_image">Bild herunterladen</string>
+    <string name="moodle_image_download_started">Lade %s herunter</string>
+    <string name="moodle_image_page_detected">Bildseite erkannt</string>
+    <string name="moodle_image_page_message">Dies ist eine Moodle-Bildseite, die Sitzungsprobleme verursachen kann, wenn sie in der App geöffnet wird. Möchtest du sie stattdessen in deinem externen Browser öffnen?</string>
+    <string name="moodle_confirm_navigation">Navigation bestätigen</string>
+    <string name="moodle_leave_page">Seite verlassen</string>
+    <string name="moodle_stay_page">Auf dieser Seite bleiben</string>
+    <string name="moodle_offline_error">Du bist offline. Bitte verbinde dich mit dem Internet und versuche es erneut.</string>
+    <string name="moodle_please_login">Bitte anmelden, um fortzufahren</string>
 
 </resources>
