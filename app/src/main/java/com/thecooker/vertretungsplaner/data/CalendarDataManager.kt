@@ -160,9 +160,21 @@ class CalendarDataManager private constructor(context: Context) {
 
     fun importMoodleCalendarData(calendarContent: String) {
         try {
+            if (calendarContent.isBlank()) {
+                Log.w(TAG, "Empty calendar content, nothing to import")
+                return
+            }
+
             val events = parseMoodleICalendarContent(calendarContent)
 
-            val uids = events.map { it.uid }.filter { it.isNotEmpty() }
+            if (events.isEmpty()) {
+                Log.w(TAG, "No valid events found in calendar content")
+                return
+            }
+
+            val uids = events.mapNotNull { event ->
+                event.uid.takeIf { it.isNotEmpty() }
+            }
             Log.d(TAG, "Parsed UIDs from calendar: ${uids.joinToString(", ")}")
             Log.d(TAG, "Total events with UIDs: ${uids.size} / ${events.size}")
 
@@ -173,44 +185,54 @@ class CalendarDataManager private constructor(context: Context) {
                 calendarData[entry.getDateKey()] = entry
             }
 
+            var importedCount = 0
             for (event in events) {
-                val dayInfo = CalendarDayInfo(
-                    date = event.date,
-                    dayOfWeek = SimpleDateFormat("EEEE", Locale.GERMANY).format(event.date),
-                    month = SimpleDateFormat("MM", Locale.GERMANY).format(event.date).toInt(),
-                    year = SimpleDateFormat("yyyy", Locale.GERMANY).format(event.date).toInt(),
-                    content = "${event.category}\n\n${event.description}",
-                    exams = emptyList(), // exams managed separately
-                    isSpecialDay = true,
-                    specialNote = "Moodle: ${event.summary}${if (event.uid.isNotEmpty()) " (UID: ${event.uid})" else ""}"
-                )
+                try {
+                    val dayOfWeek = SimpleDateFormat("EEEE", Locale.GERMANY).format(event.date)
+                    val month = SimpleDateFormat("MM", Locale.GERMANY).format(event.date).toInt()
+                    val year = SimpleDateFormat("yyyy", Locale.GERMANY).format(event.date).toInt()
 
-                val dateKey = dayInfo.getDateKey()
-                val existing = calendarData[dateKey]
-
-                if (existing != null) {
-                    val mergedContent = if (existing.content.isNotEmpty()) {
-                        "${existing.content}\n\n---\n\n${dayInfo.content}"
-                    } else {
-                        dayInfo.content
-                    }
-
-                    calendarData[dateKey] = existing.copy(
-                        content = mergedContent,
+                    val dayInfo = CalendarDayInfo(
+                        date = event.date,
+                        dayOfWeek = dayOfWeek,
+                        month = month,
+                        year = year,
+                        content = "${event.category}\n\n${event.description}",
+                        exams = emptyList(),
                         isSpecialDay = true,
-                        specialNote = if (existing.specialNote.isNotEmpty()) {
-                            "${existing.specialNote} | ${dayInfo.specialNote}"
-                        } else {
-                            dayInfo.specialNote
-                        }
+                        specialNote = "Moodle: ${event.summary}${if (event.uid.isNotEmpty()) " (ID: ${event.uid})" else ""}"
                     )
-                } else {
-                    calendarData[dateKey] = dayInfo
+
+                    val dateKey = dayInfo.getDateKey()
+                    val existing = calendarData[dateKey]
+
+                    if (existing != null) {
+                        val mergedContent = if (existing.content.isNotEmpty()) {
+                            "${existing.content}\n\n---\n\n${dayInfo.content}"
+                        } else {
+                            dayInfo.content
+                        }
+
+                        calendarData[dateKey] = existing.copy(
+                            content = mergedContent,
+                            isSpecialDay = true,
+                            specialNote = if (existing.specialNote.isNotEmpty()) {
+                                "${existing.specialNote} | ${dayInfo.specialNote}"
+                            } else {
+                                dayInfo.specialNote
+                            }
+                        )
+                    } else {
+                        calendarData[dateKey] = dayInfo
+                    }
+                    importedCount++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error creating calendar entry for event: ${event.summary}", e)
                 }
             }
 
             saveCalendarData()
-            Log.d(TAG, "Successfully imported ${events.size} Moodle calendar events")
+            Log.d(TAG, "Successfully imported $importedCount / ${events.size} Moodle calendar events")
 
         } catch (e: Exception) {
             Log.e(TAG, "Error importing Moodle calendar data", e)
@@ -228,63 +250,89 @@ class CalendarDataManager private constructor(context: Context) {
 
     private fun parseMoodleICalendarContent(content: String): List<MoodleCalendarEvent> {
         val events = mutableListOf<MoodleCalendarEvent>()
-        val lines = content.split("\n")
 
+        if (content.isBlank()) {
+            Log.w(TAG, "Empty calendar content received")
+            return events
+        }
+
+        val lines = content.split("\n")
         var currentEvent: MutableMap<String, String>? = null
         var currentKey = ""
 
-        for (line in lines) {
-            val trimmedLine = line.trim()
+        try {
+            for (line in lines) {
+                val trimmedLine = line.trim()
 
-            when {
-                trimmedLine == "BEGIN:VEVENT" -> {
-                    currentEvent = mutableMapOf()
-                }
-                trimmedLine == "END:VEVENT" -> {
-                    currentEvent?.let { event ->
+                when {
+                    trimmedLine == "BEGIN:VEVENT" -> {
+                        currentEvent = mutableMapOf()
+                    }
+                    trimmedLine == "END:VEVENT" -> {
+                        currentEvent?.let { event ->
+                            try {
+                                if (!event.containsKey("DTEND") && !event.containsKey("DTSTART")) {
+                                    Log.w(TAG, "Event missing both DTEND and DTSTART, skipping")
+                                    return@let
+                                }
+
+                                if (!event.containsKey("SUMMARY") || event["SUMMARY"]?.isBlank() == true) {
+                                    Log.w(TAG, "Event missing or empty SUMMARY, skipping")
+                                    return@let
+                                }
+
+                                val dtend = event["DTEND"] ?: event["DTSTART"] ?: return@let
+                                val summary = event["SUMMARY"]?.takeIf { it.isNotBlank() } ?: return@let
+                                val description = event["DESCRIPTION"] ?: ""
+                                val category = event["CATEGORIES"] ?: ""
+                                val uid = event["UID"] ?: ""
+
+                                val date = parseMoodleICalendarDate(dtend)
+                                if (date != null) {
+                                    val cleanedUid = uid.removePrefix("UID:").substringBefore("@")
+
+                                    events.add(MoodleCalendarEvent(
+                                        date = date,
+                                        summary = cleanMoodleICalendarText(summary),
+                                        description = cleanMoodleICalendarText(description),
+                                        category = cleanMoodleICalendarText(category),
+                                        uid = cleanedUid
+                                    ))
+                                } else {
+                                    Log.w(TAG, "Failed to parse date for event: $summary")
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Error parsing Moodle calendar event: ${e.message}", e)
+                            }
+                        }
+                        currentEvent = null
+                    }
+                    currentEvent != null && trimmedLine.isNotEmpty() -> {
                         try {
-                            val dtend = event["DTEND"] ?: event["DTSTART"] ?: return@let
-                            val summary = event["SUMMARY"] ?: return@let
-                            val description = event["DESCRIPTION"] ?: ""
-                            val category = event["CATEGORIES"] ?: ""
-                            val uid = event["UID"] ?: ""
-
-                            val date = parseMoodleICalendarDate(dtend)
-                            if (date != null) {
-                                val cleanedUid = uid.removePrefix("UID:").substringBefore("@")
-
-                                events.add(MoodleCalendarEvent(
-                                    date = date,
-                                    summary = cleanMoodleICalendarText(summary),
-                                    description = cleanMoodleICalendarText(description),
-                                    category = cleanMoodleICalendarText(category),
-                                    uid = cleanedUid
-                                ))
+                            if (trimmedLine.startsWith(" ") || trimmedLine.startsWith("\t")) {
+                                if (currentKey.isNotEmpty() && currentEvent.containsKey(currentKey)) {
+                                    currentEvent[currentKey] = currentEvent[currentKey] + trimmedLine.trim()
+                                }
+                            } else {
+                                val colonIndex = trimmedLine.indexOf(':')
+                                if (colonIndex > 0) {
+                                    val key = trimmedLine.substring(0, colonIndex).split(';')[0]
+                                    val value = trimmedLine.substring(colonIndex + 1)
+                                    currentEvent[key] = value
+                                    currentKey = key
+                                }
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "Error parsing Moodle calendar event", e)
-                        }
-                    }
-                    currentEvent = null
-                }
-                currentEvent != null && trimmedLine.isNotEmpty() -> {
-                    if (trimmedLine.startsWith(" ") || trimmedLine.startsWith("\t")) {
-                        if (currentKey.isNotEmpty() && currentEvent.containsKey(currentKey)) {
-                            currentEvent[currentKey] = currentEvent[currentKey] + trimmedLine.trim()
-                        }
-                    } else {
-                        val colonIndex = trimmedLine.indexOf(':')
-                        if (colonIndex > 0) {
-                            val key = trimmedLine.substring(0, colonIndex).split(';')[0]
-                            val value = trimmedLine.substring(colonIndex + 1)
-                            currentEvent[key] = value
-                            currentKey = key
+                            Log.w(TAG, "Error parsing calendar line: $trimmedLine", e)
                         }
                     }
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical error parsing Moodle calendar content", e)
         }
 
+        Log.d(TAG, "Successfully parsed ${events.size} valid events")
         return events
     }
 

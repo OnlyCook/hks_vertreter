@@ -872,9 +872,6 @@ class BackupManager(private val context: Context) {
                 sb.appendLine("${exam.subject}|$dateStr|$noteStr|$completedStr|$examNumberStr|$fromScheduleStr|$markStr")
             }
 
-            sb.appendLine()
-            sb.append(getFilteredCalendarExportForBackup())
-
             sb.toString()
         } catch (e: Exception) {
             L.e(TAG, "Error exporting exam data", e)
@@ -887,9 +884,15 @@ class BackupManager(private val context: Context) {
             val lines = content.split("\n")
             val examList = mutableListOf<com.thecooker.vertretungsplaner.ui.exams.ExamFragment.ExamEntry>()
 
+            val calendarManager = CalendarDataManager.getInstance(context)
+            val existingMoodleEntries = calendarManager.getMoodleCalendarEntries()
+            L.d(TAG, "Preserving ${existingMoodleEntries.size} existing Moodle entries during exam import")
+
             if (!isFullBackupRestore) {
-                val calendarManager = CalendarDataManager.getInstance(context)
-                calendarManager.clearCalendarData()
+                calendarManager.clearMoodleCalendarData()
+                existingMoodleEntries.forEach { moodleEntry ->
+                    calendarManager.addCalendarDay(moodleEntry)
+                }
             }
 
             var importedExamCount = 0
@@ -950,13 +953,14 @@ class BackupManager(private val context: Context) {
 
             if (calendarLines.isNotEmpty() && !isFullBackupRestore) {
                 val calendarContent = calendarLines.joinToString("\n")
-                val calendarManager = CalendarDataManager.getInstance(context)
                 calendarManager.importCalendarData(calendarContent)
+
+                existingMoodleEntries.forEach { moodleEntry ->
+                    calendarManager.addCalendarDay(moodleEntry)
+                }
             }
 
             if (isFullBackupRestore && importedExamCount > 0) {
-                val calendarManager = CalendarDataManager.getInstance(context)
-
                 for (exam in examList) {
                     val existingInfo = calendarManager.getCalendarInfoForDate(exam.date)
 
@@ -990,7 +994,7 @@ class BackupManager(private val context: Context) {
                 calendarManager.saveCalendarData()
             }
 
-            L.d(TAG, "Imported $importedExamCount exams successfully")
+            L.d(TAG, "Imported $importedExamCount exams successfully, preserved ${existingMoodleEntries.size} Moodle entries")
 
         } catch (e: Exception) {
             L.e(TAG, "Error importing exam data", e)

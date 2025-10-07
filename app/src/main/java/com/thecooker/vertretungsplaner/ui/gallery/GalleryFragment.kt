@@ -4299,23 +4299,39 @@ class GalleryFragment : Fragment() {
 
         calendarInfo?.specialNote?.let { note ->
             if (note.contains("Moodle:")) {
-                val moodleParts = note.split(" | ")
-                moodleParts.forEach { part ->
-                    if (part.contains("Moodle:")) {
-                        val summaryPattern = """Moodle: ([^(]+)""".toRegex()
-                        val idPattern = """\(ID: ([^)]+)\)""".toRegex()
+                try {
+                    val moodleParts = note.split(" | ")
 
-                        val summaryMatch = summaryPattern.find(part)
-                        val idMatch = idPattern.find(part)
+                    moodleParts.forEach { part ->
+                        if (part.contains("Moodle:")) {
+                            try {
+                                val summaryPattern = """Moodle: ([^(]+)""".toRegex()
+                                val idPattern = """\(ID: ([^)]+)\)""".toRegex()
 
-                        val summary = summaryMatch?.groupValues?.get(1)?.trim()
-                        val id = idMatch?.groupValues?.get(1)?.trim()
+                                val summaryMatch = summaryPattern.find(part)
+                                val idMatch = idPattern.find(part)
 
-                        if (summary != null && id != null) {
-                            val category = extractCategoryFromCalendarInfo(calendarInfo) ?: "Unknown Course"
-                            moodleEntries.add(MoodleEntry(summary, id, category))
+                                val summary = summaryMatch?.groupValues?.getOrNull(1)?.trim()
+                                val id = idMatch?.groupValues?.getOrNull(1)?.trim()
+
+                                if (!summary.isNullOrBlank()) {
+                                    val category = extractCategoryFromCalendarInfo(calendarInfo)
+                                        ?: getString(R.string.unknown)
+
+                                    val entryId = id ?: ""
+                                    val entry = MoodleEntry(summary, entryId, category)
+                                    moodleEntries.add(entry)
+                                    L.d("GalleryFragment", "Added Moodle entry: $entry")
+                                } else {
+                                    L.w("GalleryFragment", "Empty summary in part: $part")
+                                }
+                            } catch (e: Exception) {
+                                L.w("GalleryFragment", "Error parsing Moodle entry part: $part", e)
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    L.e("GalleryFragment", "Error processing Moodle entries for date", e)
                 }
             }
         }
@@ -4324,9 +4340,22 @@ class GalleryFragment : Fragment() {
     }
 
     private fun extractCategoryFromCalendarInfo(calendarInfo: CalendarDataManager.CalendarDayInfo?): String? {
-        return calendarInfo?.content?.let { content ->
-            val categoryPattern = """Kurs: ([^\n]+)""".toRegex()
-            categoryPattern.find(content)?.groupValues?.get(1)?.trim()
+        return try {
+            calendarInfo?.content?.let { content ->
+                if (content.isBlank()) return null
+                val lines = content.split("\n\n")
+                if (lines.isNotEmpty()) {
+                    val category = lines[0].trim()
+                    if (category.isNotEmpty()) {
+                        return category
+                    }
+                }
+                val categoryPattern = """Kurs: ([^\n]+)""".toRegex()
+                categoryPattern.find(content)?.groupValues?.getOrNull(1)?.trim()
+            }
+        } catch (e: Exception) {
+            L.w("GalleryFragment", "Error extracting category from calendar info", e)
+            null
         }
     }
 
@@ -4341,6 +4370,16 @@ class GalleryFragment : Fragment() {
             currentDialog?.dismiss()
             currentDialog = null
 
+            if (entry.id.isBlank() || entry.summary.isBlank()) {
+                L.w("GalleryFragment", "Cannot open Moodle entry with missing data")
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.gall_error_opening_page),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+
             val navController = findNavController()
 
             val bundle = Bundle().apply {
@@ -4352,8 +4391,12 @@ class GalleryFragment : Fragment() {
             navController.navigate(R.id.nav_moodle, bundle)
 
         } catch (e: Exception) {
-            L.w("GalleryFragment", "Error opening Moodle entry", e)
-            Toast.makeText(requireContext(), "Error opening Moodle entry", Toast.LENGTH_SHORT).show()
+            L.e("GalleryFragment", "Error opening Moodle entry", e)
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.gall_error_opening_page),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 

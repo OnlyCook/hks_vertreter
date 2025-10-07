@@ -415,4 +415,65 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
     </FrameLayout>
 
+    <!-- Text Viewer Container (hidden by default) -->
+    <FrameLayout
+        android:id="@+id/textViewerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone"
+        android:background="?attr/homeworkFragmentBackgroundColor">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <!-- Line numbers column -->
+            <ScrollView
+                android:id="@+id/lineNumberScrollView"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:isScrollContainer="false">
+
+                <LinearLayout
+                    android:id="@+id/lineNumbersContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:background="?attr/settingsBackgroundColor" />
+            </ScrollView>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="?attr/textSecondaryColor"
+                android:alpha="0.3" />
+
+            <!-- Text content column -->
+            <ScrollView
+                android:id="@+id/textContentScrollView"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:scrollbars="vertical">
+
+                <TextView
+                    android:id="@+id/textViewerContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="12dp"
+                    android:textIsSelectable="true"
+                    android:textSize="14sp"
+                    android:lineSpacingMultiplier="1.2"
+                    android:fontFamily="monospace" />
+            </ScrollView>
+
+        </LinearLayout>
+
+    </FrameLayout>
+
 </LinearLayout>

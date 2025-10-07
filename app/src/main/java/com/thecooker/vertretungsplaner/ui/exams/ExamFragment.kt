@@ -899,7 +899,6 @@ class ExamFragment : Fragment() {
 
             L.d(TAG, "User class: $userClass")
 
-            // general prefix extracting "13BG" from "13BG1"
             val classPrefix = userClass?.let {
                 if (it.length >= 4) it.substring(0, it.length - 1) else it
             } ?: return
@@ -1248,7 +1247,18 @@ class ExamFragment : Fragment() {
         val studentTeachers = getStudentTeachers()
 
         val calendarManager = CalendarDataManager.getInstance(requireContext())
+
+        val existingMoodleEntries = calendarManager.getMoodleCalendarEntries()
+        L.d(TAG, "Preserving ${existingMoodleEntries.size} existing Moodle calendar entries")
+
+        val allDays = calendarManager.getAllCalendarDays()
+
         calendarManager.clearCalendarData()
+
+        existingMoodleEntries.forEach { moodleEntry ->
+            calendarManager.addCalendarDay(moodleEntry)
+        }
+        L.d(TAG, "Restored ${existingMoodleEntries.size} Moodle calendar entries")
 
         L.d(TAG, "Student subjects: $studentSubjects")
         L.d(TAG, "Student teachers: $studentTeachers")
@@ -1278,7 +1288,6 @@ class ExamFragment : Fragment() {
                 continue
             }
 
-            // check if day isnt oob
             if (!isValidDayForMonth(dayEntry.day, monthInfo)) {
                 L.d(TAG, "Day ${dayEntry.day} is not valid for ${monthInfo.first} ${monthInfo.second}, skipping")
                 continue
@@ -1286,12 +1295,10 @@ class ExamFragment : Fragment() {
 
             L.d(TAG, "Processing day entry: ${dayEntry.day} ${dayEntry.weekday} '${dayEntry.content}' for ${monthInfo.first}")
 
-            // create exam entry for date
             val dayExams = mutableListOf<ExamEntry>()
             var isSpecialDay = false
             var specialNote = ""
 
-            // check special days
             if (findSpecialDays(dayEntry.content)) {
                 isSpecialDay = true
                 specialNote = dayEntry.content
@@ -1319,17 +1326,47 @@ class ExamFragment : Fragment() {
             val monthNumber = getMonthNumber(monthInfo.first)
             val year = monthInfo.second
 
-            val calendarInfo = CalendarDataManager.CalendarDayInfo(
-                date = examDate,
-                dayOfWeek = dayEntry.weekday,
-                month = monthNumber,
-                year = year,
-                content = dayEntry.content,
-                exams = dayExams,
-                isSpecialDay = isSpecialDay,
-                specialNote = specialNote
-            )
-            calendarManager.addCalendarDay(calendarInfo)
+            val existingDayInfo = calendarManager.getCalendarInfoForDate(examDate)
+
+            if (existingDayInfo != null && existingDayInfo.specialNote.contains("Moodle:")) {
+                L.d(TAG, "Merging with existing Moodle entry for date: ${SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(examDate)}")
+
+                val mergedExams = existingDayInfo.exams.toMutableList()
+                mergedExams.addAll(dayExams)
+
+                val mergedContent = if (dayEntry.content.isNotEmpty() && existingDayInfo.content.isNotEmpty()) {
+                    "${existingDayInfo.content}\n\n---\n\n${dayEntry.content}"
+                } else if (dayEntry.content.isNotEmpty()) {
+                    dayEntry.content
+                } else {
+                    existingDayInfo.content
+                }
+
+                val mergedCalendarInfo = existingDayInfo.copy(
+                    content = mergedContent,
+                    exams = mergedExams,
+                    isSpecialDay = existingDayInfo.isSpecialDay || isSpecialDay,
+                    specialNote = if (specialNote.isNotEmpty()) {
+                        "${existingDayInfo.specialNote} | $specialNote"
+                    } else {
+                        existingDayInfo.specialNote
+                    }
+                )
+
+                calendarManager.updateCalendarDay(mergedCalendarInfo)
+            } else {
+                val calendarInfo = CalendarDataManager.CalendarDayInfo(
+                    date = examDate,
+                    dayOfWeek = dayEntry.weekday,
+                    month = monthNumber,
+                    year = year,
+                    content = dayEntry.content,
+                    exams = dayExams,
+                    isSpecialDay = isSpecialDay,
+                    specialNote = specialNote
+                )
+                calendarManager.addCalendarDay(calendarInfo)
+            }
         }
 
         calendarManager.saveCalendarData()

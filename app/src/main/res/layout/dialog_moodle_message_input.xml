@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:id="@+id/userInfoContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="16dp">
+
+        <ImageView
+            android:id="@+id/ivUserIcon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="12dp"
+            android:contentDescription="@string/moodle_user_icon"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvRecipientName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="?attr/dialogAddSubjectTextColor" />
+    </LinearLayout>
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <EditText
+            android:id="@+id/etMessageInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="120dp"
+            android:maxHeight="400dp"
+            android:hint="@string/moodle_message_input_hint"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLength="4096"
+            android:padding="12dp"
+            android:background="@drawable/subtle_search_background"
+            android:textSize="16sp"
+            android:textColorHint="#757575"
+            android:gravity="top|start"
+            android:scrollbars="vertical" />
+    </RelativeLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end|center_vertical"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/tvCharCounter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/moodle_char_count"
+            android:textSize="12sp"
+            android:textColor="?attr/textSecondaryColor" />
+
+        <ImageButton
+            android:id="@+id/btnDeleteMsg"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_trash_can"
+            android:contentDescription="@string/dia_ho_de_copy" />
+
+        <ImageButton
+            android:id="@+id/btnCopyText"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_import_clipboard"
+            android:contentDescription="@string/dia_ho_de_copy" />
+    </LinearLayout>
+
+    <CheckBox
+        android:id="@+id/cbDontShowForNow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_do_not_show_dialog_until_refresh"
+        android:textSize="14sp" />
+
+</LinearLayout>

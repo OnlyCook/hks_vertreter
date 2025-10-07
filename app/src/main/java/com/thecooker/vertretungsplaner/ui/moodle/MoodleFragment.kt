@@ -23,7 +23,6 @@ import androidx.preference.PreferenceManager
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.thecooker.vertretungsplaner.R
-import com.thecooker.vertretungsplaner.BuildConfig
 import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.L
 import java.io.File
@@ -42,6 +41,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Environment
 import android.provider.Settings
+import android.text.SpannableStringBuilder
 import android.util.Base64
 import android.util.TypedValue
 import android.view.animation.AccelerateInterpolator
@@ -131,6 +131,15 @@ class MoodleFragment : Fragment() {
     private var loginRetryCount = 0
     private var lastSuccessfulLoginCheck = 0L
     private var loginSuccessConfirmed = false
+
+    // login dialog
+    private var dialogButtonMonitorHandler: Handler? = null
+    private var dialogButtonMonitorRunnable: Runnable? = null
+    private var isMonitoringDialogButton = false
+    private var wasOnLogoutConfirmPage = false
+    private var logoutConfirmPageUrl = ""
+    private var isHandlingLogout = false
+    private var isProcessingInstantLogout = false
 
     private var searchBarVisible = false
     private var isAtTop = true
@@ -267,6 +276,39 @@ class MoodleFragment : Fragment() {
     private var savedProgramCourseName: String? = null
     private var savedTimetableEntryName: String? = null
     private var fetchReturnDestination: Int? = null
+
+    // moodle chat override
+    private var messageInputDialog: AlertDialog? = null
+    private var isMonitoringMessageInput = false
+    private var messageInputMonitorHandler: Handler? = null
+    private var messageInputMonitorRunnable: Runnable? = null
+    private var currentMessageChatType: MessageChatType? = null
+    private var lastMessageInputSetupTime = 0L
+    private val MESSAGE_INPUT_SETUP_COOLDOWN = 1000L
+    private var messageDialogSuppressedForSession = false
+
+    private enum class MessageChatType {
+        MAIN_CHAT,
+        SIDEBAR_CHAT
+    }
+
+    private data class MessageRecipientInfo(
+        val username: String,
+        val userIconUrl: String?
+    )
+
+    // text viewer
+    private var textViewerManager: TextViewerManager? = null
+    private var isTextViewerMode = false
+    private lateinit var textViewerContainer: FrameLayout
+    private lateinit var textContentScrollView: ScrollView
+    private lateinit var lineNumberScrollView: ScrollView
+    private lateinit var textViewerContent: TextView
+    private lateinit var lineNumbersContainer: LinearLayout
+    private var textSearchDialog: AlertDialog? = null
+    private var searchResults = listOf<Int>()
+    private var currentSearchIndex = 0
+    private var originalBackgroundColor: Int = 0
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -449,21 +491,24 @@ class MoodleFragment : Fragment() {
         pdfControlsLayout = root.findViewById(R.id.pdfControlsLayout)
         pdfPageCounter = root.findViewById(R.id.pdfPageCounter)
         pdfKebabMenu = root.findViewById(R.id.pdfKebabMenu)
+        textViewerContainer = root.findViewById(R.id.textViewerContainer)
+        textContentScrollView = root.findViewById(R.id.textContentScrollView)
+        lineNumberScrollView = root.findViewById(R.id.lineNumberScrollView)
+        textViewerContent = root.findViewById(R.id.textViewerContent)
+        lineNumbersContainer = root.findViewById(R.id.lineNumbersContainer)
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     private fun setupWebView() {
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        val isDebugMode = BuildConfig.DEBUG && ::sharedPrefs.isInitialized && sharedPrefs.getBoolean("moodle_debug_mode", false)
-
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
-            builtInZoomControls = !isDebugMode
-            displayZoomControls = isDebugMode
+            builtInZoomControls = true
+            displayZoomControls = false
             setSupportZoom(true)
 
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -539,8 +584,19 @@ class MoodleFragment : Fragment() {
                 L.d("MoodleFragment", "URL: $url")
                 L.d("MoodleFragment", "Current page: ${webView.url}")
 
+                if (!url.startsWith("https://moodle.kleyer.eu/")) {
+                    L.d("MoodleFragment", "Blocked external URL: $url")
+                    return true
+                }
+
                 if (url.contains("/login/logout.php?sesskey=")) {
-                    L.d("MoodleFragment", "Detected one-click logout with session key")
+                    L.d("MoodleFragment", "Detected instant logout with session key - processing")
+                    isProcessingInstantLogout = true
+                    isHandlingLogout = true
+
+                    loginSuccessConfirmed = false
+                    lastSuccessfulLoginCheck = 0L
+
                     return false
                 }
 
@@ -595,37 +651,100 @@ class MoodleFragment : Fragment() {
                 }
                 isPageFullyLoaded = true
 
-                if (url?.contains("/login/logout.php?sesskey=") == true) {
-                    L.d("MoodleFragment", "One-click logout completed, clearing data and redirecting")
+                if (isProcessingInstantLogout && url == "https://moodle.kleyer.eu/login/index.php") {
+                    L.d("MoodleFragment", "Instant logout completed - user is now on login page")
+                    isProcessingInstantLogout = false
+
                     handleLogout()
+
+                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                    if (!dontShowDialog) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded && !isLoginDialogShown) {
+                                activity?.runOnUiThread {
+                                    showLoginDialog()
+                                }
+
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    injectDialogButtonOnLoginPage()
+                                }, 500)
+                            }
+                        }, 300)
+                    }
+
                     return
                 }
 
-                if (url?.contains("/login/logout.php") == true && !url.contains("sesskey=")) {
+                if (isProcessingInstantLogout) {
+                    L.d("MoodleFragment", "Still processing instant logout, skipping normal page processing")
+                    return
+                }
+
+                if (url?.contains("/login/logout.php?sesskey=") == true) {
+                    L.d("MoodleFragment", "Still on instant logout URL, waiting for redirect")
+                    return
+                }
+
+                if (url == "https://moodle.kleyer.eu/login/logout.php") {
                     L.d("MoodleFragment", "On logout confirmation page")
-                    activity?.runOnUiThread {
-                        updateUrlBar(url)
-                    }
-
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        monitorLogoutConfirmation()
-                    }, 300)
+                    wasOnLogoutConfirmPage = true
+                    logoutConfirmPageUrl = url
                     return
                 }
 
-                if (!wasOnLoginPage && (url == loginUrl || url?.contains("login/index.php") == true)) {
-                    val previousUrl = webView.copyBackForwardList().getItemAtIndex(
-                        webView.copyBackForwardList().currentIndex - 1
-                    )?.url
+                if (wasOnLogoutConfirmPage &&
+                    logoutConfirmPageUrl == "https://moodle.kleyer.eu/login/logout.php" &&
+                    url == "https://moodle.kleyer.eu/login/index.php") {
 
-                    if (previousUrl?.contains("/login/logout.php") == true) {
-                        L.d("MoodleFragment", "Detected navigation from logout to login - logout completed")
-                        handleLogout()
-                        return
+                    L.d("MoodleFragment", "User confirmed logout - clearing data and showing login UI")
+                    wasOnLogoutConfirmPage = false
+                    logoutConfirmPageUrl = ""
+
+                    handleLogout()
+
+                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+
+                    if (!dontShowDialog) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded) {
+                                activity?.runOnUiThread {
+                                    showLoginDialog()
+                                }
+
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    injectDialogButtonOnLoginPage()
+                                }, 500)
+                            }
+                        }, 300)
                     }
+
+                    return
                 }
 
-                if (url == loginUrl || url?.contains("login/index.php") == true) {
+                if (wasOnLogoutConfirmPage && url != "https://moodle.kleyer.eu/login/index.php") {
+                    L.d("MoodleFragment", "User cancelled logout - staying logged in")
+                    wasOnLogoutConfirmPage = false
+                    logoutConfirmPageUrl = ""
+                    return
+                }
+
+                val isNowOnLoginPage = (url == loginUrl || url?.contains("login/index.php") == true)
+
+                if (wasOnLoginPage && !isNowOnLoginPage) {
+                    L.d("MoodleFragment", "Login transition detected - user logged in successfully")
+                    wasOnLoginPage = false
+                    loginSuccessConfirmed = true
+                    loginRetryCount = 0
+                    lastSuccessfulLoginCheck = System.currentTimeMillis()
+                    stopDialogButtonMonitoring()
+
+                    L.d("MoodleFragment", "Triggering calendar data refresh after login")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        refreshCalendarDataInBackground()
+                    }, 1000)
+                }
+
+                if (isNowOnLoginPage) {
                     if (!wasOnLoginPage) {
                         wasOnLoginPage = true
                         loginSuccessConfirmed = false
@@ -636,13 +755,20 @@ class MoodleFragment : Fragment() {
                                     if (isConfirmDialog) {
                                         checkConfirmDialog()
                                     } else {
-                                        Handler(Looper.getMainLooper()).postDelayed({
-                                            injectDialogButtonOnLoginPage()
-                                        }, 500)
+                                        stopDialogButtonMonitoring()
+
+                                        val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+
+                                        if (!dontShowDialog) {
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                injectDialogButtonOnLoginPage()
+                                            }, 500)
+                                        }
 
                                         checkLoginFailure { loginFailed ->
                                             hasLoginFailed = loginFailed
-                                            if (!isLoginDialogShown && !loginSuccessConfirmed) {
+
+                                            if (!isLoginDialogShown && !loginSuccessConfirmed && !isHandlingLogout) {
                                                 checkAutoLogin()
                                             }
                                         }
@@ -652,9 +778,8 @@ class MoodleFragment : Fragment() {
                         }
                     }
                 } else {
-                    wasOnLoginPage = false
-                    isLoginDialogShown = false
-                    hasLoginFailed = false
+                    stopDialogButtonMonitoring()
+
                     isUserLoggedIn { isLoggedIn ->
                         if (isLoggedIn) {
                             loginSuccessConfirmed = true
@@ -683,7 +808,6 @@ class MoodleFragment : Fragment() {
 
                 Handler(Looper.getMainLooper()).postDelayed({
                     updateCounters()
-                    checkLoginTransition(url)
                 }, 300)
             }
 
@@ -836,84 +960,6 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun monitorLogoutConfirmation() {
-        val jsCode = """
-        (function() {
-            try {
-                var continueButton = document.evaluate(
-                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div[3]/div/div[2]/form/button',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (continueButton) {
-                    continueButton.addEventListener('click', function() {
-                        window.logoutConfirmed = true;
-                    });
-                    return true;
-                }
-                return false;
-            } catch(e) {
-                return false;
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            if (result == "true") {
-                L.d("MoodleFragment", "Logout confirmation button listener attached")
-                checkLogoutConfirmationStatus()
-            } else {
-                L.w("MoodleFragment", "Could not find logout confirmation button")
-            }
-        }
-    }
-
-    private fun checkLogoutConfirmationStatus() {
-        val handler = Handler(Looper.getMainLooper())
-        val checkInterval = 500L
-        val maxChecks = 60 // 30 seconds time to decide
-        var checkCount = 0
-
-        val checkRunnable = object : Runnable {
-            override fun run() {
-                val currentUrl = webView.url ?: ""
-
-                if (!currentUrl.contains("/login/logout.php")) {
-                    L.d("MoodleFragment", "User left logout page without confirming")
-                    return
-                }
-
-                checkCount++
-                if (checkCount >= maxChecks) {
-                    L.d("MoodleFragment", "Logout confirmation check timeout")
-                    return
-                }
-
-                val jsCode = """
-                (function() {
-                    return window.logoutConfirmed === true;
-                })();
-            """.trimIndent()
-
-                webView.evaluateJavascript(jsCode) { result ->
-                    if (result == "true") {
-                        L.d("MoodleFragment", "Logout CONFIRMED - user clicked Continue button")
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            handleLogout()
-                        }, 500)
-                    } else {
-                        handler.postDelayed(this, checkInterval)
-                    }
-                }
-            }
-        }
-
-        handler.postDelayed(checkRunnable, checkInterval)
-    }
-
     private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
         val idMatch = "id=(\\d+)".toRegex().find(url)
         val resourceId = idMatch?.groupValues?.get(1)
@@ -1027,23 +1073,20 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun checkLoginTransition(currentUrl: String?) {
-        val isCurrentlyOnLoginPage = currentUrl == loginUrl || currentUrl?.contains("login/index.php") == true
-
-        if (wasOnLoginPage && !isCurrentlyOnLoginPage && loginSuccessConfirmed) {
-            L.d("MoodleFragment", "Login transition detected - refreshing calendar data")
-            refreshCalendarDataInBackground()
-            wasOnLoginPage = false
-        } else if (isCurrentlyOnLoginPage) {
-            wasOnLoginPage = true
-        }
-    }
-
     private fun refreshCalendarDataInBackground() {
         try {
             L.d("MoodleFragment", "Starting calendar data refresh...")
 
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment not active, skipping calendar refresh")
+                return
+            }
+
             activity?.runOnUiThread {
+                if (!isFragmentActive || !isAdded) {
+                    L.d("MoodleFragment", "Fragment detached during calendar refresh")
+                    return@runOnUiThread
+                }
                 refreshCalendarDataViaForm()
             }
         } catch (e: Exception) {
@@ -1081,8 +1124,28 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun stopDialogButtonMonitoring() {
+        isMonitoringDialogButton = false
+        dialogButtonMonitorRunnable?.let {
+            dialogButtonMonitorHandler?.removeCallbacks(it)
+        }
+        dialogButtonMonitorHandler = null
+        dialogButtonMonitorRunnable = null
+        L.d("MoodleFragment", "Stopped dialog button monitoring")
+    }
+
     private fun handleLogout() {
+        if (isHandlingLogout && !isProcessingInstantLogout) {
+            L.d("MoodleFragment", "Already handling logout, skipping duplicate call")
+            return
+        }
+
+        isHandlingLogout = true
+        isProcessingInstantLogout = false
         L.d("MoodleFragment", "Handling logout - clearing all login data")
+
+        Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+        stopDialogButtonMonitoring()
 
         isLoginDialogShown = false
         hasLoginFailed = false
@@ -1095,19 +1158,18 @@ class MoodleFragment : Fragment() {
         sessionExpiredDetected = false
         sessionExpiredRetryCount = 0
         lastSessionExpiredTime = 0L
+        wasOnLoginPage = false
 
         encryptedPrefs.edit {
             clear()
             apply()
         }
-
         L.d("MoodleFragment", "Cleared encrypted credentials")
 
         sharedPrefs.edit {
             remove("moodle_dont_show_login_dialog")
             apply()
         }
-
         L.d("MoodleFragment", "Cleared login-related preferences")
 
         CookieManager.getInstance().apply {
@@ -1127,15 +1189,8 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "Logout complete - all login data cleared")
 
         Handler(Looper.getMainLooper()).postDelayed({
-            webView.loadUrl(loginUrl)
-            activity?.runOnUiThread {
-                Toast.makeText(
-                    requireContext(),
-                    getString(R.string.moodle_logged_out_successfully),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }, 300)
+            isHandlingLogout = false
+        }, 1000)
     }
 
     private fun showExtendedHeaderInitially() {
@@ -1304,6 +1359,7 @@ class MoodleFragment : Fragment() {
 
             webView.visibility = View.VISIBLE
             pdfContainer.visibility = View.GONE
+            textViewerContainer.visibility = View.GONE
             webControlsLayout.visibility = View.VISIBLE
             pdfControlsLayout.visibility = View.GONE
             btnBack.visibility = View.VISIBLE
@@ -1318,7 +1374,7 @@ class MoodleFragment : Fragment() {
         if (url.contains("/message/index.php")) {
             Handler(Looper.getMainLooper()).postDelayed({
                 clickMessageDrawerToggle()
-            }, 500)
+            }, 800)
         }
     }
 
@@ -1500,12 +1556,7 @@ class MoodleFragment : Fragment() {
     }
 
     private fun navigateToUrl(userInput: String) {
-        val isDebugMode = BuildConfig.DEBUG && sharedPrefs.getBoolean("moodle_debug_mode", false)
-
         val url = when {
-            isDebugMode && (userInput.startsWith("https://") || userInput.startsWith("http://")) -> {
-                userInput
-            }
             userInput.startsWith(moodleBaseUrl) -> {
                 userInput
             }
@@ -1517,21 +1568,10 @@ class MoodleFragment : Fragment() {
             }
         }
 
-        val isValidUrl = if (isDebugMode) {
-            url.startsWith("https://") || url.startsWith("http://")
-        } else {
-            url.startsWith(moodleBaseUrl)
-        }
-
-        if (isValidUrl) {
+        if (url.startsWith(moodleBaseUrl)) {
             loadUrlInBackground(url)
         } else {
-            val errorMessage = if (isDebugMode) {
-                "Invalid URL format"
-            } else {
-                getString(R.string.moodle_invalid_url)
-            }
-            Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.moodle_invalid_url), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1554,6 +1594,7 @@ class MoodleFragment : Fragment() {
 
             webView.visibility = View.VISIBLE
             pdfContainer.visibility = View.GONE
+            textViewerContainer.visibility = View.GONE
             webControlsLayout.visibility = View.VISIBLE
             pdfControlsLayout.visibility = View.GONE
             btnBack.visibility = View.VISIBLE
@@ -1587,6 +1628,7 @@ class MoodleFragment : Fragment() {
 
             webView.visibility = View.VISIBLE
             pdfContainer.visibility = View.GONE
+            textViewerContainer.visibility = View.GONE
             webControlsLayout.visibility = View.VISIBLE
             pdfControlsLayout.visibility = View.GONE
             btnBack.visibility = View.VISIBLE
@@ -1870,9 +1912,16 @@ class MoodleFragment : Fragment() {
         """.trimIndent()
 
                 webView.evaluateJavascript(jsCode) { result ->
+                    if (!isFragmentActive || !isAdded) {
+                        L.d("MoodleFragment", "Fragment not active, skipping dialog handling")
+                        return@evaluateJavascript
+                    }
+
                     if (result == "true") {
                         isLoginDialogShown = true
-                        Toast.makeText(requireContext(), getString(R.string.moodle_session_term_cancel), Toast.LENGTH_SHORT).show()
+                        context?.let {
+                            Toast.makeText(it, getString(R.string.moodle_session_term_cancel), Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -1953,6 +2002,11 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        if (isHandlingLogout || isProcessingInstantLogout) {
+            L.d("MoodleFragment", "Currently handling logout, skipping auto-login")
+            return
+        }
+
         if (!isNetworkAvailable()) {
             L.d("MoodleFragment", "No network connection, skipping auto-login")
             return
@@ -1995,7 +2049,7 @@ class MoodleFragment : Fragment() {
 
                 checkSessionExpired { isSessionExpired ->
                     if (isSessionExpired) {
-                        L.e("MoodleFragment", "Session expired detected")
+                        L.e("MoodleFragment", "Session expired detected - preventing auto-login")
                         sessionExpiredDetected = true
                         lastSessionExpiredTime = System.currentTimeMillis()
                         consecutiveLoginFailures++
@@ -2003,11 +2057,13 @@ class MoodleFragment : Fragment() {
                         CookieManager.getInstance().removeSessionCookies(null)
 
                         activity?.runOnUiThread {
-                            Toast.makeText(
-                                requireContext(),
-                                getString(R.string.moodle_session_expired_retry_later),
-                                Toast.LENGTH_LONG
-                            ).show()
+                            if (isFragmentActive && isAdded) {
+                                Toast.makeText(
+                                    requireContext(),
+                                    getString(R.string.moodle_session_expired_retry_later),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                         return@checkSessionExpired
                     }
@@ -2016,7 +2072,7 @@ class MoodleFragment : Fragment() {
                     val hasCredentials = encryptedPrefs.contains("moodle_username") &&
                             encryptedPrefs.contains("moodle_password")
 
-                    if (hasCredentials && !dontShowDialog && !isLoginDialogShown) {
+                    if (hasCredentials && !dontShowDialog && !isLoginDialogShown && !sessionExpiredDetected) {
                         performAutoLogin()
                     } else if (!hasCredentials && !dontShowDialog && !isLoginDialogShown) {
                         val delay = if (loginRetryCount > 0) {
@@ -2026,7 +2082,7 @@ class MoodleFragment : Fragment() {
                         }
 
                         Handler(Looper.getMainLooper()).postDelayed({
-                            if (!loginSuccessConfirmed && !isLoginDialogShown && !sessionExpiredDetected) {
+                            if (!loginSuccessConfirmed && !isLoginDialogShown && !sessionExpiredDetected && isFragmentActive && isAdded) {
                                 showLoginDialog()
                             }
                         }, delay)
@@ -2084,15 +2140,7 @@ class MoodleFragment : Fragment() {
                 var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
                 if (errorDiv && errorDiv.classList.contains('alert') && errorDiv.classList.contains('alert-danger')) {
                     var errorText = errorDiv.textContent.trim();
-                    return JSON.stringify({
-                        message: errorText,
-                        isSessionExpired: errorText.toLowerCase().includes('sitzung') || 
-                                         errorText.toLowerCase().includes('session') || 
-                                         errorText.toLowerCase().includes('expired') || 
-                                         errorText.toLowerCase().includes('abgelaufen'),
-                        isInvalidCredentials: errorText.toLowerCase().includes('ungültige') || 
-                                            errorText.toLowerCase().includes('invalid')
-                    });
+                    return errorText;
                 }
                 return '';
             } catch(e) {
@@ -2106,12 +2154,7 @@ class MoodleFragment : Fragment() {
             if (cleanResult.isEmpty() || cleanResult == "null") {
                 callback(null)
             } else {
-                try {
-                    val jsonResult = JSONObject(cleanResult)
-                    callback(jsonResult.getString("message"))
-                } catch (_: Exception) {
-                    callback(cleanResult.ifEmpty { null })
-                }
+                callback(cleanResult.ifEmpty { null })
             }
         }
     }
@@ -2163,15 +2206,6 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun translateErrorMessage(originalMessage: String): String {
-        return when {
-            originalMessage.contains("Ungültige Anmeldedaten") -> {
-                getString(R.string.moodle_invalid_credentials)
-            }
-            else -> originalMessage
-        }
-    }
-
     private fun showLoginDialog() {
         if (isLoginDialogShown) return
 
@@ -2220,7 +2254,7 @@ class MoodleFragment : Fragment() {
         checkLoginError { errorMessage ->
             if (errorMessage != null) {
                 tvErrorMessage.visibility = View.VISIBLE
-                tvErrorMessage.text = translateErrorMessage(errorMessage)
+                tvErrorMessage.text = errorMessage
             } else if (hasLoginFailed) {
                 tvErrorMessage.visibility = View.VISIBLE
                 tvErrorMessage.text = getString(R.string.moodle_login_failed)
@@ -2335,27 +2369,31 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        if (isHandlingLogout) {
+            L.d("MoodleFragment", "Currently handling logout - not attempting login")
+            return
+        }
+
         isLoginInProgress = true
         loginAttemptCount++
         L.d("MoodleFragment", "Starting login attempt #$loginAttemptCount")
 
-        val escapedUsername = username
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
+        fun escapeForJS(str: String): String {
+            return str
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("`", "\\`")
+                .replace("$", "\\$")
+                .replace("\t", "\\t")
+        }
 
-        val escapedPassword = password
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
+        val escapedUsername = escapeForJS(username)
+        val escapedPassword = escapeForJS(password)
+
+        L.d("MoodleFragment", "Username length: ${username.length}, Password length: ${password.length}")
 
         val jsCode = """
         (function() {
@@ -2523,7 +2561,6 @@ class MoodleFragment : Fragment() {
 
     private fun showMenuPopup() {
         val popup = PopupMenu(requireContext(), btnMenu)
-        val isDebugMode = BuildConfig.DEBUG && sharedPrefs.getBoolean("moodle_debug_mode", false)
 
         popup.menu.add(0, 1, 0, getString(R.string.moodle_profile)).apply {
             setIcon(R.drawable.ic_person)
@@ -2542,12 +2579,6 @@ class MoodleFragment : Fragment() {
         }
         popup.menu.add(0, 6, 0, getString(R.string.moodle_settings)).apply {
             setIcon(R.drawable.ic_gear)
-        }
-
-        if (isDebugMode) {
-            popup.menu.add(0, 8, 0, "🔧 Debug Menu").apply {
-                setIcon(R.drawable.ic_gear)
-            }
         }
 
         popup.menu.add(0, 7, 0, getString(R.string.moodle_logout)).apply {
@@ -2593,10 +2624,6 @@ class MoodleFragment : Fragment() {
                 }
                 7 -> {
                     navigateFromCurrentTab("$moodleBaseUrl/login/logout.php")
-                    true
-                }
-                8 -> {
-                    showDebugMenu()
                     true
                 }
                 else -> false
@@ -2927,6 +2954,11 @@ class MoodleFragment : Fragment() {
     private fun performHttpCalendarExport(sessionCookie: String, userAgent: String) {
         backgroundExecutor.execute {
             try {
+                if (!isFragmentActive || !isAdded) {
+                    L.d("MoodleFragment", "Fragment not active, aborting calendar export")
+                    return@execute
+                }
+
                 L.d("MoodleFragment", "Starting HTTP calendar export with session cookie")
 
                 // Step 1: Get the export page to extract session key
@@ -2949,8 +2981,12 @@ class MoodleFragment : Fragment() {
 
                 if (response1Code != 200) {
                     L.e("MoodleFragment", "Failed to load export page: $response1Code")
-                    activity?.runOnUiThread {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_page_error), Toast.LENGTH_SHORT).show()
+                    if (isFragmentActive && isAdded) {
+                        activity?.runOnUiThread {
+                            context?.let {
+                                Toast.makeText(it, getString(R.string.moodle_calendar_export_page_error), Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                     return@execute
                 }
@@ -2962,8 +2998,12 @@ class MoodleFragment : Fragment() {
                 // Check if we're authenticated
                 if (exportPageContent.contains("login") && !exportPageContent.contains("logout")) {
                     L.e("MoodleFragment", "Not authenticated - redirected to login")
-                    activity?.runOnUiThread {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_login_required), Toast.LENGTH_SHORT).show()
+                    if (isFragmentActive && isAdded) {
+                        activity?.runOnUiThread {
+                            context?.let {
+                                Toast.makeText(it, getString(R.string.moodle_calendar_export_login_required), Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                     return@execute
                 }
@@ -2974,8 +3014,12 @@ class MoodleFragment : Fragment() {
 
                 if (sesskeyMatch == null) {
                     L.e("MoodleFragment", "Could not find session key in export page")
-                    activity?.runOnUiThread {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_no_key), Toast.LENGTH_SHORT).show()
+                    if (isFragmentActive && isAdded) {
+                        activity?.runOnUiThread {
+                            context?.let {
+                                Toast.makeText(it, getString(R.string.moodle_calendar_export_no_key), Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                     return@execute
                 }
@@ -3000,7 +3044,7 @@ class MoodleFragment : Fragment() {
                 connection2.apply {
                     requestMethod = "POST"
                     doOutput = true
-                    instanceFollowRedirects = false // Don't auto-follow redirects
+                    instanceFollowRedirects = false
                     setRequestProperty("Cookie", "MoodleSession=$sessionCookie")
                     setRequestProperty("User-Agent", userAgent)
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -3013,7 +3057,6 @@ class MoodleFragment : Fragment() {
                     readTimeout = 15000
                 }
 
-                // Write form data
                 connection2.outputStream.use { outputStream ->
                     outputStream.write(formData.toByteArray(Charsets.UTF_8))
                     outputStream.flush()
@@ -3064,25 +3107,36 @@ class MoodleFragment : Fragment() {
                             } else {
                                 L.e("MoodleFragment", "Downloaded content is not valid iCalendar format")
                                 L.d("MoodleFragment", "Content preview: ${calendarContent.take(200)}")
-                                activity?.runOnUiThread {
-                                    Toast.makeText(requireContext(), getString(R.string.moodle_calendar_invalid_format), Toast.LENGTH_SHORT).show()
+                                if (isFragmentActive && isAdded) {
+                                    activity?.runOnUiThread {
+                                        context?.let {
+                                            Toast.makeText(it, getString(R.string.moodle_calendar_invalid_format), Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                             }
                         } else {
                             L.e("MoodleFragment", "Failed to download calendar: $response3Code")
                             connection3.disconnect()
-                            activity?.runOnUiThread {
-                                Toast.makeText(requireContext(), getString(R.string.moodle_calendar_download_failed), Toast.LENGTH_SHORT).show()
+                            if (isFragmentActive && isAdded) {
+                                activity?.runOnUiThread {
+                                    context?.let {
+                                        Toast.makeText(it, getString(R.string.moodle_calendar_download_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         }
                     } else {
                         L.e("MoodleFragment", "Unexpected redirect location: $redirectLocation")
-                        activity?.runOnUiThread {
-                            Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_redirect), Toast.LENGTH_SHORT).show()
+                        if (isFragmentActive && isAdded) {
+                            activity?.runOnUiThread {
+                                context?.let {
+                                    Toast.makeText(it, getString(R.string.moodle_calendar_export_redirect), Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
                 } else if (response2Code == 200) {
-                    // Check if we got the calendar directly (sometimes happens)
                     val directContent = connection2.inputStream.bufferedReader().use { it.readText() }
                     connection2.disconnect()
 
@@ -3092,22 +3146,34 @@ class MoodleFragment : Fragment() {
                     } else {
                         L.e("MoodleFragment", "Form submission returned unexpected content")
                         L.d("MoodleFragment", "Content preview: ${directContent.take(200)}")
-                        activity?.runOnUiThread {
-                            Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_unexpected_response), Toast.LENGTH_SHORT).show()
+                        if (isFragmentActive && isAdded) {
+                            activity?.runOnUiThread {
+                                context?.let {
+                                    Toast.makeText(it, getString(R.string.moodle_calendar_export_unexpected_response), Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
                 } else {
                     L.e("MoodleFragment", "Form submission failed: $response2Code")
                     connection2.disconnect()
-                    activity?.runOnUiThread {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_form_error), Toast.LENGTH_SHORT).show()
+                    if (isFragmentActive && isAdded) {
+                        activity?.runOnUiThread {
+                            context?.let {
+                                Toast.makeText(it, getString(R.string.moodle_calendar_export_form_error), Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                 }
 
             } catch (e: Exception) {
                 L.e("MoodleFragment", "Error in HTTP calendar export", e)
-                activity?.runOnUiThread {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_error_format, e.message), Toast.LENGTH_SHORT).show()
+                if (isFragmentActive && isAdded) {
+                    activity?.runOnUiThread {
+                        context?.let {
+                            Toast.makeText(it, getString(R.string.moodle_calendar_export_error_format, e.message), Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
         }
@@ -3136,16 +3202,24 @@ class MoodleFragment : Fragment() {
 
                 manager.saveCalendarData()
 
-                activity?.runOnUiThread {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_calendar_refresh_success, events.size), Toast.LENGTH_SHORT).show()
+                if (isFragmentActive && isAdded) {
+                    activity?.runOnUiThread {
+                        context?.let {
+                            Toast.makeText(it, getString(R.string.moodle_calendar_refresh_success, events.size), Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
 
                 L.d("MoodleFragment", "Successfully imported ${events.size} calendar events")
             }
         } catch (e: Exception) {
             L.e("MoodleFragment", "Error parsing calendar data", e)
-            activity?.runOnUiThread {
-                Toast.makeText(requireContext(), getString(R.string.moodle_calendar_refresh_failed), Toast.LENGTH_SHORT).show()
+            if (isFragmentActive && isAdded) {
+                activity?.runOnUiThread {
+                    context?.let {
+                        Toast.makeText(it, getString(R.string.moodle_calendar_refresh_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -3278,6 +3352,13 @@ class MoodleFragment : Fragment() {
     override fun onDestroy() {
         super.onDestroy()
 
+        stopDialogButtonMonitoring()
+        stopMessageInputMonitoring()
+        messageInputDialog?.dismiss()
+        wasOnLogoutConfirmPage = false
+        logoutConfirmPageUrl = ""
+        isHandlingLogout = false
+
         pdfViewerManager?.closePdf()
         resetDefaultTabToLogin()
         savePinnedTabs()
@@ -3289,192 +3370,8 @@ class MoodleFragment : Fragment() {
         scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
         cleanupFetchProcess()
         cleanupTemporaryPdfs()
-    }
-
-    private fun showDebugMenu() {
-        if (!BuildConfig.DEBUG || !sharedPrefs.getBoolean("moodle_debug_mode", false)) return
-
-        val debugItems = arrayOf(
-            "Test Calendar Export",
-            "Test Cookie Extraction",
-            "Toggle Debug Mode",
-            "View Page Source",
-            "Execute Custom JS",
-            "Open Chrome Inspect",
-            "Check Form Elements",
-            "Clear All Data"
-        )
-
-        AlertDialog.Builder(requireContext()) // debug only
-            .setTitle("🔧 Debug Menu")
-            .setItems(debugItems) { _, which ->
-                when (which) {
-                    0 -> {
-                        Toast.makeText(requireContext(), getString(R.string.moodle_calendar_export_test_start), Toast.LENGTH_SHORT).show()
-                        refreshCalendarDataInBackground()
-                    }
-                    1 -> {
-                        extractMoodleSessionCookie { cookie ->
-                            activity?.runOnUiThread {
-                                val message = if (cookie != null) {
-                                    "Session Cookie: ${cookie.take(20)}..."
-                                } else {
-                                    "No session cookie found"
-                                }
-                                showDebugDialog("Cookie Test", message)
-                            }
-                        }
-                    }
-                    2 -> {
-                        val currentDebugMode = sharedPrefs.getBoolean("moodle_debug_mode", false)
-                        sharedPrefs.edit {
-                            putBoolean("moodle_debug_mode", !currentDebugMode)
-                        }
-                        Toast.makeText(requireContext(), getString(R.string.moodle_debug_mode ,(!currentDebugMode).toString()), Toast.LENGTH_SHORT).show()
-
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            setupWebView()
-                            webView.reload()
-                        }, 1000)
-                    }
-                    3 -> {
-                        webView.evaluateJavascript("document.documentElement.outerHTML") { html ->
-                            showDebugDialog("Page Source", html.take(5000) + if (html.length > 5000) "\n\n... (truncated)" else "")
-                        }
-                    }
-                    4 -> {
-                        showCustomJSDialog()
-                    }
-                    5 -> {
-                        showDebugDialog("Chrome Inspect Instructions",
-                            "To debug WebView:\n\n" +
-                                    "1. Enable USB Debugging on device\n" +
-                                    "2. Connect to computer\n" +
-                                    "3. Open Chrome on computer\n" +
-                                    "4. Go to chrome://inspect\n" +
-                                    "5. Find your WebView under 'Remote Target'\n\n" +
-                                    "WebView debugging is currently: ${"ENABLED"}\n\n" +
-                                    "Current URL: ${webView.url}")
-                    }
-                    6 -> {
-                        checkFormElementsDebug()
-                    }
-                    7 -> {
-                        AlertDialog.Builder(requireContext()) // debug only
-                            .setTitle("Clear All Data")
-                            .setMessage("This will clear all Moodle data and restart. Continue?")
-                            .setPositiveButton("Yes") { _, _ ->
-                                clearMoodleData()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showDebugDialog(title: String, content: String) {
-        val scrollView = ScrollView(requireContext())
-        val textView = TextView(requireContext()).apply {
-            text = content
-            setPadding(32, 32, 32, 32)
-            textSize = 12f
-            typeface = Typeface.MONOSPACE
-            setTextIsSelectable(true)
-        }
-        scrollView.addView(textView)
-
-        AlertDialog.Builder(requireContext()) // debug only
-            .setTitle(title)
-            .setView(scrollView)
-            .setPositiveButton("Close", null)
-            .setNeutralButton("Copy") { _, _ ->
-                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText(title, content)
-                clipboard.setPrimaryClip(clip)
-                Toast.makeText(requireContext(), getString(R.string.moodle_copied_to_clipboard), Toast.LENGTH_SHORT).show()
-            }
-            .show()
-    }
-
-    private fun showCustomJSDialog() {
-        val editText = EditText(requireContext()).apply {
-            hint = "Enter JavaScript code..."
-            setText("document.title")
-        }
-
-        AlertDialog.Builder(requireContext()) // debug only
-            .setTitle("Execute JavaScript")
-            .setView(editText)
-            .setPositiveButton("Execute") { _, _ ->
-                val jsCode = editText.text.toString()
-                if (jsCode.isNotBlank()) {
-                    webView.evaluateJavascript(jsCode) { result ->
-                        showDebugDialog("JS Result", "Code: $jsCode\n\nResult: $result")
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun checkFormElementsDebug() {
-        val jsCode = """
-        (function() {
-            var info = {
-                url: window.location.href,
-                title: document.title,
-                forms: []
-            };
-            
-            var forms = document.querySelectorAll('form');
-            for (var i = 0; i < forms.length; i++) {
-                var form = forms[i];
-                var formInfo = {
-                    action: form.action,
-                    method: form.method,
-                    elements: []
-                };
-                
-                var elements = form.querySelectorAll('input, select, textarea');
-                for (var j = 0; j < elements.length; j++) {
-                    var el = elements[j];
-                    formInfo.elements.push({
-                        type: el.type,
-                        name: el.name,
-                        id: el.id,
-                        value: el.value,
-                        checked: el.checked,
-                        disabled: el.disabled
-                    });
-                }
-                
-                info.forms.push(formInfo);
-            }
-            
-            var errors = [];
-            var errorDivs = document.querySelectorAll('.invalid-feedback, .error');
-            for (var k = 0; k < errorDivs.length; k++) {
-                var errorDiv = errorDivs[k];
-                if (errorDiv.style.display !== 'none') {
-                    errors.push({
-                        text: errorDiv.textContent.trim(),
-                        visible: errorDiv.offsetParent !== null,
-                        id: errorDiv.id
-                    });
-                }
-            }
-            info.errors = errors;
-            
-            return JSON.stringify(info, null, 2);
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            showDebugDialog("Form Elements Debug", result.replace("\\\"", "\"").replace("\\n", "\n"))
-        }
+        textViewerManager = null
+        textSearchDialog?.dismiss()
     }
 
     private fun resetSearchState() {
@@ -3563,8 +3460,12 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        val searchQuery = extractSearchableCourseName(category)
+
+        L.d("MoodleFragment", "Extracted search query: '$searchQuery' from category: '$category'")
+
         searchCancelled = false
-        searchProgressDialog = showSearchProgressDialog(category, summary)
+        searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
 
         val currentUrl = webView.url ?: ""
         val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
@@ -3579,10 +3480,68 @@ class MoodleFragment : Fragment() {
                 Toast.LENGTH_LONG
             ).show()
 
-            monitorLoginCompletionForSearch(category, summary, entryId)
+            monitorLoginCompletionForSearch(searchQuery, summary, entryId)
         } else {
-            continueSearchAfterLogin(category, summary, entryId)
+            continueSearchAfterLogin(searchQuery, summary, entryId)
         }
+    }
+
+    private fun extractSearchableCourseName(category: String): String {
+        L.d("MoodleFragment", "Attempting to extract searchable name from: $category")
+
+        // Remove common prefixes that don't help with searching
+        val cleaned = category
+            .replace("Kurs:", "")
+            .replace("Aufgabe:", "")
+            .trim()
+
+        // Strategy 1: Try to find a class code pattern (e.g., "13BG2G", "12BG", etc.)
+        val classCodePattern = """(\d{2}[A-Z]{2,4}\d*[A-Z]*)""".toRegex()
+        val classCodeMatch = classCodePattern.find(cleaned)
+        if (classCodeMatch != null) {
+            val courseCode = classCodeMatch.value
+            L.d("MoodleFragment", "Strategy 1 (class code): Found '$courseCode'")
+            return courseCode
+        }
+
+        // Strategy 2: Check for "—" or ":" separators and take the first meaningful part
+        val separators = listOf("—", ":", " - ")
+        for (separator in separators) {
+            if (cleaned.contains(separator)) {
+                val firstPart = cleaned.split(separator).firstOrNull()?.trim()
+                if (firstPart != null && firstPart.length >= 3) {
+                    L.d("MoodleFragment", "Strategy 2 (separator '$separator'): Found '$firstPart'")
+                    return firstPart
+                }
+            }
+        }
+
+        // Strategy 3: Try to extract subject/teacher pattern (e.g., "13BG PoWi Peter")
+        // Take everything before brackets, slashes, or "Aufgabe"
+        val beforeBracket = cleaned.split("[", "(", "/", "Aufgabe").firstOrNull()?.trim()
+        if (beforeBracket != null && beforeBracket.length >= 3 && beforeBracket != cleaned) {
+            L.d("MoodleFragment", "Strategy 3 (before bracket): Found '$beforeBracket'")
+            return beforeBracket
+        }
+
+        // Strategy 4: Take first 3-5 words (likely to contain the course identifier)
+        val words = cleaned.split(" ").filter { it.isNotBlank() }
+        if (words.size > 3) {
+            val firstWords = words.take(3).joinToString(" ")
+            L.d("MoodleFragment", "Strategy 4 (first 3 words): Found '$firstWords'")
+            return firstWords
+        }
+
+        // Strategy 5: If everything else fails, use the cleaned category
+        // but limit it to a reasonable length for searching
+        val fallback = if (cleaned.length > 50) {
+            cleaned.take(50).trim()
+        } else {
+            cleaned
+        }
+
+        L.d("MoodleFragment", "Strategy 5 (fallback): Using '$fallback'")
+        return fallback
     }
 
     private fun monitorLoginCompletionForSearch(category: String, summary: String, entryId: String) {
@@ -3646,9 +3605,7 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "Using category as search query: $category")
         updateSearchProgress(30, getString(R.string.moodle_searching_course))
 
-        val currentUrl = webView.url ?: ""
-        val isOnMyCoursesPage = currentUrl.contains("/my/") || currentUrl == "$moodleBaseUrl/my/"
-        val initialDelay = if (isOnMyCoursesPage) 300L else 1000L
+        val initialDelay = 800L
 
         waitForPageLoadComplete {
             if (searchCancelled) return@waitForPageLoadComplete
@@ -3700,64 +3657,94 @@ class MoodleFragment : Fragment() {
     private fun fillSearchFieldWithDelay(searchQuery: String, callback: (Boolean) -> Unit) {
         L.d("MoodleFragment", "Starting enhanced search field fill with: $searchQuery")
 
+        val escapedQuery = searchQuery
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+            .replace("\t", "\\t")
+
+        L.d("MoodleFragment", "Escaped query: $escapedQuery")
+
         val jsCode = """
         (function() {
-            var existingResults = document.querySelector('[data-region="courses-view"]');
-            if (existingResults) {
-                existingResults.innerHTML = '';
-            }
+            try {
+                console.log('=== Moodle Search Debug ===');
+                console.log('Search query: "$escapedQuery"');
+                
+                var existingResults = document.querySelector('[data-region="courses-view"]');
+                if (existingResults) {
+                    existingResults.innerHTML = '';
+                    console.log('Cleared existing results');
+                }
 
-            var searchField = null;
-            var selectors = [
-                '/html/body/div[1]/div[2]/div/div[1]/div/div/section/section/div/div/div[1]/div[1]/div/div[2]/div/div/input',
-                'input[placeholder*="Search"]',
-                'input[placeholder*="search"]',
-                'input[placeholder*="Suchen"]',
-                'input[data-region="search-input"]',
-                'section input[type="text"]',
-                '.search-input-region input',
-                '[data-region="view-selector"] input'
-            ];
+                var searchField = null;
+                var selectors = [
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/section/section/div/div/div[1]/div[1]/div/div[2]/div/div/input',
+                    'input[placeholder*="Search"]',
+                    'input[placeholder*="search"]',
+                    'input[placeholder*="Suchen"]',
+                    'input[data-region="search-input"]',
+                    'section input[type="text"]',
+                    '.search-input-region input',
+                    '[data-region="view-selector"] input'
+                ];
 
-            searchField = document.evaluate(selectors[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                searchField = document.evaluate(selectors[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 
-            if (!searchField) {
-                for (var i = 1; i < selectors.length; i++) {
-                    searchField = document.querySelector(selectors[i]);
-                    if (searchField && searchField.offsetParent !== null) {
-                        break;
+                if (!searchField) {
+                    for (var i = 1; i < selectors.length; i++) {
+                        searchField = document.querySelector(selectors[i]);
+                        if (searchField && searchField.offsetParent !== null) {
+                            console.log('Found search field with selector: ' + selectors[i]);
+                            break;
+                        }
                     }
                 }
-            }
-            
-            if (!searchField) {
+                
+                if (!searchField) {
+                    console.error('Search field not found');
+                    return false;
+                }
+
+                console.log('Search field found, filling with value');
+                searchField.disabled = false;
+                searchField.readOnly = false;
+                searchField.value = '';
+                searchField.focus();
+
+                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                nativeInputValueSetter.call(searchField, '$escapedQuery');
+                
+                console.log('Field value set to: ' + searchField.value);
+
+                var inputEvent = new Event('input', { bubbles: true });
+                searchField.dispatchEvent(inputEvent);
+
+                var changeEvent = new Event('change', { bubbles: true });
+                searchField.dispatchEvent(changeEvent);
+                
+                console.log('Events dispatched');
+                
+                setTimeout(function() {
+                    var keyupEvent = new KeyboardEvent('keyup', { 
+                        key: 'Enter',
+                        keyCode: 13,
+                        bubbles: true
+                    });
+                    searchField.dispatchEvent(keyupEvent);
+                    console.log('Keyup event dispatched');
+                }, 150);
+                
+                return true;
+            } catch(e) {
+                console.error('Error in search field fill: ' + e.message);
+                console.error('Stack: ' + e.stack);
                 return false;
             }
-
-            searchField.disabled = false;
-            searchField.readOnly = false;
-            searchField.value = '';
-            searchField.focus();
-
-            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-            nativeInputValueSetter.call(searchField, '$searchQuery');
-
-            var inputEvent = new Event('input', { bubbles: true });
-            searchField.dispatchEvent(inputEvent);
-
-            var changeEvent = new Event('change', { bubbles: true });
-            searchField.dispatchEvent(changeEvent);
-            
-            setTimeout(function() {
-                var keyupEvent = new KeyboardEvent('keyup', { 
-                    key: 'Enter',
-                    keyCode: 13,
-                    bubbles: true
-                });
-                searchField.dispatchEvent(keyupEvent);
-            }, 150);
-            
-            return true;
         })();
     """.trimIndent()
 
@@ -4865,6 +4852,12 @@ class MoodleFragment : Fragment() {
 
         val tab = tabs[index]
 
+        if (isTextViewerMode) {
+            isTextViewerMode = false
+            textViewerContainer.visibility = View.GONE
+            textViewerManager = null
+        }
+
         if (isPdfTab(index)) {
             loadPdfTab(tab)
         } else {
@@ -4877,6 +4870,7 @@ class MoodleFragment : Fragment() {
             activity?.runOnUiThread {
                 webView.visibility = View.VISIBLE
                 pdfContainer.visibility = View.GONE
+                textViewerContainer.visibility = View.GONE
                 webControlsLayout.visibility = View.VISIBLE
                 pdfControlsLayout.visibility = View.GONE
                 btnBack.visibility = View.VISIBLE
@@ -5033,6 +5027,7 @@ class MoodleFragment : Fragment() {
 
         webView.visibility = View.VISIBLE
         pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.GONE
         webControlsLayout.visibility = View.VISIBLE
         pdfControlsLayout.visibility = View.GONE
         btnBack.visibility = View.VISIBLE
@@ -5197,6 +5192,7 @@ class MoodleFragment : Fragment() {
 
         webView.visibility = View.VISIBLE
         pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.GONE
         webControlsLayout.visibility = View.VISIBLE
         pdfControlsLayout.visibility = View.GONE
         btnBack.visibility = View.VISIBLE
@@ -5357,9 +5353,23 @@ class MoodleFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         isFragmentActive = false
+        stopDialogButtonMonitoring()
+        stopMessageInputMonitoring()
+        messageInputDialog?.dismiss()
+
+        if (wasOnLogoutConfirmPage) {
+            L.d("MoodleFragment", "User left while on logout page - cancelling logout")
+            wasOnLogoutConfirmPage = false
+            logoutConfirmPageUrl = ""
+        }
+
+        if (isProcessingInstantLogout) {
+            L.d("MoodleFragment", "User left during instant logout - resetting state")
+            isProcessingInstantLogout = false
+        }
+
         saveCurrentTabState()
         savePinnedTabs()
-
         resetDefaultTab()
 
         L.d("MoodleFragment", "onPause - saved tabs and reset default tab")
@@ -5392,6 +5402,13 @@ class MoodleFragment : Fragment() {
 
     override fun onStop() {
         super.onStop()
+
+        if (wasOnLogoutConfirmPage) {
+            L.d("MoodleFragment", "App stopped while on logout page - cancelling logout")
+            wasOnLogoutConfirmPage = false
+            logoutConfirmPageUrl = ""
+        }
+
         resetDefaultTabToLogin()
         savePinnedTabs()
         L.d("MoodleFragment", "onStop - reset default tab and saved pinned tabs")
@@ -6024,6 +6041,9 @@ class MoodleFragment : Fragment() {
 
         loadPdfTab(pdfTab)
 
+        isTextViewerMode = false
+        textViewerManager = null
+
         Handler(Looper.getMainLooper()).postDelayed({
             if (currentTabIndex in tabs.indices && tabs[currentTabIndex].id == pdfTab.id) {
                 tabs[currentTabIndex] = tabs[currentTabIndex].copy(
@@ -6575,23 +6595,6 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun unloadAllPdfPages() {
-        for (i in 0 until pdfPagesContainer.childCount) {
-            val child = pdfPagesContainer.getChildAt(i)
-            val imageView = child as? ImageView ?: continue
-
-            val currentHeight = imageView.height.coerceAtLeast((800 * resources.displayMetrics.density).toInt())
-
-            imageView.setImageDrawable(null)
-            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
-            imageView.minimumHeight = currentHeight
-
-            val layoutParams = imageView.layoutParams
-            layoutParams.height = currentHeight
-            imageView.layoutParams = layoutParams
-        }
-    }
-
     private fun scrollToPage(pageIndex: Int) {
         var targetY = 0
         for (i in 0 until pageIndex.coerceAtMost(pdfPagesContainer.childCount)) {
@@ -6844,29 +6847,38 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun searchInPdfImplemented() {
-        Toast.makeText(requireContext(), getString(R.string.moodle_pdf_search_coming_soon), Toast.LENGTH_SHORT).show()
-    }
-
     private fun showPdfOptionsMenu() {
         val popup = PopupMenu(requireContext(), pdfKebabMenu)
 
-        popup.menu.add(0, 1, 0, getString(R.string.moodle_pdf_search)).setIcon(R.drawable.ic_search)
-        popup.menu.add(0, 2, 0, getString(R.string.moodle_pdf_copy_all_text)).setIcon(R.drawable.ic_copy_text)
-        popup.menu.add(0, 3, 0, getString(R.string.moodle_pdf_download)).setIcon(R.drawable.ic_download)
-        popup.menu.add(0, 4, 0, getString(R.string.moodle_pdf_share)).setIcon(R.drawable.ic_share)
+        if (isTextViewerMode) {
+            popup.menu.add(0, 1, 0, getString(R.string.text_viewer_switch_to_pdf)).setIcon(R.drawable.ic_pdf_viewer)
+            popup.menu.add(0, 2, 0, getString(R.string.text_viewer_search)).setIcon(R.drawable.ic_search)
+            popup.menu.add(0, 3, 0, getString(R.string.text_viewer_preferences)).setIcon(R.drawable.ic_gear)
 
-        val darkModeText = if (pdfViewerManager?.forceDarkMode == true) {
-            getString(R.string.moodle_pdf_disable_dark_mode)
+            val darkModeText = if (textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)) {
+                getString(R.string.moodle_pdf_disable_dark_mode)
+            } else {
+                getString(R.string.moodle_pdf_enable_dark_mode)
+            }
+            popup.menu.add(0, 4, 0, darkModeText).setIcon(R.drawable.ic_dark_mode)
         } else {
-            getString(R.string.moodle_pdf_enable_dark_mode)
+            popup.menu.add(0, 1, 0, getString(R.string.text_viewer_switch_to_text)).setIcon(R.drawable.ic_text_viewer)
+            popup.menu.add(0, 2, 0, getString(R.string.moodle_pdf_copy_all_text)).setIcon(R.drawable.ic_copy_text)
+            popup.menu.add(0, 3, 0, getString(R.string.moodle_pdf_download)).setIcon(R.drawable.ic_download)
+            popup.menu.add(0, 4, 0, getString(R.string.moodle_pdf_share)).setIcon(R.drawable.ic_share)
+
+            val darkModeText = if (pdfViewerManager?.forceDarkMode == true) {
+                getString(R.string.moodle_pdf_disable_dark_mode)
+            } else {
+                getString(R.string.moodle_pdf_enable_dark_mode)
+            }
+            val darkModeIcon = if (pdfViewerManager?.forceDarkMode == true) {
+                R.drawable.ic_light_mode
+            } else {
+                R.drawable.ic_dark_mode
+            }
+            popup.menu.add(0, 5, 0, darkModeText).setIcon(darkModeIcon)
         }
-        val darkModeIcon = if (pdfViewerManager?.forceDarkMode == true) {
-            R.drawable.ic_light_mode
-        } else {
-            R.drawable.ic_dark_mode
-        }
-        popup.menu.add(0, 5, 0, darkModeText).setIcon(darkModeIcon)
 
         try {
             val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
@@ -6876,16 +6888,39 @@ class MoodleFragment : Fragment() {
         } catch (_: Exception) { }
 
         popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> searchInPdfImplemented()
-                2 -> copyAllPdfText()
-                3 -> downloadCurrentPdf()
-                4 -> shareCurrentPdf()
-                5 -> togglePdfDarkMode()
+            if (isTextViewerMode) {
+                when (item.itemId) {
+                    1 -> switchToPdfViewer()
+                    2 -> showTextSearchDialog()
+                    3 -> showTextViewerPreferences()
+                    4 -> toggleTextViewerDarkMode()
+                }
+            } else {
+                when (item.itemId) {
+                    1 -> switchToTextViewer()
+                    2 -> copyAllPdfText()
+                    3 -> downloadCurrentPdf()
+                    4 -> shareCurrentPdf()
+                    5 -> togglePdfDarkMode()
+                }
             }
             true
         }
         popup.show()
+    }
+
+    private fun toggleTextViewerDarkMode() {
+        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
+        textViewerManager?.setDarkMode(!currentDarkMode)
+
+        applyTextViewerPreferences()
+        val displayWidth = textContentScrollView.width
+        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+        textViewerContent.text = formattedText
+        generateLineNumbers()
+
+        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+        textViewerContainer.setBackgroundColor(bgColor)
     }
 
     private fun handleInterceptedDownload(
@@ -9034,6 +9069,11 @@ class MoodleFragment : Fragment() {
     }
 
     private fun injectDialogButtonOnLoginPage() {
+        if (!isFragmentActive || !isAdded) {
+            L.d("MoodleFragment", "Fragment not active, skipping button injection")
+            return
+        }
+
         val jsCode = """
         (function() {
             try {
@@ -9046,6 +9086,18 @@ class MoodleFragment : Fragment() {
                 ).singleNodeValue;
                 
                 if (!loginHeading || !loginHeading.textContent.toLowerCase().includes('login')) {
+                    return false;
+                }
+
+                var confirmHeader = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
                     return false;
                 }
 
@@ -9089,6 +9141,11 @@ class MoodleFragment : Fragment() {
     """.trimIndent()
 
         webView.evaluateJavascript(jsCode) { result ->
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment detached during button injection")
+                return@evaluateJavascript
+            }
+
             if (result == "true") {
                 L.d("MoodleFragment", "Dialog button injected successfully")
                 monitorDialogButtonClick()
@@ -9099,78 +9156,135 @@ class MoodleFragment : Fragment() {
     }
 
     private fun monitorDialogButtonClick() {
-        val checkInterval = 300L
-        val handler = Handler(Looper.getMainLooper())
+        if (!isFragmentActive || !isAdded) {
+            L.d("MoodleFragment", "Fragment not active, stopping dialog button monitoring")
+            return
+        }
 
-        val checkRunnable = object : Runnable {
+        stopDialogButtonMonitoring()
+
+        isMonitoringDialogButton = true
+        val checkInterval = 300L
+        dialogButtonMonitorHandler = Handler(Looper.getMainLooper())
+
+        dialogButtonMonitorRunnable = object : Runnable {
             override fun run() {
+                if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
+                    L.d("MoodleFragment", "Fragment detached or monitoring stopped")
+                    stopDialogButtonMonitoring()
+                    return
+                }
+
                 val currentUrl = webView.url ?: ""
 
                 if (!currentUrl.contains("login/index.php")) {
+                    L.d("MoodleFragment", "No longer on login page, stopping monitoring")
+                    stopDialogButtonMonitoring()
                     return
                 }
 
                 val jsCode = """
                 (function() {
-                    if (window.showLoginDialogFromApp === true) {
-                        window.showLoginDialogFromApp = false;
-                        return true;
+                    try {
+                        var confirmHeader = document.evaluate(
+                            '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                            document,
+                            null,
+                            XPathResult.FIRST_ORDERED_NODE_TYPE,
+                            null
+                        ).singleNodeValue;
+                        
+                        if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
+                            return 'terminate';
+                        }
+                        
+                        if (window.showLoginDialogFromApp === true) {
+                            window.showLoginDialogFromApp = false;
+                            return true;
+                        }
+                        
+                        var button = document.getElementById('logindialogbtn');
+                        if (!button) {
+                            return 'reinject';
+                        }
+                        
+                        return false;
+                    } catch(e) {
+                        return false;
                     }
-                    
-                    var button = document.getElementById('logindialogbtn');
-                    if (!button) {
-                        return 'reinject';
-                    }
-                    
-                    return false;
                 })();
             """.trimIndent()
 
                 webView.evaluateJavascript(jsCode) { result ->
+                    if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
+                        L.d("MoodleFragment", "Fragment detached during evaluation")
+                        stopDialogButtonMonitoring()
+                        return@evaluateJavascript
+                    }
+
                     when (result.trim('"')) {
                         "true" -> {
                             L.d("MoodleFragment", "Dialog button clicked - showing login dialog")
                             activity?.runOnUiThread {
-                                showLoginDialog()
+                                if (isFragmentActive && isAdded && !isLoginDialogShown) {
+                                    showLoginDialog()
+                                }
                             }
-                            handler.postDelayed(this, checkInterval)
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
                         }
                         "reinject" -> {
                             L.d("MoodleFragment", "Button missing, re-injecting")
-                            injectDialogButtonOnLoginPage()
+                            if (isFragmentActive && isAdded) {
+                                injectDialogButtonOnLoginPage()
+                            }
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
+                        }
+                        "terminate" -> {
+                            L.d("MoodleFragment", "On termination page, stopping monitoring")
+                            stopDialogButtonMonitoring()
                         }
                         else -> {
-                            handler.postDelayed(this, checkInterval)
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
                         }
                     }
                 }
             }
         }
 
-        handler.post(checkRunnable)
+        dialogButtonMonitorHandler?.post(dialogButtonMonitorRunnable!!)
     }
 
     private fun injectMobileOptimizations(url: String) {
         when {
-            url.contains("/message/index.php") -> optimizeMessagesPage()
+            url.contains("/message/index.php") -> {
+                optimizeMessagesPage()
+                Handler(Looper.getMainLooper()).postDelayed({
+                    setupMessageInputOverride()
+                }, 500)
+            }
             //url.contains("/my/") && !url.contains("/my/index.php?edit=") -> optimizeDashboardPage()
             // tried (switching dashboard header with recent side bar) but failed to preserve js functionality
         }
     }
 
     private fun optimizeMessagesPage() {
+        messageDialogSuppressedForSession = false
+        L.d("MoodleFragment", "Messages page loaded - dialog suppression reset")
+
         val jsCode = """
         (function() {
             try {
                 console.log('Optimizing messages page for mobile...');
-
+    
                 if (!window.moodleOptimizationState) {
                     window.moodleOptimizationState = {
                         div2Removed: 0,
                         footerRemoved: 0
                     };
                 }
-
+    
+                window.moodleAllowSend = false;
+    
                 function removeElementByXPath(xpath, elementName) {
                     var element = document.evaluate(
                         xpath,
@@ -9270,7 +9384,7 @@ class MoodleFragment : Fragment() {
                                         window.moodleOptimizationState.div2Removed++;
                                     }
                                 }
-
+    
                                 if (window.moodleOptimizationState.footerRemoved < 2) {
                                     var footer = document.evaluate(
                                         '/html/body/div[1]/footer',
@@ -9286,7 +9400,7 @@ class MoodleFragment : Fragment() {
                                         window.moodleOptimizationState.footerRemoved++;
                                     }
                                 }
-
+    
                                 if (window.moodleOptimizationState.div2Removed >= 2 && 
                                     window.moodleOptimizationState.footerRemoved >= 2) {
                                     console.log('All removals complete, stopping observer');
@@ -9355,5 +9469,1048 @@ class MoodleFragment : Fragment() {
                 L.w("MoodleFragment", "Failed to click message drawer toggle")
             }
         }
+    }
+
+    private fun setupMessageInputOverride() {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastMessageInputSetupTime < MESSAGE_INPUT_SETUP_COOLDOWN) {
+            L.d("MoodleFragment", "Message input setup on cooldown")
+            return
+        }
+        lastMessageInputSetupTime = currentTime
+
+        val jsCode = """
+        (function() {
+            try {
+                if (window.moodleMessageInputOverrideSetup) {
+                    return 'already_setup';
+                }
+                
+                console.log('Setting up message input override...');
+                
+                // "main chat" text input
+                var mainTextarea = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/textarea',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                // "side bar" chat text input
+                var sidebarTextarea = document.evaluate(
+                    '/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/textarea',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                // "main chat" send button
+                var mainSendBtn = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/div/button[2]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeNode;
+                
+                // "side bar chat" send button
+                var sidebarSendBtn = document.evaluate(
+                    '/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/div/button[2]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                function setupTextareaOverride(textarea, chatType) {
+                    if (!textarea) return false;
+                    
+                    textarea.addEventListener('focus', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        textarea.blur();
+                        window.moodleMessageInputFocused = chatType;
+                        console.log('Textarea focused: ' + chatType);
+                    }, true);
+                    
+                    textarea.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.moodleMessageInputFocused = chatType;
+                        console.log('Textarea clicked: ' + chatType);
+                    }, true);
+                    
+                    return true;
+                }
+                
+                function setupSendButtonOverride(button, chatType) {
+                    if (!button) return false;
+                    
+                    button.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.moodleMessageSendClicked = chatType;
+                        console.log('Send button clicked: ' + chatType);
+                    }, true);
+                    
+                    return true;
+                }
+                
+                var mainTextareaSetup = setupTextareaOverride(mainTextarea, 'main');
+                var sidebarTextareaSetup = setupTextareaOverride(sidebarTextarea, 'sidebar');
+                var mainSendBtnSetup = setupSendButtonOverride(mainSendBtn, 'main');
+                var sidebarSendBtnSetup = setupSendButtonOverride(sidebarSendBtn, 'sidebar');
+                
+                window.moodleMessageInputOverrideSetup = true;
+                
+                console.log('Message input override setup complete');
+                console.log('Main textarea: ' + mainTextareaSetup);
+                console.log('Sidebar textarea: ' + sidebarTextareaSetup);
+                console.log('Main send button: ' + mainSendBtnSetup);
+                console.log('Sidebar send button: ' + sidebarSendBtnSetup);
+                
+                return 'success';
+            } catch(e) {
+                console.error('Error setting up message input override: ' + e.message);
+                return 'error: ' + e.message;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val cleanResult = result.trim('"')
+            L.d("MoodleFragment", "Message input override setup result: $cleanResult")
+
+            when (cleanResult) {
+                "success" -> {
+                    L.d("MoodleFragment", "Starting message input monitoring")
+                    startMessageInputMonitoring()
+                }
+                "already_setup" -> {
+                    L.d("MoodleFragment", "Message input override already setup")
+                    if (!isMonitoringMessageInput) {
+                        startMessageInputMonitoring()
+                    }
+                }
+                else -> {
+                    L.e("MoodleFragment", "Failed to setup message input override: $cleanResult")
+                }
+            }
+        }
+    }
+
+    private fun startMessageInputMonitoring() {
+        if (isMonitoringMessageInput) {
+            L.d("MoodleFragment", "Already monitoring message input")
+            return
+        }
+
+        stopMessageInputMonitoring()
+
+        isMonitoringMessageInput = true
+        val checkInterval = 300L
+        messageInputMonitorHandler = Handler(Looper.getMainLooper())
+
+        messageInputMonitorRunnable = object : Runnable {
+            override fun run() {
+                if (!isFragmentActive || !isAdded || !isMonitoringMessageInput) {
+                    stopMessageInputMonitoring()
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+                if (!currentUrl.contains("/message/index.php")) {
+                    L.d("MoodleFragment", "No longer on messages page, stopping monitoring")
+                    stopMessageInputMonitoring()
+                    return
+                }
+
+                val jsCode = """
+                (function() {
+                    try {
+                        if (window.moodleMessageInputFocused) {
+                            var chatType = window.moodleMessageInputFocused;
+                            window.moodleMessageInputFocused = null;
+                            return JSON.stringify({ action: 'input_focused', chatType: chatType });
+                        }
+                        
+                        if (window.moodleMessageSendClicked) {
+                            var chatType = window.moodleMessageSendClicked;
+                            window.moodleMessageSendClicked = null;
+                            return JSON.stringify({ action: 'send_clicked', chatType: chatType });
+                        }
+                        
+                        return JSON.stringify({ action: 'none' });
+                    } catch(e) {
+                        return JSON.stringify({ action: 'error', error: e.message });
+                    }
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (!isFragmentActive || !isAdded || !isMonitoringMessageInput) {
+                        stopMessageInputMonitoring()
+                        return@evaluateJavascript
+                    }
+
+                    try {
+                        val cleanResult = result.replace("\\\"", "\"").trim('"')
+                        val jsonResult = JSONObject(cleanResult)
+                        val action = jsonResult.getString("action")
+
+                        when (action) {
+                            "input_focused" -> {
+                                val chatType = jsonResult.getString("chatType")
+                                L.d("MoodleFragment", "Message input focused: $chatType")
+                                currentMessageChatType = if (chatType == "main") MessageChatType.MAIN_CHAT else MessageChatType.SIDEBAR_CHAT
+                                activity?.runOnUiThread {
+                                    showMessageInputDialog()
+                                }
+                            }
+                            "send_clicked" -> {
+                                val chatType = jsonResult.getString("chatType")
+                                L.d("MoodleFragment", "Send button clicked: $chatType")
+                                currentMessageChatType = if (chatType == "main") MessageChatType.MAIN_CHAT else MessageChatType.SIDEBAR_CHAT
+                                activity?.runOnUiThread {
+                                    showSendConfirmationDialog()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Error parsing message input monitor result", e)
+                    }
+
+                    messageInputMonitorHandler?.postDelayed(this, checkInterval)
+                }
+            }
+        }
+
+        messageInputMonitorHandler?.post(messageInputMonitorRunnable!!)
+        L.d("MoodleFragment", "Message input monitoring started")
+    }
+
+    private fun stopMessageInputMonitoring() {
+        isMonitoringMessageInput = false
+        messageInputMonitorRunnable?.let {
+            messageInputMonitorHandler?.removeCallbacks(it)
+        }
+        messageInputMonitorHandler = null
+        messageInputMonitorRunnable = null
+        messageDialogSuppressedForSession = false
+        L.d("MoodleFragment", "Message input monitoring stopped - dialog suppression reset")
+    }
+
+    private fun getRecipientInfo(callback: (MessageRecipientInfo?) -> Unit) {
+        val chatType = currentMessageChatType ?: run {
+            callback(null)
+            return
+        }
+
+        val usernamePath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[1]/div[2]/div[1]/div/div[1]/a/div[2]/div/strong"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[2]/div[2]/div[1]/div/div[2]/a/div[2]/div/strong"
+        }
+
+        val iconPath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[1]/div[2]/div[1]/div/div[1]/a/div[1]/img"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[2]/div[2]/div[1]/div/div[2]/a/div[1]/img"
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var usernameElement = document.evaluate(
+                    '$usernamePath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                var iconElement = document.evaluate(
+                    '$iconPath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                var username = usernameElement ? usernameElement.textContent.trim() : null;
+                var iconUrl = iconElement ? iconElement.src : null;
+                var iconAlt = iconElement ? iconElement.alt : null;
+                
+                console.log('Chat Type: $chatType');
+                console.log('Username: ' + username);
+                console.log('Icon URL: ' + iconUrl);
+                console.log('Icon Alt: [alt="' + iconAlt + '"]');
+                
+                return JSON.stringify({
+                    username: username,
+                    iconUrl: iconUrl,
+                    iconAlt: iconAlt
+                });
+            } catch(e) {
+                console.error('Error in getRecipientInfo: ' + e.message);
+                return JSON.stringify({
+                    username: null,
+                    iconUrl: null,
+                    iconAlt: null,
+                    error: e.message
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "getRecipientInfo result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+
+                val username: String? = jsonResult.optString("username", "")
+                val iconUrl: String? = jsonResult.optString("iconUrl", "")
+                val iconAlt: String? = jsonResult.optString("iconAlt", "")
+
+                L.d("MoodleFragment", "Parsed - Username: $username, IconURL: $iconUrl, Alt: [alt=\"$iconAlt\"]")
+
+                if (username != null && username != "" && !username.equals("null", ignoreCase = true)) {
+                    callback(MessageRecipientInfo(username, iconUrl))
+                } else {
+                    L.e("MoodleFragment", "Failed to get recipient info")
+                    callback(null)
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing recipient info", e)
+                callback(null)
+            }
+        }
+    }
+
+    private fun showMessageInputDialog() {
+        if (messageDialogSuppressedForSession) {
+            L.d("MoodleFragment", "Message input dialog suppressed for this session")
+            return
+        }
+
+        getRecipientInfo { recipientInfo ->
+            if (recipientInfo == null) {
+                Toast.makeText(requireContext(), "Failed to get recipient information", Toast.LENGTH_SHORT).show()
+                return@getRecipientInfo
+            }
+
+            activity?.runOnUiThread {
+                val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_message_input, null)
+                val etMessageInput = dialogView.findViewById<EditText>(R.id.etMessageInput)
+                val tvCharCounter = dialogView.findViewById<TextView>(R.id.tvCharCounter)
+                val btnCopyText = dialogView.findViewById<ImageButton>(R.id.btnCopyText)
+                val btnDeleteMsg = dialogView.findViewById<ImageButton>(R.id.btnDeleteMsg)
+                val tvRecipientName = dialogView.findViewById<TextView>(R.id.tvRecipientName)
+                val ivUserIcon = dialogView.findViewById<ImageView>(R.id.ivUserIcon)
+                val cbDontShowForNow = dialogView.findViewById<CheckBox>(R.id.cbDontShowForNow)
+
+                tvRecipientName.text = recipientInfo.username
+
+                if (recipientInfo.userIconUrl != null) {
+                    loadUserIcon(recipientInfo.userIconUrl, ivUserIcon)
+                }
+
+                val maxChars = 4096
+                tvCharCounter.text = getString(R.string.moodle_char_count, 0, maxChars)
+
+                etMessageInput.addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: Editable?) {
+                        val length = s?.length ?: 0
+                        tvCharCounter.text = getString(R.string.moodle_char_count, length, maxChars)
+
+                        if (length >= maxChars) {
+                            tvCharCounter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+                        } else {
+                            tvCharCounter.setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
+                        }
+                    }
+                })
+
+                btnCopyText.setOnClickListener {
+                    val text = etMessageInput.text.toString()
+                    if (text.isNotEmpty()) {
+                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText(getString(R.string.moodle_message_to, recipientInfo.username), text)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(requireContext(), getString(R.string.moodle_text_copied_clipboard), Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                btnDeleteMsg.setOnClickListener {
+                    showDeleteConfirmDialog(etMessageInput)
+                }
+
+                val dialog = AlertDialog.Builder(requireContext())
+                    .setTitle(getString(R.string.moodle_message_to, recipientInfo.username))
+                    .setView(dialogView)
+                    .setPositiveButton(getString(R.string.moodle_insert), null)
+                    .setNegativeButton(getString(R.string.moodle_discard), null)
+                    .setCancelable(false)
+                    .create()
+
+                dialog.setOnShowListener {
+                    val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+
+                    val positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    positiveButton?.setTextColor(buttonColor)
+                    positiveButton?.setOnClickListener {
+                        val messageText = etMessageInput.text.toString()
+                        if (messageText.isEmpty()) {
+                            Toast.makeText(requireContext(), getString(R.string.moodle_message_empty), Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+
+                        if (cbDontShowForNow.isChecked) {
+                            messageDialogSuppressedForSession = true
+                            L.d("MoodleFragment", "Message dialog suppressed until page refresh")
+                        }
+
+                        showInsertConfirmDialog(messageText, dialog)
+                    }
+
+                    val negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+                    negativeButton?.setTextColor(buttonColor)
+                    negativeButton?.setOnClickListener {
+                        if (cbDontShowForNow.isChecked) {
+                            messageDialogSuppressedForSession = true
+                            L.d("MoodleFragment", "Message dialog suppressed until page refresh")
+                        }
+                        showDiscardConfirmDialog(dialog)
+                    }
+                }
+
+                messageInputDialog = dialog
+                dialog.show()
+
+                etMessageInput.requestFocus()
+                val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(etMessageInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+    }
+
+    private fun showDiscardConfirmDialog(parentDialog: AlertDialog) {
+        val confirmDialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_discard_confirm_title))
+            .setMessage(getString(R.string.moodle_discard_confirm_message))
+            .setPositiveButton(getString(R.string.moodle_discard)) { _, _ ->
+                parentDialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun loadUserIcon(iconUrl: String, imageView: ImageView) {
+        L.d("MoodleFragment", "loadUserIcon called with URL: $iconUrl")
+
+        var userAgent: String? = null
+        activity?.runOnUiThread {
+            try {
+                userAgent = webView.settings.userAgentString
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error getting user agent", e)
+            }
+        }
+
+        Thread.sleep(50)
+
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "Starting image download from: $iconUrl")
+
+                val connection = URL(iconUrl).openConnection() as HttpURLConnection
+                connection.doInput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                val cookieManager = CookieManager.getInstance()
+                val cookies = cookieManager.getCookie(iconUrl)
+                if (cookies != null) {
+                    connection.setRequestProperty("Cookie", cookies)
+                    L.d("MoodleFragment", "Added cookies to request: ${cookies.take(50)}...")
+                } else {
+                    L.d("MoodleFragment", "No cookies found for this URL")
+                }
+
+                if (userAgent != null) {
+                    connection.setRequestProperty("User-Agent", userAgent)
+                    L.d("MoodleFragment", "Added User-Agent to request")
+                }
+
+                connection.connect()
+
+                val responseCode = connection.responseCode
+                L.d("MoodleFragment", "HTTP Response Code: $responseCode")
+
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    val input = connection.inputStream
+                    val bitmap = BitmapFactory.decodeStream(input)
+                    input.close()
+
+                    if (bitmap != null) {
+                        L.d("MoodleFragment", "Bitmap loaded successfully. Size: ${bitmap.width}x${bitmap.height}")
+
+                        activity?.runOnUiThread {
+                            imageView.setImageBitmap(bitmap)
+                            imageView.visibility = View.VISIBLE
+                            L.d("MoodleFragment", "Image set to ImageView and made visible")
+                        }
+                    } else {
+                        L.e("MoodleFragment", "Bitmap is null after decoding")
+                        activity?.runOnUiThread {
+                            imageView.visibility = View.GONE
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "HTTP error: $responseCode")
+                    activity?.runOnUiThread {
+                        imageView.visibility = View.GONE
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error loading user icon from: $iconUrl", e)
+                activity?.runOnUiThread {
+                    imageView.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    private fun showInsertConfirmDialog(messageText: String, parentDialog: AlertDialog) {
+        val confirmDialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_insert_confirm_title))
+            .setMessage(getString(R.string.moodle_insert_confirm_message))
+            .setPositiveButton(getString(R.string.moodle_insert)) { _, _ ->
+                insertMessageIntoChat(messageText)
+                parentDialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun showDeleteConfirmDialog(editText: EditText) {
+        val confirmDialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_delete_confirm_title))
+            .setMessage(getString(R.string.moodle_delete_confirm_message))
+            .setPositiveButton(getString(R.string.moodle_delete)) { _, _ ->
+                editText.setText("")
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        confirmDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun insertMessageIntoChat(messageText: String) {
+        val chatType = currentMessageChatType ?: return
+
+        val textareaPath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/textarea"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/textarea"
+        }
+
+        val escapedMessage = messageText
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+            .replace("\t", "\\t")
+
+        val jsCode = """
+        (function() {
+            try {
+                var textarea = document.evaluate(
+                    '$textareaPath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (textarea) {
+                    textarea.value = '';
+                    
+                    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                    nativeInputValueSetter.call(textarea, '$escapedMessage');
+                    
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    console.log('Message inserted into chat');
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                console.error('Error inserting message: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Message inserted successfully")
+            } else {
+                L.e("MoodleFragment", "Failed to insert message")
+                Toast.makeText(requireContext(), "Failed to insert message", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun showSendConfirmationDialog() {
+        getRecipientInfo { recipientInfo ->
+            if (recipientInfo == null) {
+                Toast.makeText(requireContext(), "Failed to get recipient information", Toast.LENGTH_SHORT).show()
+                return@getRecipientInfo
+            }
+
+            activity?.runOnUiThread {
+                val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_moodle_message_input, null)
+                val ivUserIcon = dialogView.findViewById<ImageView>(R.id.ivUserIcon)
+                val tvRecipientName = dialogView.findViewById<TextView>(R.id.tvRecipientName)
+                val userInfoContainer = dialogView.findViewById<LinearLayout>(R.id.userInfoContainer)
+
+                dialogView.findViewById<View>(R.id.etMessageInput)?.visibility = View.GONE
+                dialogView.findViewById<View>(R.id.tvCharCounter)?.visibility = View.GONE
+                dialogView.findViewById<View>(R.id.btnCopyText)?.visibility = View.GONE
+
+                tvRecipientName.text = recipientInfo.username
+                userInfoContainer.gravity = android.view.Gravity.CENTER
+
+                if (recipientInfo.userIconUrl != null) {
+                    loadUserIcon(recipientInfo.userIconUrl, ivUserIcon)
+                }
+
+                val dialog = AlertDialog.Builder(requireContext())
+                    .setTitle(getString(R.string.moodle_send_confirm_title))
+                    .setMessage(getString(R.string.moodle_send_confirm_message, recipientInfo.username))
+                    .setView(dialogView)
+                    .setPositiveButton(getString(R.string.moodle_send)) { _, _ ->
+                        triggerSendMessage()
+                    }
+                    .setNegativeButton(getString(R.string.moodle_cancel), null)
+                    .show()
+
+                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
+        }
+    }
+
+    private fun triggerSendMessage() {
+        val chatType = currentMessageChatType ?: return
+
+        val sendButtonPath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/div/button[2]"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/div/button[2]"
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var sendButton = document.evaluate(
+                    '$sendButtonPath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (sendButton) {
+                    window.moodleAllowSend = true;
+
+                    var clickEvent = new MouseEvent('click', {
+                        view: window,
+                                                bubbles: true,
+                        cancelable: true
+                    });
+                    sendButton.dispatchEvent(clickEvent);
+
+                    setTimeout(function() {
+                        window.moodleAllowSend = false;
+                    }, 100);
+                    
+                    console.log('Message sent');
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                console.error('Error sending message: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Message sent successfully")
+            } else {
+                L.e("MoodleFragment", "Failed to send message")
+                Toast.makeText(requireContext(), "Failed to send message", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun switchToTextViewer() {
+        val pdfState = pdfViewerManager?.getCurrentState()
+        val pdfFile = pdfState?.file
+
+        if (pdfFile == null || !pdfFile.exists()) {
+            Toast.makeText(requireContext(), getString(R.string.text_viewer_no_pdf), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(R.string.text_viewer_loading))
+            .setCancelable(false)
+            .show()
+
+        backgroundExecutor.execute {
+            try {
+                textViewerManager = TextViewerManager(requireContext())
+                val darkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
+
+                if (textViewerManager?.parsePdfToText(pdfFile, darkMode) == true) {
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        saveOriginalBackground()
+                        displayTextViewer()
+                    }
+                } else {
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        Toast.makeText(requireContext(), getString(R.string.text_viewer_parse_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error switching to text viewer", e)
+                activity?.runOnUiThread {
+                    loadingDialog.dismiss()
+                    Toast.makeText(requireContext(), getString(R.string.text_viewer_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun saveOriginalBackground() {
+        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? android.graphics.drawable.ColorDrawable)?.color
+            ?: requireContext().getThemeColor(R.attr.homeworkFragmentBackgroundColor)
+    }
+
+    private fun displayTextViewer() {
+        isTextViewerMode = true
+
+        pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.VISIBLE
+
+        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+        textViewerContainer.setBackgroundColor(bgColor)
+
+        applyTextViewerPreferences()
+
+        val displayWidth = textContentScrollView.width
+        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+        textViewerContent.text = formattedText
+
+        generateLineNumbers()
+
+        textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            lineNumberScrollView.scrollTo(0, scrollY)
+        }
+
+        updatePdfControls()
+    }
+
+    private fun generateLineNumbers() {
+        lineNumbersContainer.removeAllViews()
+        val totalLines = textViewerManager?.getTotalLines() ?: 0
+        val fontSize = textViewerManager?.getFontSize() ?: 14
+        val lineHeight = (fontSize * 1.2f * resources.displayMetrics.density).toInt()
+
+        for (i in 1..totalLines) {
+            val lineNumber = TextView(requireContext()).apply {
+                text = i.toString()
+                textSize = (fontSize - 2).toFloat()
+                setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
+                alpha = 0.6f
+                gravity = android.view.Gravity.END
+                setPadding(4, 0, 8, 0)
+                minWidth = (40 * resources.displayMetrics.density).toInt()
+                height = lineHeight
+            }
+            lineNumbersContainer.addView(lineNumber)
+        }
+    }
+
+    private fun applyTextViewerPreferences() {
+        textViewerManager?.let { manager ->
+            textViewerContent.textSize = manager.getFontSize().toFloat()
+            textViewerContent.setTextColor(manager.getFontColor())
+            textViewerContent.typeface = manager.getFontFamily()
+            textViewerContent.setBackgroundColor(manager.getBackgroundColor())
+            lineNumbersContainer.setBackgroundColor(manager.getBackgroundColor())
+        }
+    }
+
+    private fun switchToPdfViewer() {
+        isTextViewerMode = false
+        textViewerContainer.visibility = View.GONE
+        pdfContainer.visibility = View.VISIBLE
+        textViewerManager = null
+        updatePdfControls()
+    }
+
+    private fun showTextSearchDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_text_search, null)
+        val etSearchQuery = dialogView.findViewById<EditText>(R.id.etSearchQuery)
+        val btnClearSearchQuery = dialogView.findViewById<ImageButton>(R.id.btnClearSearchQuery)
+        val tvSearchResults = dialogView.findViewById<TextView>(R.id.tvSearchResults)
+        val btnPreviousResult = dialogView.findViewById<ImageButton>(R.id.btnPreviousResult)
+        val btnNextResult = dialogView.findViewById<ImageButton>(R.id.btnNextResult)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.text_viewer_search))
+            .setView(dialogView)
+            .setNegativeButton(getString(R.string.moodle_close), null)
+            .create()
+
+        btnClearSearchQuery.setOnClickListener {
+            etSearchQuery.setText("")
+            searchResults = emptyList()
+            currentSearchIndex = 0
+            tvSearchResults.text = getString(R.string.text_viewer_no_results)
+            btnPreviousResult.isEnabled = false
+            btnNextResult.isEnabled = false
+        }
+
+        etSearchQuery.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val query = s.toString()
+                if (query.isNotEmpty()) {
+                    searchResults = textViewerManager?.searchText(query) ?: emptyList()
+                    currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
+                    updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                    if (searchResults.isNotEmpty()) {
+                        highlightSearchResult(searchResults[0])
+                    }
+                } else {
+                    searchResults = emptyList()
+                    currentSearchIndex = 0
+                    tvSearchResults.text = getString(R.string.text_viewer_no_results)
+                    btnPreviousResult.isEnabled = false
+                    btnNextResult.isEnabled = false
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        btnPreviousResult.setOnClickListener {
+            if (currentSearchIndex > 0) {
+                currentSearchIndex--
+                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                highlightSearchResult(searchResults[currentSearchIndex])
+            }
+        }
+
+        btnNextResult.setOnClickListener {
+            if (currentSearchIndex < searchResults.size - 1) {
+                currentSearchIndex++
+                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                highlightSearchResult(searchResults[currentSearchIndex])
+            }
+        }
+
+        textSearchDialog = dialog
+        dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun updateSearchResults(tvResults: TextView, btnPrev: ImageButton, btnNext: ImageButton) {
+        if (searchResults.isEmpty()) {
+            tvResults.text = getString(R.string.text_viewer_no_results)
+            btnPrev.isEnabled = false
+            btnNext.isEnabled = false
+        } else {
+            tvResults.text = getString(R.string.text_viewer_search_results, currentSearchIndex + 1, searchResults.size)
+            btnPrev.isEnabled = currentSearchIndex > 0
+            btnNext.isEnabled = currentSearchIndex < searchResults.size - 1
+        }
+    }
+
+    private fun highlightSearchResult(position: Int) {
+        textContentScrollView.post {
+            val layout = textViewerContent.layout
+            if (layout != null) {
+                val line = layout.getLineForOffset(position)
+                val y = layout.getLineTop(line)
+                textContentScrollView.smoothScrollTo(0, y - 100)
+            }
+        }
+    }
+
+    private fun showTextViewerPreferences() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_text_viewer_preferences, null)
+        val tvPreviewText = dialogView.findViewById<TextView>(R.id.tvPreviewText)
+        val seekBarFontSize = dialogView.findViewById<SeekBar>(R.id.seekBarFontSize)
+        val tvFontSizeValue = dialogView.findViewById<TextView>(R.id.tvFontSizeValue)
+        val spinnerFontColor = dialogView.findViewById<Spinner>(R.id.spinnerFontColor)
+        val spinnerFontFamily = dialogView.findViewById<Spinner>(R.id.spinnerFontFamily)
+        val checkBoxDisableFormatting = dialogView.findViewById<CheckBox>(R.id.checkBoxDisableFormatting)
+
+        val currentFontSize = sharedPrefs.getInt("text_viewer_font_size", 14)
+        val currentDarkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
+        val colorKey = if (currentDarkMode) "text_viewer_font_color_dark" else "text_viewer_font_color_light"
+        val currentFontFamily = sharedPrefs.getString("text_viewer_font_family", "monospace") ?: "monospace"
+        val disableFormatting = sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
+
+        seekBarFontSize.progress = currentFontSize - 10
+        "${currentFontSize}sp".also { tvFontSizeValue.text = it }
+
+        val colorOptions = if (currentDarkMode) {
+            arrayOf(
+                getString(R.string.text_viewer_color_light_gray),
+                getString(R.string.text_viewer_color_white),
+                getString(R.string.text_viewer_color_light_blue),
+                getString(R.string.text_viewer_color_light_green)
+            )
+        } else {
+            arrayOf(
+                getString(R.string.text_viewer_color_black),
+                getString(R.string.text_viewer_color_dark_gray),
+                getString(R.string.text_viewer_color_dark_blue),
+                getString(R.string.text_viewer_color_dark_green)
+            )
+        }
+
+        val colorAdapter =
+            ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, colorOptions)
+        colorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerFontColor.adapter = colorAdapter
+
+        val fontFamilies = arrayOf("Monospace", "Serif", "Sans-serif")
+        val fontAdapter =
+            ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontFamilies)
+        fontAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerFontFamily.adapter = fontAdapter
+        spinnerFontFamily.setSelection(when (currentFontFamily) {
+            "serif" -> 1
+            "sans-serif" -> 2
+            else -> 0
+        })
+
+        checkBoxDisableFormatting.isChecked = disableFormatting
+
+        val updatePreview = {
+            val previewFontSize = seekBarFontSize.progress + 10
+            tvPreviewText.textSize = previewFontSize.toFloat()
+
+            val selectedColor = when (spinnerFontColor.selectedItemPosition) {
+                0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
+                3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
+                else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+            }
+            tvPreviewText.setTextColor(selectedColor)
+
+            tvPreviewText.typeface = when (spinnerFontFamily.selectedItemPosition) {
+                1 -> Typeface.SERIF
+                2 -> Typeface.SANS_SERIF
+                else -> Typeface.MONOSPACE
+            }
+        }
+
+        seekBarFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val size = progress + 10
+                "${size}sp".also { tvFontSizeValue.text = it }
+                updatePreview()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        spinnerFontColor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updatePreview()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        spinnerFontFamily.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updatePreview()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        updatePreview()
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.text_viewer_preferences))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.moodle_save)) { _, _ ->
+                val newFontSize = seekBarFontSize.progress + 10
+                val newFontFamily = when (spinnerFontFamily.selectedItemPosition) {
+                    1 -> "serif"
+                    2 -> "sans-serif"
+                    else -> "monospace"
+                }
+
+                val newColor = when (spinnerFontColor.selectedItemPosition) {
+                    0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                    1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                    2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
+                    3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
+                    else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                }
+
+                sharedPrefs.edit {
+                    putInt("text_viewer_font_size", newFontSize)
+                    putInt(colorKey, newColor)
+                    putString("text_viewer_font_family", newFontFamily)
+                    putBoolean("text_viewer_disable_formatting", checkBoxDisableFormatting.isChecked)
+                }
+
+                applyTextViewerPreferences()
+                val displayWidth = textContentScrollView.width
+                val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+                textViewerContent.text = formattedText
+                generateLineNumbers()
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .create()
+
+        dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 }
