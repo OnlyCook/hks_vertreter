@@ -623,6 +623,11 @@
     <string name="set_act_theme_change_restart_message">Die Theme-Änderung wird erst nach einem Neustart der App wirksam.</string>
     <string name="set_act_language_changed">Sprache geändert</string>
     <string name="set_act_language_change_restart_message">Die Sprachänderung wird erst nach einem Neustart der App wirksam.</string>
+    <string name="act_set_moodle_app_system_theme_desc">Verwendet App-Einstellung für Hell/Dunkel-Theme</string>
+    <string name="act_set_moodle_app_system_theme">App-Theme folgen</string>
+    <string name="act_set_moodle_dark_mode_desc">Ob Dark-Mode-CSS injiziert werden soll (kann Ladezeiten erhöhen)</string>
+    <string name="set_act_moodle_dark_mode_enabled">Moodle Dark Mode aktiviert</string>
+    <string name="set_act_moodle_dark_mode_disabled">Moodle Dark Mode deaktiviert</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1683,5 +1688,12 @@
     <string name="text_viewer_color_light_blue">Hellblau</string>
     <string name="text_viewer_color_light_green">Hellgrün</string>
     <string name="moodle_save">Speichern</string>
+    <string name="text_viewer_bg_color">Hintergrundfarbe</string>
+    <string name="text_viewer_bg_dark">Dunkelgrau</string>
+    <string name="text_viewer_bg_darker">Dunkleres Grau</string>
+    <string name="text_viewer_bg_black">Schwarz</string>
+    <string name="text_viewer_bg_white">Weiß</string>
+    <string name="text_viewer_bg_light_gray">Hellgrau</string>
+    <string name="text_viewer_bg_beige">Beige</string>
 
 </resources>

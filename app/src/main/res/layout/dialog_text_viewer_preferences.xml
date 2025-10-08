@@ -17,14 +17,12 @@
             android:textStyle="bold"
             android:layout_marginBottom="8dp" />
 
-        <!-- should be based on in-viewer theme -->
         <TextView
             android:id="@+id/tvPreviewText"
             android:layout_width="match_parent"
             android:layout_height="120dp"
             android:padding="12dp"
             android:background="@drawable/subtle_search_background"
-            android:text="@string/text_viewer_preview_sample"
             android:layout_marginBottom="24dp" />
 
         <TextView
@@ -69,6 +67,20 @@
 
         <Spinner
             android:id="@+id/spinnerFontColor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/text_viewer_bg_color"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <Spinner
+            android:id="@+id/spinnerBgColor"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp" />

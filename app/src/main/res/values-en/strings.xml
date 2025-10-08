@@ -623,6 +623,11 @@
     <string name="set_act_theme_change_restart_message">The theme change will only take effect after restarting the app.</string>
     <string name="set_act_language_changed">Language Changed</string>
     <string name="set_act_language_change_restart_message">The language change will only take effect after restarting the app.</string>
+    <string name="act_set_moodle_app_system_theme_desc">Uses app setting for light/dark theme</string>
+    <string name="act_set_moodle_app_system_theme">Follow app theme</string>
+    <string name="act_set_moodle_dark_mode_desc">Whether Dark Mode CSS should be injected (this may increase loading times)</string>
+    <string name="set_act_moodle_dark_mode_enabled">Moodle dark mode enabled</string>
+    <string name="set_act_moodle_dark_mode_disabled">Moodle dark mode disabled</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1682,5 +1687,12 @@
     <string name="text_viewer_color_light_blue">Light Blue</string>
     <string name="text_viewer_color_light_green">Light Green</string>
     <string name="moodle_save">Save</string>
+    <string name="text_viewer_bg_color">Background Color</string>
+    <string name="text_viewer_bg_dark">Dark Gray</string>
+    <string name="text_viewer_bg_darker">Darker Gray</string>
+    <string name="text_viewer_bg_black">Black</string>
+    <string name="text_viewer_bg_white">White</string>
+    <string name="text_viewer_bg_light_gray">Light Gray</string>
+    <string name="text_viewer_bg_beige">Beige</string>
 
 </resources>

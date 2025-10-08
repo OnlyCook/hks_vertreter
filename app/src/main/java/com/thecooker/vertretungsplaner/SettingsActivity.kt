@@ -175,6 +175,8 @@ class SettingsActivity : BaseActivity() {
     private lateinit var switchShowLoginDialog: Switch
     private lateinit var btnClearMoodleCache: Button
     private lateinit var btnClearMoodleData: Button
+    private lateinit var switchMoodleFollowAppTheme: Switch
+    private lateinit var switchMoodleDarkMode: Switch
 
     // moodle fetching
     private var moodleTimetableFetchConfig: MoodleFetchConfig? = null
@@ -218,6 +220,7 @@ class SettingsActivity : BaseActivity() {
         setupColorBlindSpinner()
         setupOrientationSetting()
         setupDarkModeSetting()
+        setupMoodleDarkModeSettings()
         setupCalendarSettings()
         setupCalendarWeekendSetting()
         setupCalendarColorLegendSetting()
@@ -440,6 +443,8 @@ class SettingsActivity : BaseActivity() {
         btnAppInfoToggle = findViewById(R.id.btnAppInfoToggle)
         switchCalendarColorLegend = findViewById(R.id.switchCalendarColorLegend)
         btnResetMoodleFetchPreference = findViewById(R.id.btnResetMoodleFetchPreference)
+        switchMoodleFollowAppTheme = findViewById(R.id.switchMoodleFollowAppTheme)
+        switchMoodleDarkMode = findViewById(R.id.switchMoodleDarkMode)
     }
 
     private fun setupToolbar() {
@@ -2662,6 +2667,8 @@ class SettingsActivity : BaseActivity() {
 
                     switchDarkMode.isEnabled = !isChecked
 
+                    syncMoodleThemeIfNeeded()
+
                     L.d("Settings", "Saved follow_system_theme: $isChecked, system is dark: $isSystemDark, willThemeChange: $willThemeChange")
 
                     if (willThemeChange) {
@@ -2686,6 +2693,8 @@ class SettingsActivity : BaseActivity() {
                         sharedPreferences.edit {
                             putBoolean("dark_mode_enabled", isChecked)
                         }
+
+                        syncMoodleThemeIfNeeded()
 
                         L.d("Settings", "Saved dark_mode_enabled: $isChecked, willThemeChange: $willThemeChange")
 
@@ -3864,6 +3873,8 @@ class SettingsActivity : BaseActivity() {
         settingsToPreserve["fetch_timetable_from_moodle_preference"] = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
         settingsToPreserve["saved_program_course_name"] = sharedPreferences.getString("saved_program_course_name", "")
         settingsToPreserve["saved_timetable_entry_name"] = sharedPreferences.getString("saved_timetable_entry_name", "")
+        settingsToPreserve["moodle_follow_app_theme"] = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+        settingsToPreserve["moodle_dark_mode_enabled"] = sharedPreferences.getBoolean("moodle_dark_mode_enabled", false)
 
         sharedPreferences.edit { clear() }
 
@@ -4369,6 +4380,109 @@ class SettingsActivity : BaseActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun setupMoodleDarkModeSettings() {
+        val followAppTheme = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+        val moodleDarkModeEnabled = sharedPreferences.getBoolean("moodle_dark_mode_enabled", false)
+
+        switchMoodleFollowAppTheme.isChecked = followAppTheme
+        switchMoodleDarkMode.isEnabled = !followAppTheme
+
+        if (followAppTheme) {
+            val appDarkModeEnabled = getAppDarkModeState()
+            switchMoodleDarkMode.isChecked = appDarkModeEnabled
+        } else {
+            switchMoodleDarkMode.isChecked = moodleDarkModeEnabled
+        }
+
+        updateMoodleDarkModeSwitchAppearance(!followAppTheme)
+
+        switchMoodleFollowAppTheme.setOnCheckedChangeListener { _, isChecked ->
+            if (!isInitializing && !isUpdatingThemeSettings) {
+                isUpdatingThemeSettings = true
+
+                val previousFollowAppTheme = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+
+                if (previousFollowAppTheme != isChecked) {
+                    val appDarkModeEnabled = getAppDarkModeState()
+
+                    if (isChecked) {
+                        switchMoodleDarkMode.isChecked = appDarkModeEnabled
+                        sharedPreferences.edit {
+                            putBoolean("moodle_dark_mode_enabled", appDarkModeEnabled)
+                        }
+                    } else {
+                        val currentDisplayedDark = switchMoodleDarkMode.isChecked
+                        sharedPreferences.edit {
+                            putBoolean("moodle_dark_mode_enabled", currentDisplayedDark)
+                        }
+                    }
+
+                    sharedPreferences.edit {
+                        putBoolean("moodle_follow_app_theme", isChecked)
+                    }
+
+                    switchMoodleDarkMode.isEnabled = !isChecked
+                    updateMoodleDarkModeSwitchAppearance(!isChecked)
+
+                    L.d("Settings", "Saved moodle_follow_app_theme: $isChecked, app is dark: $appDarkModeEnabled")
+                }
+
+                isUpdatingThemeSettings = false
+            }
+        }
+
+        switchMoodleDarkMode.setOnCheckedChangeListener { _, isChecked ->
+            if (!isInitializing && !isUpdatingThemeSettings) {
+                val currentFollowAppTheme = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+
+                if (!currentFollowAppTheme) {
+                    val previousMoodleDarkMode = sharedPreferences.getBoolean("moodle_dark_mode_enabled", false)
+
+                    if (previousMoodleDarkMode != isChecked) {
+                        sharedPreferences.edit {
+                            putBoolean("moodle_dark_mode_enabled", isChecked)
+                        }
+
+                        L.d("Settings", "Saved moodle_dark_mode_enabled: $isChecked")
+
+                        Toast.makeText(this,
+                            if (isChecked) getString(R.string.set_act_moodle_dark_mode_enabled)
+                            else getString(R.string.set_act_moodle_dark_mode_disabled),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun getAppDarkModeState(): Boolean {
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+
+        return if (followSystemTheme) {
+            getSystemDarkMode()
+        } else {
+            sharedPreferences.getBoolean("dark_mode_enabled", false)
+        }
+    }
+
+    private fun updateMoodleDarkModeSwitchAppearance(enabled: Boolean) {
+        switchMoodleDarkMode.alpha = if (enabled) 1.0f else 0.5f
+    }
+
+    private fun syncMoodleThemeIfNeeded() {
+        val moodleFollowsAppTheme = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+
+        if (moodleFollowsAppTheme && ::switchMoodleDarkMode.isInitialized) {
+            val appDarkModeEnabled = getAppDarkModeState()
+            switchMoodleDarkMode.isChecked = appDarkModeEnabled
+            sharedPreferences.edit {
+                putBoolean("moodle_dark_mode_enabled", appDarkModeEnabled)
+            }
+            L.d("Settings", "Synced Moodle theme with app theme: $appDarkModeEnabled")
+        }
     }
 }
 

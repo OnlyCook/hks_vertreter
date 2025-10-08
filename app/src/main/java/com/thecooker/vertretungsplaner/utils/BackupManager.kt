@@ -591,6 +591,8 @@ class BackupManager(private val context: Context) {
         val fetchTimetableFromMoodlePreference = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
         val savedProgramCourseName = sharedPreferences.getString("saved_program_course_name", "") ?: ""
         val savedTimetableEntryName = sharedPreferences.getString("saved_timetable_entry_name", "") ?: ""
+        val moodleFollowAppTheme = sharedPreferences.getBoolean("moodle_follow_app_theme", true)
+        val moodleDarkModeEnabled = sharedPreferences.getBoolean("moodle_dark_mode_enabled", false)
 
         return buildString {
             appendLine("STARTUP_PAGE=$startupPage")
@@ -628,6 +630,8 @@ class BackupManager(private val context: Context) {
             appendLine("FETCH_TIMETABLE_FROM_MOODLE_PREFERENCE=$fetchTimetableFromMoodlePreference")
             appendLine("SAVED_PROGRAM_COURSE_NAME=$savedProgramCourseName")
             appendLine("SAVED_TIMETABLE_ENTRY_NAME=$savedTimetableEntryName")
+            appendLine("MOODLE_FOLLOW_APP_THEME=$moodleFollowAppTheme")
+            appendLine("MOODLE_DARK_MODE_ENABLED=$moodleDarkModeEnabled")
         }
     }
 
@@ -809,6 +813,16 @@ class BackupManager(private val context: Context) {
                     line.startsWith("SAVED_TIMETABLE_ENTRY_NAME=") -> putString(
                         "saved_timetable_entry_name",
                         line.substringAfter("=")
+                    )
+
+                    line.startsWith("MOODLE_FOLLOW_APP_THEME=") -> putBoolean(
+                        "moodle_follow_app_theme",
+                        line.substringAfter("=").toBoolean()
+                    )
+
+                    line.startsWith("MOODLE_DARK_MODE_ENABLED=") -> putBoolean(
+                        "moodle_dark_mode_enabled",
+                        line.substringAfter("=").toBoolean()
                     )
                 }
             }

@@ -19,7 +19,6 @@ import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
 import androidx.fragment.app.Fragment
-import androidx.preference.PreferenceManager
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.thecooker.vertretungsplaner.R
@@ -42,8 +41,11 @@ import android.net.NetworkCapabilities
 import android.os.Environment
 import android.provider.Settings
 import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
 import android.util.Base64
 import android.util.TypedValue
+import android.view.ScaleGestureDetector
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.Animation
 import android.view.animation.DecelerateInterpolator
@@ -72,6 +74,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.gms.maps.model.StyleSpan
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.LocationTextExtractionStrategy
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
@@ -259,6 +262,22 @@ class MoodleFragment : Fragment() {
     private var isNavigating = false
     private var ignoreScrollUpdates = false
 
+    // pdf viewer swipe indicator
+    private var pdfSwipeIndicator: TextView? = null
+    private var isPdfSwiping = false
+    private var pdfSwipeStartX = 0f
+    private var pdfSwipeProgress = 0f
+
+    // pdf viewer swipe mode zooming
+    private var pdfScaleFactor = 1f
+    private var pdfScaleDetector: ScaleGestureDetector? = null
+    private val MIN_ZOOM = 1.0f
+    private val MAX_ZOOM = 3.0f
+    private var isCurrentlyZooming = false
+    private var zoomHandler: Handler? = null
+    private var zoomStabilizeRunnable: Runnable? = null
+    private var lastAppliedScale = 1f
+
     // horizontal loading bar
     private lateinit var horizontalProgressBar: ProgressBar
     private lateinit var loadingBarContainer: FrameLayout
@@ -310,6 +329,18 @@ class MoodleFragment : Fragment() {
     private var currentSearchIndex = 0
     private var originalBackgroundColor: Int = 0
 
+    // dark mode injection
+    private var isDarkModeInjected = false
+    private var moodleDarkModeEnabled = false
+    private var isDarkModeReady = false
+    private var pendingDarkModeUrl: String? = null
+    private var darkModeInjectionAttempts = 0
+    private val MAX_DARK_MODE_RETRIES = 5
+    private var darkModeRetryHandler: Handler? = null
+    private var darkModeRetryRunnable: Runnable? = null
+
+    //region **SETUP**
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -318,7 +349,7 @@ class MoodleFragment : Fragment() {
             val entryId = arguments?.getString("moodle_entry_id") ?: ""
             Handler(Looper.getMainLooper()).postDelayed({
                 searchForMoodleEntry(category, summary, entryId)
-            }, 1000)
+            }, 2500)
 
             arguments?.remove("moodle_search_category")
             arguments?.remove("moodle_search_summary")
@@ -411,6 +442,10 @@ class MoodleFragment : Fragment() {
         detectCurrentTheme()
 
         if (!isWebViewInitialized) {
+            clearStaleCookies()
+        }
+
+        if (!isWebViewInitialized) {
             Handler(Looper.getMainLooper()).post {
                 setupWebView()
                 configureCacheManagement()
@@ -433,6 +468,19 @@ class MoodleFragment : Fragment() {
         }
 
         return root
+    }
+
+    private fun clearStaleCookies() {
+        L.d("MoodleFragment", "Clearing stale cookies from previous session")
+        CookieManager.getInstance().apply {
+            removeAllCookies { success ->
+                L.d("MoodleFragment", "Cleared stale cookies: $success")
+            }
+            removeSessionCookies { success ->
+                L.d("MoodleFragment", "Cleared stale session cookies: $success")
+            }
+            flush()
+        }
     }
 
     private fun updateUIState() {
@@ -590,14 +638,9 @@ class MoodleFragment : Fragment() {
                 }
 
                 if (url.contains("/login/logout.php?sesskey=")) {
-                    L.d("MoodleFragment", "Detected instant logout with session key - processing")
-                    isProcessingInstantLogout = true
-                    isHandlingLogout = true
-
-                    loginSuccessConfirmed = false
-                    lastSuccessfulLoginCheck = 0L
-
-                    return false
+                    L.d("MoodleFragment", "Intercepted instant logout - redirecting to confirmation page")
+                    webView.loadUrl("https://moodle.kleyer.eu/login/logout.php")
+                    return true // begone issues!
                 }
 
                 if (url.contains("/mod/resource/view.php")) {
@@ -634,8 +677,16 @@ class MoodleFragment : Fragment() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
 
+                if (moodleDarkModeEnabled && url != null && !url.contains("calendar/export.php")) {
+                    verifyAndFixDarkMode()
+                } else {
+                    activity?.runOnUiThread {
+                        webView.visibility = View.VISIBLE
+                        hideLoadingBar()
+                    }
+                }
+
                 activity?.runOnUiThread {
-                    hideLoadingBar()
                     updateUIState()
                     updateDashboardButtonIcon()
 
@@ -651,27 +702,27 @@ class MoodleFragment : Fragment() {
                 }
                 isPageFullyLoaded = true
 
+                if (url == "https://moodle.kleyer.eu/calendar/export.php") {
+                    L.d("MoodleFragment", "Detected calendar export page - redirecting to dashboard")
+                    webView.loadUrl("$moodleBaseUrl/my/")
+                    return
+                }
+
+                val wasOnLoginPageBefore = wasOnLoginPage
+                val isNowOnLoginPage = (url == loginUrl || url?.contains("login/index.php") == true)
+
+                if (wasOnLoginPageBefore && !isNowOnLoginPage && url != null) {
+                    L.d("MoodleFragment", "User logged in successfully - triggering calendar refresh")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        refreshCalendarDataInBackground()
+                    }, 500)
+                }
+
                 if (isProcessingInstantLogout && url == "https://moodle.kleyer.eu/login/index.php") {
                     L.d("MoodleFragment", "Instant logout completed - user is now on login page")
                     isProcessingInstantLogout = false
 
                     handleLogout()
-
-                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
-                    if (!dontShowDialog) {
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            if (isFragmentActive && isAdded && !isLoginDialogShown) {
-                                activity?.runOnUiThread {
-                                    showLoginDialog()
-                                }
-
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    injectDialogButtonOnLoginPage()
-                                }, 500)
-                            }
-                        }, 300)
-                    }
-
                     return
                 }
 
@@ -701,23 +752,6 @@ class MoodleFragment : Fragment() {
                     logoutConfirmPageUrl = ""
 
                     handleLogout()
-
-                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
-
-                    if (!dontShowDialog) {
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            if (isFragmentActive && isAdded) {
-                                activity?.runOnUiThread {
-                                    showLoginDialog()
-                                }
-
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    injectDialogButtonOnLoginPage()
-                                }, 500)
-                            }
-                        }, 300)
-                    }
-
                     return
                 }
 
@@ -728,33 +762,24 @@ class MoodleFragment : Fragment() {
                     return
                 }
 
-                val isNowOnLoginPage = (url == loginUrl || url?.contains("login/index.php") == true)
-
-                if (wasOnLoginPage && !isNowOnLoginPage) {
-                    L.d("MoodleFragment", "Login transition detected - user logged in successfully")
-                    wasOnLoginPage = false
-                    loginSuccessConfirmed = true
-                    loginRetryCount = 0
-                    lastSuccessfulLoginCheck = System.currentTimeMillis()
-                    stopDialogButtonMonitoring()
-
-                    L.d("MoodleFragment", "Triggering calendar data refresh after login")
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        refreshCalendarDataInBackground()
-                    }, 1000)
-                }
-
                 if (isNowOnLoginPage) {
                     if (!wasOnLoginPage) {
                         wasOnLoginPage = true
                         loginSuccessConfirmed = false
 
-                        waitForPageReady { pageReady ->
-                            if (pageReady) {
-                                isConfirmDialogPage { isConfirmDialog ->
-                                    if (isConfirmDialog) {
-                                        checkConfirmDialog()
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            waitForPageReady(maxAttempts = 30) { pageReady ->
+                                if (!pageReady) {
+                                    L.e("MoodleFragment", "Page ready timeout")
+                                    return@waitForPageReady
+                                }
+
+                                checkIfSessionTerminationDialog { isTerminationDialog ->
+                                    if (isTerminationDialog) {
+                                        L.d("MoodleFragment", "SESSION TERMINATION DIALOG DETECTED - Dismissing")
+                                        dismissSessionTerminationDialog()
                                     } else {
+                                        L.d("MoodleFragment", "REGULAR LOGIN PAGE DETECTED")
                                         stopDialogButtonMonitoring()
 
                                         val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
@@ -762,7 +787,7 @@ class MoodleFragment : Fragment() {
                                         if (!dontShowDialog) {
                                             Handler(Looper.getMainLooper()).postDelayed({
                                                 injectDialogButtonOnLoginPage()
-                                            }, 500)
+                                            }, 400)
                                         }
 
                                         checkLoginFailure { loginFailed ->
@@ -775,17 +800,7 @@ class MoodleFragment : Fragment() {
                                     }
                                 }
                             }
-                        }
-                    }
-                } else {
-                    stopDialogButtonMonitoring()
-
-                    isUserLoggedIn { isLoggedIn ->
-                        if (isLoggedIn) {
-                            loginSuccessConfirmed = true
-                            loginRetryCount = 0
-                            lastSuccessfulLoginCheck = System.currentTimeMillis()
-                        }
+                        }, 600)
                     }
                 }
 
@@ -800,7 +815,8 @@ class MoodleFragment : Fragment() {
                     showExtendedHeaderInitially()
 
                     url?.let {
-                        if (!it.contains("forcedownload=1") && !it.contains("pluginfile.php")) {
+                        if (!it.contains("forcedownload=1") && !it.contains("pluginfile.php") &&
+                            !it.contains("calendar/export.php")) {
                             updateUrlBar(it)
                         }
                     }
@@ -818,6 +834,16 @@ class MoodleFragment : Fragment() {
                     horizontalProgressBar.progress = 0
                 }
                 isPageFullyLoaded = false
+
+                darkModeInjectionAttempts = 0
+
+                if (moodleDarkModeEnabled && url != null && !url.contains("calendar/export.php")) {
+                    L.d("MoodleFragment", "Page started - injecting dark mode CSS immediately")
+                    webView.visibility = View.INVISIBLE
+                    injectDarkTheme()
+                } else {
+                    webView.visibility = View.VISIBLE
+                }
             }
         }
 
@@ -958,244 +984,6 @@ class MoodleFragment : Fragment() {
             }
             Handler(Looper.getMainLooper()).postDelayed(scrollEndCheckRunnable!!, 150)
         }
-    }
-
-    private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
-        val idMatch = "id=(\\d+)".toRegex().find(url)
-        val resourceId = idMatch?.groupValues?.get(1)
-
-        L.d("MoodleFragment", "=== verifyFileLink Debug ===")
-        L.d("MoodleFragment", "URL: $url")
-        L.d("MoodleFragment", "Resource ID: $resourceId")
-        L.d("MoodleFragment", "Current WebView URL: ${webView.url}")
-
-        if (resourceId == null) {
-            L.e("MoodleFragment", "No resource ID found in URL")
-            callback(false)
-            return
-        }
-
-        val jsCode = """
-    (function() {
-        try {
-            console.log('=== Starting File Verification ===');
-            console.log('Checking resource ID: $resourceId');
-            console.log('Document URL: ' + document.location.href);
-            console.log('Document ready state: ' + document.readyState);
-            
-            var links = document.querySelectorAll('a[href*="id=$resourceId"]');
-            console.log('Found ' + links.length + ' links with this ID');
-            
-            for (var i = 0; i < links.length; i++) {
-                var link = links[i];
-                console.log('Link ' + i + ' href: ' + link.href);
-                console.log('Link ' + i + ' HTML: ' + link.outerHTML.substring(0, 200));
-
-                var accessHideSpan = link.querySelector('span.accesshide');
-                if (accessHideSpan) {
-                    var text = accessHideSpan.textContent.trim().toLowerCase();
-                    console.log('AccessHide text: "' + text + '"');
-                    
-                    if (text.includes('datei') || text.includes('file')) {
-                        var container = link.closest('.activity-item, .activityinstance');
-                        if (container) {
-                            console.log('Found container');
-                            var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
-                            if (activityIcon && activityIcon.src) {
-                                var imgSrc = activityIcon.src.toLowerCase();
-                                console.log('Activity icon src: ' + imgSrc);
-
-                                if (imgSrc.includes('/f/image?')) {
-                                    console.log('*** DETECTED IMAGE PAGE ***');
-                                    return JSON.stringify({isFile: false, isImagePage: true, iconSrc: imgSrc});
-                                }
-
-                                if (imgSrc.includes('/f/pdf') || 
-                                    imgSrc.includes('/f/document') || 
-                                    imgSrc.includes('/f/archive') ||
-                                    imgSrc.includes('resource')) {
-                                    console.log('*** DETECTED DOWNLOADABLE FILE ***');
-                                    return JSON.stringify({isFile: true, isImagePage: false, iconSrc: imgSrc});
-                                }
-                            } else {
-                                console.log('No activity icon found in container');
-                            }
-                        } else {
-                            console.log('No container found for link');
-                        }
-                        console.log('Has file/datei tag but no definitive icon match');
-                        return JSON.stringify({isFile: true, isImagePage: false, iconSrc: 'none'});
-                    } else {
-                        console.log('AccessHide text does not contain file/datei keywords');
-                    }
-                } else {
-                    console.log('Link ' + i + ' has no accesshide span');
-                }
-            }
-            
-            console.log('*** NO FILE INDICATORS FOUND - DEFAULTING TO IMAGE PAGE ***');
-            return JSON.stringify({isFile: false, isImagePage: false, iconSrc: 'none'});
-        } catch(e) {
-            console.error('Error in verifyFileLink: ' + e.message);
-            console.error('Stack: ' + e.stack);
-            return JSON.stringify({isFile: false, error: e.message, stack: e.stack});
-        }
-    })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            try {
-                val cleanResult = result.replace("\\\"", "\"").trim('"')
-                L.d("MoodleFragment", "Raw JS result: $cleanResult")
-
-                val jsonResult = JSONObject(cleanResult)
-
-                val isFile = jsonResult.optBoolean("isFile", false)
-                val isImagePage = jsonResult.optBoolean("isImagePage", false)
-                val iconSrc = jsonResult.optString("iconSrc", "unknown")
-                val error = jsonResult.optString("error", "")
-
-                L.d("MoodleFragment", "Verification result - isFile: $isFile, isImagePage: $isImagePage, iconSrc: $iconSrc")
-                if (error.isNotEmpty()) {
-                    L.e("MoodleFragment", "JS Error: $error")
-                    val stack = jsonResult.optString("stack", "")
-                    if (stack.isNotEmpty()) {
-                        L.e("MoodleFragment", "JS Stack: $stack")
-                    }
-                }
-
-                callback(isFile)
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error parsing verification result", e)
-                L.e("MoodleFragment", "Raw result was: $result")
-                callback(false)
-            }
-        }
-    }
-
-    private fun refreshCalendarDataInBackground() {
-        try {
-            L.d("MoodleFragment", "Starting calendar data refresh...")
-
-            if (!isFragmentActive || !isAdded) {
-                L.d("MoodleFragment", "Fragment not active, skipping calendar refresh")
-                return
-            }
-
-            activity?.runOnUiThread {
-                if (!isFragmentActive || !isAdded) {
-                    L.d("MoodleFragment", "Fragment detached during calendar refresh")
-                    return@runOnUiThread
-                }
-                refreshCalendarDataViaForm()
-            }
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error in background calendar refresh", e)
-        }
-    }
-
-    private fun waitForPageReady(maxAttempts: Int = 20, attempt: Int = 0, callback: (Boolean) -> Unit) {
-        if (attempt >= maxAttempts) {
-            callback(false)
-            return
-        }
-
-        val jsCode = """
-        (function() {
-            return document.readyState === 'complete' && 
-                   document.querySelector('body') !== null;
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            if (result == "true") {
-                callback(true)
-            } else {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    waitForPageReady(maxAttempts, attempt + 1, callback)
-                }, 200)
-            }
-        }
-    }
-
-    private fun checkLoginFailure(callback: (Boolean) -> Unit) {
-        checkLoginError { errorMessage ->
-            callback(errorMessage != null)
-        }
-    }
-
-    private fun stopDialogButtonMonitoring() {
-        isMonitoringDialogButton = false
-        dialogButtonMonitorRunnable?.let {
-            dialogButtonMonitorHandler?.removeCallbacks(it)
-        }
-        dialogButtonMonitorHandler = null
-        dialogButtonMonitorRunnable = null
-        L.d("MoodleFragment", "Stopped dialog button monitoring")
-    }
-
-    private fun handleLogout() {
-        if (isHandlingLogout && !isProcessingInstantLogout) {
-            L.d("MoodleFragment", "Already handling logout, skipping duplicate call")
-            return
-        }
-
-        isHandlingLogout = true
-        isProcessingInstantLogout = false
-        L.d("MoodleFragment", "Handling logout - clearing all login data")
-
-        Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
-        stopDialogButtonMonitoring()
-
-        isLoginDialogShown = false
-        hasLoginFailed = false
-        loginRetryCount = 0
-        loginSuccessConfirmed = false
-        lastSuccessfulLoginCheck = 0L
-        consecutiveLoginFailures = 0
-        isLoginInProgress = false
-        loginAttemptCount = 0
-        sessionExpiredDetected = false
-        sessionExpiredRetryCount = 0
-        lastSessionExpiredTime = 0L
-        wasOnLoginPage = false
-
-        encryptedPrefs.edit {
-            clear()
-            apply()
-        }
-        L.d("MoodleFragment", "Cleared encrypted credentials")
-
-        sharedPrefs.edit {
-            remove("moodle_dont_show_login_dialog")
-            apply()
-        }
-        L.d("MoodleFragment", "Cleared login-related preferences")
-
-        CookieManager.getInstance().apply {
-            removeAllCookies { success ->
-                L.d("MoodleFragment", "Cleared all cookies: $success")
-            }
-            removeSessionCookies { success ->
-                L.d("MoodleFragment", "Cleared session cookies: $success")
-            }
-            flush()
-        }
-
-        webView.clearHistory()
-        webView.clearFormData()
-        WebStorage.getInstance().deleteAllData()
-
-        L.d("MoodleFragment", "Logout complete - all login data cleared")
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            isHandlingLogout = false
-        }, 1000)
-    }
-
-    private fun showExtendedHeaderInitially() {
-        isAtTop = true
-        updateExtendedHeaderVisibility()
     }
 
     private fun setupClickListeners() {
@@ -1340,6 +1128,1797 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun setupSharedPreferences() {
+        sharedPrefs = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+
+        val masterKey = MasterKey.Builder(requireContext())
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        encryptedPrefs = EncryptedSharedPreferences.create(
+            requireContext(),
+            "moodle_credentials",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+
+        loadMoodleDarkModePreference()
+    }
+
+    private fun showExtendedHeaderInitially() {
+        isAtTop = true
+        updateExtendedHeaderVisibility()
+    }
+
+    private fun checkAutoLogin() {
+        if (!isAdded || context == null) {
+            L.d("MoodleFragment", "Fragment not attached, skipping auto-login")
+            return
+        }
+
+        if (isLoginInProgress) {
+            L.d("MoodleFragment", "Login already in progress, skipping checkAutoLogin")
+            return
+        }
+
+        if (isLoginDialogShown) {
+            L.d("MoodleFragment", "Login dialog already shown, skipping")
+            return
+        }
+
+        if (isHandlingLogout || isProcessingInstantLogout) {
+            L.d("MoodleFragment", "Currently handling logout, skipping auto-login")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            L.d("MoodleFragment", "No network connection, skipping auto-login")
+            return
+        }
+
+        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
+            L.d("MoodleFragment", "Max login failures reached, skipping auto-login")
+            return
+        }
+
+        if (sessionExpiredDetected && System.currentTimeMillis() - lastSessionExpiredTime < SESSION_RETRY_DELAY) {
+            L.d("MoodleFragment", "In session expired cooldown, skipping auto-login")
+            return
+        }
+
+        ensureCleanDefaultTab()
+
+        checkSessionExpired { isSessionExpired ->
+            if (!isAdded || context == null) {
+                L.d("MoodleFragment", "Fragment detached during session check")
+                return@checkSessionExpired
+            }
+
+            if (isSessionExpired) {
+                L.w("MoodleFragment", "Session expired detected on page load - refreshing and retrying")
+                sessionExpiredRetryCount = 0
+
+                webView.loadUrl(loginUrl)
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (!isAdded || context == null) {
+                        L.d("MoodleFragment", "Fragment detached during session refresh")
+                        return@postDelayed
+                    }
+
+                    waitForPageReady { pageReady ->
+                        if (!isAdded || context == null) {
+                            L.d("MoodleFragment", "Fragment detached after page ready")
+                            return@waitForPageReady
+                        }
+
+                        if (pageReady) {
+                            checkSessionExpired { stillExpired ->
+                                if (!isAdded || context == null) {
+                                    L.d("MoodleFragment", "Fragment detached during second session check")
+                                    return@checkSessionExpired
+                                }
+
+                                if (!stillExpired) {
+                                    proceedWithAutoLogin()
+                                } else {
+                                    L.e("MoodleFragment", "Session still expired after refresh - skipping auto-login")
+                                    sessionExpiredDetected = true
+                                    lastSessionExpiredTime = System.currentTimeMillis()
+                                }
+                            }
+                        }
+                    }
+                }, 1000)
+                return@checkSessionExpired
+            }
+
+            proceedWithAutoLogin()
+        }
+    }
+
+    private fun proceedWithAutoLogin() {
+        if (!isAdded || context == null) {
+            L.d("MoodleFragment", "Fragment not attached, aborting auto-login")
+            return
+        }
+
+        isConfirmDialogPage { isConfirmDialog ->
+            if (!isAdded || context == null) {
+                L.d("MoodleFragment", "Fragment detached during confirm check")
+                return@isConfirmDialogPage
+            }
+
+            if (isConfirmDialog) {
+                return@isConfirmDialogPage
+            }
+
+            val timeSinceLastCheck = System.currentTimeMillis() - lastSuccessfulLoginCheck
+            if (loginSuccessConfirmed && timeSinceLastCheck < 30000) {
+                return@isConfirmDialogPage
+            }
+
+            isUserLoggedIn { isLoggedIn ->
+                if (!isAdded || context == null) {
+                    L.d("MoodleFragment", "Fragment detached during logged-in check")
+                    return@isUserLoggedIn
+                }
+
+                if (isLoggedIn) {
+                    loginRetryCount = 0
+                    consecutiveLoginFailures = 0
+                    sessionExpiredDetected = false
+                    loginSuccessConfirmed = true
+                    lastSuccessfulLoginCheck = System.currentTimeMillis()
+                    isLoginDialogShown = false
+                    return@isUserLoggedIn
+                }
+
+                loginSuccessConfirmed = false
+
+                val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                val hasCredentials = encryptedPrefs.contains("moodle_username") &&
+                        encryptedPrefs.contains("moodle_password")
+
+                if (hasCredentials && !dontShowDialog && !isLoginDialogShown && !sessionExpiredDetected) {
+                    performAutoLogin()
+                } else if (!hasCredentials && !dontShowDialog && !isLoginDialogShown) {
+                    val delay = if (loginRetryCount > 0) {
+                        loginRetryCount * 400L
+                    } else {
+                        0L
+                    }
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (!loginSuccessConfirmed && !isLoginDialogShown && !sessionExpiredDetected && isFragmentActive && isAdded && context != null) {
+                            showLoginDialog()
+                        }
+                    }, delay)
+                }
+            }
+        }
+    }
+
+    private fun isConfirmDialogPage(callback: (Boolean) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                var confirmHeader = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            callback(result == "true")
+        }
+    }
+
+    private fun extractUsernameFromForm(callback: (String?) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                var usernameField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (usernameField && usernameField.value) {
+                    return usernameField.value.trim();
+                }
+                return '';
+            } catch(e) {
+                return '';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val username = result.replace("\"", "").trim()
+            callback(username.ifEmpty { null })
+        }
+    }
+
+    private fun checkLoginError(callback: (String?) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (errorDiv && errorDiv.classList.contains('alert') && errorDiv.classList.contains('alert-danger')) {
+                    var errorText = errorDiv.textContent.trim();
+                    return errorText;
+                }
+                return '';
+            } catch(e) {
+                return '';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val cleanResult = result.replace("\"", "").trim()
+            if (cleanResult.isEmpty() || cleanResult == "null") {
+                callback(null)
+            } else {
+                callback(cleanResult.ifEmpty { null })
+            }
+        }
+    }
+
+    private fun checkSessionExpired(callback: (Boolean) -> Unit) {
+        val jsCode = """
+    (function() {
+        try {
+            console.log('=== Checking for session expired ===');
+            console.log('Current URL: ' + window.location.href);
+            console.log('Document title: ' + document.title);
+            console.log('Referrer: ' + document.referrer);
+            
+            var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            
+            if (errorDiv && errorDiv.classList.contains('alert')) {
+                var errorText = errorDiv.textContent.trim().toLowerCase();
+                console.log('Found error alert: "' + errorText + '"');
+                
+                if (errorText.includes('sitzung') || errorText.includes('session') || 
+                    errorText.includes('expired') || errorText.includes('abgelaufen')) {
+                    console.log('*** SESSION EXPIRED DETECTED ***');
+                    return true;
+                }
+            }
+
+            if (window.location.href.includes('/login/')) {
+                console.log('*** ON LOGIN PAGE - Possible session loss ***');
+                var loginForm = document.querySelector('form[action*="login"]');
+                if (loginForm) {
+                    console.log('Login form detected - session likely expired');
+                }
+            }
+            
+            console.log('No session expiry detected');
+            return false;
+        } catch(e) {
+            console.error('Error checking session: ' + e.message);
+            return false;
+        }
+    })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val isExpired = result == "true"
+            L.d("MoodleFragment", "Session expired check result: $isExpired")
+            L.d("MoodleFragment", "WebView URL when checking: ${webView.url}")
+            callback(isExpired)
+        }
+    }
+
+    private fun showLoginDialog() {
+        if (isLoginDialogShown) return
+
+        if (!isNetworkAvailable()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        isLoginDialogShown = true
+        loginRetryCount++
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_login, null)
+        val etUsername = dialogView.findViewById<EditText>(R.id.etUsername)
+        val etPassword = dialogView.findViewById<EditText>(R.id.etPassword)
+        val cbSaveCredentials = dialogView.findViewById<CheckBox>(R.id.cbSaveCredentials)
+        val cbDontShowAgain = dialogView.findViewById<CheckBox>(R.id.cbDontShowAgain)
+        val tvErrorMessage = dialogView.findViewById<TextView>(R.id.tvErrorMessage)
+        val btnTogglePassword = dialogView.findViewById<ImageButton>(R.id.btnTogglePasswordVisibility)
+
+        val monoFont = Typeface.MONOSPACE
+        etUsername.typeface = monoFont
+        etPassword.typeface = monoFont
+
+        cbSaveCredentials.isChecked = encryptedPrefs.contains("moodle_username")
+        cbDontShowAgain.isChecked = false
+
+        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
+            cbSaveCredentials.isChecked = false
+            cbDontShowAgain.isChecked = false
+        }
+
+        var isPasswordVisible = false
+        btnTogglePassword.setOnClickListener {
+            isPasswordVisible = !isPasswordVisible
+            if (isPasswordVisible) {
+                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                btnTogglePassword.setImageResource(R.drawable.ic_eye_open)
+            } else {
+                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                btnTogglePassword.setImageResource(R.drawable.ic_eye_closed)
+            }
+            etPassword.typeface = monoFont
+            etPassword.setSelection(etPassword.text.length)
+        }
+
+        checkLoginError { errorMessage ->
+            if (errorMessage != null) {
+                tvErrorMessage.visibility = View.VISIBLE
+                tvErrorMessage.text = errorMessage
+            } else if (hasLoginFailed) {
+                tvErrorMessage.visibility = View.VISIBLE
+                tvErrorMessage.text = getString(R.string.moodle_login_failed)
+            } else {
+                tvErrorMessage.visibility = View.GONE
+            }
+
+            extractUsernameFromForm { extractedUsername ->
+                val savedUsername = if (encryptedPrefs.contains("moodle_username")) {
+                    encryptedPrefs.getString("moodle_username", "") ?: ""
+                } else ""
+
+                val usernameToShow = if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
+                    extractedUsername ?: ""
+                } else {
+                    extractedUsername ?: savedUsername
+                }
+
+                if (usernameToShow.isNotEmpty()) {
+                    etUsername.setText(usernameToShow)
+                }
+
+                val dialog = AlertDialog.Builder(requireContext())
+                    .setTitle(getString(R.string.moodle_auto_login_title))
+                    .setView(dialogView)
+                    .setPositiveButton(getString(R.string.moodle_continue)) { _, _ ->
+                        val username = etUsername.text.toString()
+                        val password = etPassword.text.toString()
+
+                        consecutiveLoginFailures = 0
+                        hasLoginFailed = false
+
+                        if (cbSaveCredentials.isChecked && username.isNotEmpty() && password.isNotEmpty()) {
+                            saveCredentials(username, password)
+                            L.d("MoodleFragment", "Credentials saved by user choice")
+                        } else {
+                            encryptedPrefs.edit {
+                                clear()
+                                apply()
+                            }
+                            L.d("MoodleFragment", "Credentials not saved or cleared")
+                        }
+
+                        if (cbDontShowAgain.isChecked) {
+                            sharedPrefs.edit {
+                                putBoolean("moodle_dont_show_login_dialog", true)
+                                apply()
+                            }
+                        } else {
+                            sharedPrefs.edit {
+                                remove("moodle_dont_show_login_dialog")
+                                apply()
+                            }
+                        }
+
+                        if (username.isNotEmpty() && password.isNotEmpty()) {
+                            fillLoginForm(username, password)
+                        }
+                    }
+                    .setNegativeButton(getString(R.string.moodle_cancel)) { _, _ ->
+                        isLoginDialogShown = false
+                        loginRetryCount = 0
+                        consecutiveLoginFailures = 0
+                    }
+                    .setOnDismissListener {
+                        isLoginDialogShown = false
+                    }
+                    .show()
+
+                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
+        }
+    }
+
+    private fun saveCredentials(username: String, password: String) {
+        if (username.isEmpty() || password.isEmpty()) {
+            L.e("MoodleFragment", "Cannot save empty credentials")
+            return
+        }
+
+        L.d("MoodleFragment", "Saving credentials - Username: $username (length: ${username.length}), Password length: ${password.length}")
+
+        encryptedPrefs.edit {
+            putString("moodle_username", username)
+            putString("moodle_password", password)
+            apply()
+        }
+
+        val savedUsername = encryptedPrefs.getString("moodle_username", "")
+        val savedPassword = encryptedPrefs.getString("moodle_password", "")
+
+        if (savedUsername == username && savedPassword == password) {
+            L.d("MoodleFragment", "Credentials saved and verified successfully")
+        } else {
+            L.e("MoodleFragment", "Credential verification failed!")
+            L.e("MoodleFragment", "Expected username: $username, Got: $savedUsername")
+            L.e("MoodleFragment", "Password match: ${savedPassword == password}")
+        }
+    }
+
+    private fun performAutoLogin() {
+        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
+            L.d("MoodleFragment", "Skipping auto-login due to previous failures")
+            return
+        }
+
+        val username = encryptedPrefs.getString("moodle_username", "") ?: ""
+        val password = encryptedPrefs.getString("moodle_password", "") ?: ""
+
+        if (username.isNotEmpty() && password.isNotEmpty()) {
+            fillLoginForm(username, password)
+        }
+    }
+
+    private fun fillLoginForm(username: String, password: String) {
+        if (isLoginInProgress) {
+            L.d("MoodleFragment", "Login already in progress, ignoring duplicate call")
+            return
+        }
+
+        if (sessionExpiredDetected && System.currentTimeMillis() - lastSessionExpiredTime < SESSION_RETRY_DELAY) {
+            L.d("MoodleFragment", "Skipping login - session expired cooldown active")
+            if (isAdded && context != null) {
+                Toast.makeText(requireContext(), getString(R.string.moodle_session_expired_wait), Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
+            L.d("MoodleFragment", "Max failures reached - not attempting login")
+            return
+        }
+
+        if (isHandlingLogout) {
+            L.d("MoodleFragment", "Currently handling logout - not attempting login")
+            return
+        }
+
+        isLoginInProgress = true
+        loginAttemptCount++
+        L.d("MoodleFragment", "Starting login attempt #$loginAttemptCount")
+        L.d("MoodleFragment", "Username: $username (length: ${username.length})")
+        L.d("MoodleFragment", "Password length: ${password.length}")
+
+        fun escapeForJS(str: String): String {
+            return str
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("`", "\\`")
+                .replace("$", "\\$")
+                .replace("\b", "\\b")
+                .replace("\u000C", "\\f")
+        }
+
+        val escapedUsername = escapeForJS(username)
+        val escapedPassword = escapeForJS(password)
+
+        L.d("MoodleFragment", "Escaped username: $escapedUsername")
+        L.d("MoodleFragment", "Escaped password length: ${escapedPassword.length}")
+
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Login Form Fill (Using Dialog Method) ===');
+                console.log('Looking for login form elements...');
+                
+                var usernameField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                var passwordField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[2]/div/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                var submitButton = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[3]/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                if (!usernameField) {
+                    console.log('Username field not found via XPath, trying alternatives...');
+                    usernameField = document.querySelector('input[name="username"], input[type="text"]');
+                }
+                if (!passwordField) {
+                    console.log('Password field not found via XPath, trying alternatives...');
+                    passwordField = document.querySelector('input[name="password"], input[type="password"]');
+                }
+                if (!submitButton) {
+                    console.log('Submit button not found via XPath, trying alternatives...');
+                    submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
+                }
+                
+                if (usernameField && passwordField && submitButton) {
+                    console.log('All form elements found');
+
+                    // disable all event listeners temporarily (important!)
+                    var originalAddEventListener = EventTarget.prototype.addEventListener;
+                    var eventListenersDisabled = true;
+                    EventTarget.prototype.addEventListener = function() {
+                        if (eventListenersDisabled) {
+                            console.log('Blocked event listener during fill');
+                            return;
+                        }
+                        return originalAddEventListener.apply(this, arguments);
+                    };
+
+                    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+
+                    // clear inputs
+                    nativeInputValueSetter.call(usernameField, '');
+                    nativeInputValueSetter.call(passwordField, '');
+                    
+                    console.log('Fields cleared');
+
+                    return new Promise(function(resolve) {
+                        setTimeout(function() {
+                            // set username
+                            nativeInputValueSetter.call(usernameField, '$escapedUsername');
+                            console.log('Username set: ' + usernameField.value);
+
+                            setTimeout(function() {
+                                // set password
+                                nativeInputValueSetter.call(passwordField, '$escapedPassword');
+                                console.log('Password set, length: ' + passwordField.value.length);
+
+                                // trigger input events
+                                usernameField.dispatchEvent(new Event('input', { bubbles: true }));
+                                usernameField.dispatchEvent(new Event('change', { bubbles: true }));
+                                
+                                setTimeout(function() {
+                                    passwordField.dispatchEvent(new Event('input', { bubbles: true }));
+                                    passwordField.dispatchEvent(new Event('change', { bubbles: true }));
+
+                                    setTimeout(function() {
+                                        console.log('Pre-submit verification:');
+                                        console.log('Username: "' + usernameField.value + '"');
+                                        console.log('Password length: ' + passwordField.value.length);
+                                        console.log('Expected: username="$escapedUsername", password length=${escapedPassword.length}');
+                                        
+                                        if (usernameField.value === '$escapedUsername' && passwordField.value.length === ${escapedPassword.length}) {
+                                            console.log('✓ Values verified - submitting');
+                                            
+                                            // re-enable event listeners before submit
+                                            setTimeout(function() {
+                                                eventListenersDisabled = false;
+                                                EventTarget.prototype.addEventListener = originalAddEventListener;
+                                            }, 400);
+                                            
+                                            submitButton.click();
+                                            resolve('submitted');
+                                        } else {
+                                            console.error('✗ Verification failed!');
+                                            console.error('Username match: ' + (usernameField.value === '$escapedUsername'));
+                                            console.error('Password length match: ' + (passwordField.value.length === ${escapedPassword.length}));
+                                            
+                                            // retry once with direct input
+                                            nativeInputValueSetter.call(usernameField, '$escapedUsername');
+                                            nativeInputValueSetter.call(passwordField, '$escapedPassword');
+                                            
+                                            setTimeout(function() {
+                                                console.log('After retry:');
+                                                console.log('Username: ' + usernameField.value);
+                                                console.log('Password length: ' + passwordField.value.length);
+                                                
+                                                // re-enable event listeners
+                                                setTimeout(function() {
+                                                    eventListenersDisabled = false;
+                                                    EventTarget.prototype.addEventListener = originalAddEventListener;
+                                                }, 400);
+                                                
+                                                submitButton.click();
+                                                resolve('submitted_after_retry');
+                                            }, 200);
+                                        }
+                                    }, 300);
+                                }, 200);
+                            }, 200);
+                        }, 100);
+                    });
+                } else {
+                    console.error('Form elements missing:');
+                    console.error('Username field: ' + (usernameField ? 'found' : 'NOT FOUND'));
+                    console.error('Password field: ' + (passwordField ? 'found' : 'NOT FOUND'));
+                    console.error('Submit button: ' + (submitButton ? 'found' : 'NOT FOUND'));
+                    return 'elements_not_found';
+                }
+            } catch(e) {
+                console.error('Exception in fillLoginForm: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return 'error';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            L.d("MoodleFragment", "Login form JS evaluation result: $result")
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isAdded || context == null) {
+                    L.d("MoodleFragment", "Fragment detached, aborting login")
+                    isLoginInProgress = false
+                    return@postDelayed
+                }
+
+                if (result?.contains("elements_not_found") == true || result?.contains("error") == true) {
+                    isLoginInProgress = false
+                    L.e("MoodleFragment", "Failed to fill login form - elements not found")
+                    context?.let {
+                        Toast.makeText(it, getString(R.string.moodle_login_form_not_found), Toast.LENGTH_SHORT).show()
+                    }
+                    isLoginDialogShown = false
+                } else {
+                    L.d("MoodleFragment", "Login form submitted, waiting for response...")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isAdded && context != null) {
+                            checkLoginResult()
+                        } else {
+                            L.d("MoodleFragment", "Fragment detached during login, cleaning up")
+                            isLoginInProgress = false
+                        }
+                    }, 1000)
+                }
+            }, 100)
+        }
+    }
+
+    private fun checkLoginResult() {
+        L.d("MoodleFragment", "Checking login result for attempt #$loginAttemptCount")
+
+        isUserLoggedIn { isLoggedIn ->
+            if (isLoggedIn) {
+                L.d("MoodleFragment", "Login successful!")
+                isLoginInProgress = false
+                loginAttemptCount = 0
+                loginRetryCount = 0
+                consecutiveLoginFailures = 0
+                sessionExpiredDetected = false
+                sessionExpiredRetryCount = 0
+                loginSuccessConfirmed = true
+                lastSuccessfulLoginCheck = System.currentTimeMillis()
+                isLoginDialogShown = false
+                Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+                return@isUserLoggedIn
+            }
+
+            val jsCode = """
+        (function() {
+            try {
+                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (errorDiv && errorDiv.textContent && errorDiv.textContent.trim() !== '') {
+                    return errorDiv.textContent.trim();
+                }
+                return '';
+            } catch(e) {
+                return '';
+            }
+        })();
+    """.trimIndent()
+
+            webView.evaluateJavascript(jsCode) { result ->
+                val errorMessage = result.replace("\"", "").trim()
+
+                if (errorMessage.isNotEmpty() && errorMessage != "null") {
+                    L.e("MoodleFragment", "Login error detected: $errorMessage")
+
+                    val isInvalidCredentials = errorMessage.contains("Ungültige", ignoreCase = true) ||
+                            errorMessage.contains("Invalid", ignoreCase = true) ||
+                            errorMessage.contains("falsch", ignoreCase = true)
+
+                    val isSessionExpired = errorMessage.lowercase().let { msg ->
+                        msg.contains("sitzung") || msg.contains("session") ||
+                                msg.contains("expired") || msg.contains("abgelaufen")
+                    }
+
+                    if (isInvalidCredentials) {
+                        L.e("MoodleFragment", "Invalid credentials - stopping all attempts")
+                        isLoginInProgress = false
+                        loginAttemptCount = 0
+                        loginRetryCount = 0
+                        consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
+                        sessionExpiredRetryCount = 0
+                        hasLoginFailed = true
+                        isLoginDialogShown = false
+                        loginSuccessConfirmed = false
+
+                        encryptedPrefs.edit { clear() }
+                        sharedPrefs.edit {
+                            remove("moodle_dont_show_login_dialog")
+                        }
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (!isLoginDialogShown) {
+                                showLoginDialog()
+                            }
+                        }, 500)
+
+                    } else if (isSessionExpired) {
+                        if (sessionExpiredRetryCount == 0) {
+                            L.d("MoodleFragment", "Session expired - refreshing page and retrying")
+                            sessionExpiredRetryCount = 1
+                            isLoginInProgress = false
+
+                            webView.loadUrl(loginUrl)
+
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                waitForPageReady { pageReady ->
+                                    if (pageReady) {
+                                        val username = encryptedPrefs.getString("moodle_username", "") ?: ""
+                                        val password = encryptedPrefs.getString("moodle_password", "") ?: ""
+                                        if (username.isNotEmpty() && password.isNotEmpty()) {
+                                            fillLoginForm(username, password)
+                                        }
+                                    }
+                                }
+                            }, 500)
+                        } else {
+                            L.e("MoodleFragment", "Session expired on retry - giving up for this session")
+                            isLoginInProgress = false
+                            loginAttemptCount = 0
+                            sessionExpiredDetected = true
+                            sessionExpiredRetryCount = 0
+                            lastSessionExpiredTime = System.currentTimeMillis()
+                            hasLoginFailed = false
+                            isLoginDialogShown = false
+
+                            activity?.runOnUiThread {
+                                Toast.makeText(
+                                    requireContext(),
+                                    getString(R.string.moodle_session_expired_retry_later),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    } else {
+                        L.e("MoodleFragment", "Unknown error - stopping")
+                        isLoginInProgress = false
+                        loginAttemptCount = 0
+                        sessionExpiredRetryCount = 0
+                        consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
+                        hasLoginFailed = true
+                        isLoginDialogShown = false
+                    }
+                } else {
+                    L.w("MoodleFragment", "No error message found, login status unclear")
+                    isLoginInProgress = false
+                    sessionExpiredRetryCount = 0
+                    hasLoginFailed = true
+                    isLoginDialogShown = false
+                }
+            }
+        }
+    }
+
+    private fun loadMoodleDarkModePreference() {
+        val moodleFollowsAppTheme = sharedPrefs.getBoolean("moodle_follow_app_theme", true)
+
+        if (moodleFollowsAppTheme) {
+            val followSystemTheme = sharedPrefs.getBoolean("follow_system_theme", true)
+            moodleDarkModeEnabled = if (followSystemTheme) {
+                getSystemDarkMode()
+            } else {
+                sharedPrefs.getBoolean("dark_mode_enabled", false)
+            }
+        } else {
+            moodleDarkModeEnabled = sharedPrefs.getBoolean("moodle_dark_mode_enabled", false)
+        }
+
+        L.d("MoodleFragment", "Loaded Moodle dark mode preference: $moodleDarkModeEnabled")
+    }
+
+    //endregion
+
+    //region **HELPERS**
+
+    override fun onResume() {
+        super.onResume()
+        isFragmentActive = true
+        setupSharedPreferences()
+        performPeriodicCacheCleanup()
+
+        if (webView.url == loginUrl) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                isConfirmDialogPage { isConfirmDialog ->
+                    if (!isConfirmDialog) {
+                        checkAutoLogin()
+                    }
+                }
+            }, 500)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isFragmentActive = false
+        stopDialogButtonMonitoring()
+        stopMessageInputMonitoring()
+        messageInputDialog?.dismiss()
+
+        if (wasOnLogoutConfirmPage) {
+            L.d("MoodleFragment", "User left while on logout page - cancelling logout")
+            wasOnLogoutConfirmPage = false
+            logoutConfirmPageUrl = ""
+        }
+
+        if (isProcessingInstantLogout) {
+            L.d("MoodleFragment", "User left during instant logout - resetting state")
+            isProcessingInstantLogout = false
+        }
+
+        saveCurrentTabState()
+        savePinnedTabs()
+        resetDefaultTab()
+
+        L.d("MoodleFragment", "onPause - saved tabs and reset default tab")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+
+        stopDialogButtonMonitoring()
+        stopMessageInputMonitoring()
+        messageInputDialog?.dismiss()
+        wasOnLogoutConfirmPage = false
+        logoutConfirmPageUrl = ""
+        isHandlingLogout = false
+
+        darkModeRetryHandler?.removeCallbacks(darkModeRetryRunnable ?: Runnable {})
+        darkModeRetryHandler = null
+        darkModeRetryRunnable = null
+
+        pdfViewerManager?.closePdf()
+        resetDefaultTabToLogin()
+        savePinnedTabs()
+        tabs.forEach { it.thumbnail?.recycle() }
+        pdfRenderer?.close()
+        backgroundExecutor.shutdown()
+        cleanupRefreshIndicator()
+        scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
+        cleanupFetchProcess()
+        cleanupTemporaryPdfs()
+        textViewerManager = null
+        textSearchDialog?.dismiss()
+
+        pdfSwipeIndicator?.let {
+            (it.parent as? ViewGroup)?.removeView(it)
+        }
+        pdfSwipeIndicator = null
+        pdfScaleDetector = null
+        zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
+        zoomHandler = null
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
+    }
+
+    private fun detectCurrentTheme() {
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+
+        isDarkTheme = if (followSystemTheme) {
+            val nightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        } else {
+            sharedPreferences.getBoolean("dark_mode_enabled", false)
+        }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        return try {
+            if (!isAdded || context == null) {
+                L.d("MoodleFragment", "Fragment not attached, cannot check network")
+                return false
+            }
+
+            val connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error checking network availability", e)
+            false
+        }
+    }
+
+    //endregion
+
+    //region **LOGIN**
+
+    private fun checkIfSessionTerminationDialog(callback: (Boolean) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Checking for session termination dialog ===');
+                console.log('Current URL: ' + window.location.href);
+                console.log('Document ready state: ' + document.readyState);
+                console.log('Document title: ' + document.title);
+
+                if (!window.location.pathname.includes('/login/index.php')) {
+                    console.log('Not on login page path: ' + window.location.pathname);
+                    return JSON.stringify({ isDialog: false, reason: 'wrong_path' });
+                }
+
+                if (document.readyState !== 'complete') {
+                    console.log('Document not fully loaded yet, state: ' + document.readyState);
+                    return JSON.stringify({ isDialog: false, reason: 'not_ready' });
+                }
+
+                var bodyContent = document.body ? document.body.innerHTML.length : 0;
+                console.log('Body content length: ' + bodyContent);
+                
+                if (bodyContent < 100) {
+                    console.log('Body content too small, page may not be loaded');
+                    return JSON.stringify({ isDialog: false, reason: 'content_too_small' });
+                }
+
+                var confirmHeader = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!confirmHeader) {
+                    console.log('No h4 header found - likely login page');
+
+                    var loginForm = document.querySelector('form[action*="login"]');
+                    var usernameField = document.querySelector('input[name="username"]');
+                    
+                    if (loginForm || usernameField) {
+                        console.log('Found login form elements - confirmed login page');
+                        return JSON.stringify({ isDialog: false, reason: 'login_form_found' });
+                    }
+                    
+                    return JSON.stringify({ isDialog: false, reason: 'no_header' });
+                }
+                
+                var headerText = confirmHeader.textContent.trim();
+                console.log('Found header with text: "' + headerText + '"');
+                console.log('Header HTML: ' + confirmHeader.outerHTML);
+                
+                if (headerText === 'Bestätigen' || headerText === 'Confirm') {
+                    console.log('✓ This is the session termination dialog');
+
+                    var cancelButton = document.evaluate(
+                        '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (cancelButton) {
+                        console.log('Cancel button found: "' + cancelButton.textContent.trim() + '"');
+                        console.log('Button HTML: ' + cancelButton.outerHTML.substring(0, 100));
+                        return JSON.stringify({ 
+                            isDialog: true, 
+                            reason: 'dialog_detected',
+                            buttonText: cancelButton.textContent.trim()
+                        });
+                    } else {
+                        console.log('Header matches but cancel button not found!');
+                        console.log('Looking for button with alternative methods...');
+
+                        var allButtons = document.querySelectorAll('button');
+                        console.log('Found ' + allButtons.length + ' buttons on page');
+                        
+                        return JSON.stringify({ 
+                            isDialog: true, 
+                            reason: 'dialog_no_button',
+                            buttonText: null,
+                            totalButtons: allButtons.length
+                        });
+                    }
+                }
+                
+                console.log('Header found but text does not match - this is login page');
+                console.log('Expected: "Bestätigen" or "Confirm", Got: "' + headerText + '"');
+                return JSON.stringify({ 
+                    isDialog: false, 
+                    reason: 'header_mismatch',
+                    foundText: headerText
+                });
+                
+            } catch(e) {
+                console.error('Error checking for termination dialog: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return JSON.stringify({ 
+                    isDialog: false, 
+                    reason: 'error',
+                    error: e.message,
+                    stack: e.stack
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Session dialog check raw result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+                val isDialog = jsonResult.optBoolean("isDialog", false)
+                val reason = jsonResult.optString("reason", "unknown")
+
+                L.d("MoodleFragment", "Session dialog check - isDialog: $isDialog, reason: $reason")
+
+                when (reason) {
+                    "error" -> {
+                        val error = jsonResult.optString("error", "")
+                        val stack = jsonResult.optString("stack", "")
+                        L.e("MoodleFragment", "JS Error during dialog check: $error")
+                        L.e("MoodleFragment", "Stack: $stack")
+                    }
+                    "header_mismatch" -> {
+                        val foundText = jsonResult.optString("foundText", "")
+                        L.d("MoodleFragment", "Header text mismatch. Found: '$foundText'")
+                    }
+                    "dialog_no_button" -> {
+                        val totalButtons = jsonResult.optInt("totalButtons", 0)
+                        L.e("MoodleFragment", "Dialog detected but cancel button not found! Total buttons on page: $totalButtons")
+                    }
+                    "dialog_detected" -> {
+                        val buttonText = jsonResult.optString("buttonText", "")
+                        L.d("MoodleFragment", "Dialog confirmed with button text: '$buttonText'")
+                    }
+                    "not_ready" -> {
+                        L.d("MoodleFragment", "Document not ready yet, will retry")
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded) {
+                                checkIfSessionTerminationDialog(callback)
+                            }
+                        }, 500)
+                        return@evaluateJavascript
+                    }
+                    "content_too_small" -> {
+                        L.d("MoodleFragment", "Page content too small, will retry")
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded) {
+                                checkIfSessionTerminationDialog(callback)
+                            }
+                        }, 500)
+                        return@evaluateJavascript
+                    }
+                }
+
+                callback(isDialog)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing dialog check result: $result", e)
+                callback(false)
+            }
+        }
+    }
+
+    private fun dismissSessionTerminationDialog() {
+        val shouldAutoDismiss = sharedPrefs.getBoolean("moodle_auto_dismiss_confirm", true)
+
+        if (!shouldAutoDismiss) {
+            L.d("MoodleFragment", "Auto-dismiss disabled by user")
+            isLoginDialogShown = true
+            return
+        }
+
+        L.d("MoodleFragment", "Attempting to dismiss session termination dialog...")
+
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Dismissing session termination dialog ===');
+                console.log('Current URL: ' + window.location.href);
+                console.log('Document ready state: ' + document.readyState);
+
+                var cancelButton = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!cancelButton) {
+                    console.error('✗ Cancel button not found');
+                    console.log('Trying alternative selectors...');
+
+                    var alternatives = [
+                        'button[data-action="cancel"]',
+                        'form button[type="button"]',
+                        '.modal-footer button:first-child'
+                    ];
+                    
+                    for (var i = 0; i < alternatives.length; i++) {
+                        cancelButton = document.querySelector(alternatives[i]);
+                        if (cancelButton) {
+                            console.log('Found button with selector: ' + alternatives[i]);
+                            break;
+                        }
+                    }
+                    
+                    if (!cancelButton) {
+                        return JSON.stringify({ 
+                            success: false, 
+                            reason: 'button_not_found',
+                            triedSelectors: alternatives.length 
+                        });
+                    }
+                }
+                
+                console.log('Found cancel button: ' + cancelButton.textContent.trim());
+                console.log('Button type: ' + cancelButton.type);
+                console.log('Button disabled: ' + cancelButton.disabled);
+                console.log('Button visible: ' + (cancelButton.offsetParent !== null));
+                
+                if (cancelButton.disabled) {
+                    console.warn('Button is disabled!');
+                    return JSON.stringify({ 
+                        success: false, 
+                        reason: 'button_disabled' 
+                    });
+                }
+                
+                if (cancelButton.offsetParent === null) {
+                    console.warn('Button is not visible!');
+                    return JSON.stringify({ 
+                        success: false, 
+                        reason: 'button_not_visible' 
+                    });
+                }
+
+                console.log('Clicking cancel button...');
+                cancelButton.click();
+
+                setTimeout(function() {
+                    var stillVisible = document.evaluate(
+                        '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (stillVisible) {
+                        console.log('Dialog still visible after click - may need page reload');
+                    } else {
+                        console.log('Dialog dismissed successfully');
+                    }
+                }, 500);
+                
+                console.log('✓ Cancel button clicked');
+                return JSON.stringify({ 
+                    success: true, 
+                    buttonText: cancelButton.textContent.trim() 
+                });
+                
+            } catch(e) {
+                console.error('Error dismissing dialog: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return JSON.stringify({ 
+                    success: false, 
+                    reason: 'exception',
+                    error: e.message 
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment not active, skipping dialog handling")
+                return@evaluateJavascript
+            }
+
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Dismiss dialog raw result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+                val success = jsonResult.optBoolean("success", false)
+                val reason = jsonResult.optString("reason", "")
+
+                if (success) {
+                    val buttonText = jsonResult.optString("buttonText", "")
+                    L.d("MoodleFragment", "Session termination dialog dismissed successfully (button: '$buttonText')")
+                    isLoginDialogShown = true
+
+                    context?.let {
+                        Toast.makeText(it, getString(R.string.moodle_session_term_cancel), Toast.LENGTH_SHORT).show()
+                    }
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        verifyDialogDismissed()
+                    }, 1000)
+
+                } else {
+                    L.e("MoodleFragment", "Failed to dismiss session termination dialog: $reason")
+
+                    when (reason) {
+                        "button_not_found" -> {
+                            L.e("MoodleFragment", "Cancel button not found with any selector")
+                            webView.reload()
+                        }
+                        "button_disabled" -> {
+                            L.e("MoodleFragment", "Cancel button is disabled")
+                        }
+                        "button_not_visible" -> {
+                            L.e("MoodleFragment", "Cancel button is not visible")
+                        }
+                        "exception" -> {
+                            val error = jsonResult.optString("error", "")
+                            L.e("MoodleFragment", "Exception during dismissal: $error")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing dismiss result: $result", e)
+            }
+        }
+    }
+
+    private fun verifyDialogDismissed() {
+        if (!isFragmentActive || !isAdded) return
+
+        checkIfSessionTerminationDialog { stillPresent ->
+            if (stillPresent) {
+                L.w("MoodleFragment", "Dialog still present after dismissal attempt - trying again")
+                dismissSessionTerminationDialog()
+            } else {
+                L.d("MoodleFragment", "Dialog successfully dismissed and verified")
+            }
+        }
+    }
+
+    private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
+        val idMatch = "id=(\\d+)".toRegex().find(url)
+        val resourceId = idMatch?.groupValues?.get(1)
+
+        L.d("MoodleFragment", "=== verifyFileLink Debug ===")
+        L.d("MoodleFragment", "URL: $url")
+        L.d("MoodleFragment", "Resource ID: $resourceId")
+        L.d("MoodleFragment", "Current WebView URL: ${webView.url}")
+
+        if (resourceId == null) {
+            L.e("MoodleFragment", "No resource ID found in URL")
+            callback(false)
+            return
+        }
+
+        val jsCode = """
+    (function() {
+        try {
+            console.log('=== Starting File Verification ===');
+            console.log('Checking resource ID: $resourceId');
+            console.log('Document URL: ' + document.location.href);
+            console.log('Document ready state: ' + document.readyState);
+            
+            var links = document.querySelectorAll('a[href*="id=$resourceId"]');
+            console.log('Found ' + links.length + ' links with this ID');
+            
+            for (var i = 0; i < links.length; i++) {
+                var link = links[i];
+                console.log('Link ' + i + ' href: ' + link.href);
+                console.log('Link ' + i + ' HTML: ' + link.outerHTML.substring(0, 200));
+
+                var accessHideSpan = link.querySelector('span.accesshide');
+                if (accessHideSpan) {
+                    var text = accessHideSpan.textContent.trim().toLowerCase();
+                    console.log('AccessHide text: "' + text + '"');
+                    
+                    if (text.includes('datei') || text.includes('file')) {
+                        var container = link.closest('.activity-item, .activityinstance');
+                        if (container) {
+                            console.log('Found container');
+                            var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
+                            if (activityIcon && activityIcon.src) {
+                                var imgSrc = activityIcon.src.toLowerCase();
+                                console.log('Activity icon src: ' + imgSrc);
+
+                                if (imgSrc.includes('/f/image?')) {
+                                    console.log('*** DETECTED IMAGE PAGE ***');
+                                    return JSON.stringify({isFile: false, isImagePage: true, iconSrc: imgSrc});
+                                }
+
+                                if (imgSrc.includes('/f/pdf') || 
+                                    imgSrc.includes('/f/document') || 
+                                    imgSrc.includes('/f/archive') ||
+                                    imgSrc.includes('resource')) {
+                                    console.log('*** DETECTED DOWNLOADABLE FILE ***');
+                                    return JSON.stringify({isFile: true, isImagePage: false, iconSrc: imgSrc});
+                                }
+                            } else {
+                                console.log('No activity icon found in container');
+                            }
+                        } else {
+                            console.log('No container found for link');
+                        }
+                        console.log('Has file/datei tag but no definitive icon match');
+                        return JSON.stringify({isFile: true, isImagePage: false, iconSrc: 'none'});
+                    } else {
+                        console.log('AccessHide text does not contain file/datei keywords');
+                    }
+                } else {
+                    console.log('Link ' + i + ' has no accesshide span');
+                }
+            }
+            
+            console.log('*** NO FILE INDICATORS FOUND - DEFAULTING TO IMAGE PAGE ***');
+            return JSON.stringify({isFile: false, isImagePage: false, iconSrc: 'none'});
+        } catch(e) {
+            console.error('Error in verifyFileLink: ' + e.message);
+            console.error('Stack: ' + e.stack);
+            return JSON.stringify({isFile: false, error: e.message, stack: e.stack});
+        }
+    })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Raw JS result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+
+                val isFile = jsonResult.optBoolean("isFile", false)
+                val isImagePage = jsonResult.optBoolean("isImagePage", false)
+                val iconSrc = jsonResult.optString("iconSrc", "unknown")
+                val error = jsonResult.optString("error", "")
+
+                L.d("MoodleFragment", "Verification result - isFile: $isFile, isImagePage: $isImagePage, iconSrc: $iconSrc")
+                if (error.isNotEmpty()) {
+                    L.e("MoodleFragment", "JS Error: $error")
+                    val stack = jsonResult.optString("stack", "")
+                    if (stack.isNotEmpty()) {
+                        L.e("MoodleFragment", "JS Stack: $stack")
+                    }
+                }
+
+                callback(isFile)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing verification result", e)
+                L.e("MoodleFragment", "Raw result was: $result")
+                callback(false)
+            }
+        }
+    }
+
+    private fun waitForPageReady(maxAttempts: Int = 20, attempt: Int = 0, callback: (Boolean) -> Unit) {
+        if (attempt >= maxAttempts) {
+            L.w("MoodleFragment", "Page ready timeout after $maxAttempts attempts")
+            callback(false)
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                if (document.readyState !== 'complete') {
+                    console.log('Document not complete, state: ' + document.readyState);
+                    return false;
+                }
+
+                if (!document.querySelector('body')) {
+                    console.log('Body element not found');
+                    return false;
+                }
+
+                var currentPath = window.location.pathname;
+                if (currentPath.includes('/login/')) {
+                    var usernameField = document.evaluate(
+                        '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (!usernameField) {
+                        console.log('Login form not yet ready');
+                        return false;
+                    }
+                }
+                
+                console.log('Page is ready');
+                return true;
+            } catch(e) {
+                console.error('Error checking page ready: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Page ready after ${attempt + 1} attempts")
+                callback(true)
+            } else {
+                L.d("MoodleFragment", "Page not ready, attempt ${attempt + 1}/$maxAttempts")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForPageReady(maxAttempts, attempt + 1, callback)
+                }, 200)
+            }
+        }
+    }
+
+    private fun checkLoginFailure(callback: (Boolean) -> Unit) {
+        checkLoginError { errorMessage ->
+            callback(errorMessage != null)
+        }
+    }
+
+    private fun stopDialogButtonMonitoring() {
+        isMonitoringDialogButton = false
+        dialogButtonMonitorRunnable?.let {
+            dialogButtonMonitorHandler?.removeCallbacks(it)
+        }
+        dialogButtonMonitorHandler = null
+        dialogButtonMonitorRunnable = null
+        L.d("MoodleFragment", "Stopped dialog button monitoring")
+    }
+
+    private fun handleLogout() {
+        if (isHandlingLogout && !isProcessingInstantLogout) {
+            L.d("MoodleFragment", "Already handling logout, skipping duplicate call")
+            return
+        }
+
+        isHandlingLogout = true
+        isProcessingInstantLogout = false
+        L.d("MoodleFragment", "Handling logout - clearing all login data")
+
+        Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+        stopDialogButtonMonitoring()
+
+        isLoginDialogShown = false
+        hasLoginFailed = false
+        loginRetryCount = 0
+        loginSuccessConfirmed = false
+        lastSuccessfulLoginCheck = 0L
+        consecutiveLoginFailures = 0
+        isLoginInProgress = false
+        loginAttemptCount = 0
+        sessionExpiredDetected = false
+        sessionExpiredRetryCount = 0
+        lastSessionExpiredTime = 0L
+        wasOnLoginPage = false
+
+        encryptedPrefs.edit {
+            clear()
+            apply()
+        }
+        L.d("MoodleFragment", "Cleared encrypted credentials")
+
+        sharedPrefs.edit {
+            remove("moodle_dont_show_login_dialog")
+            apply()
+        }
+        L.d("MoodleFragment", "Cleared login-related preferences")
+
+        CookieManager.getInstance().apply {
+            removeAllCookies { success ->
+                L.d("MoodleFragment", "Cleared all cookies: $success")
+            }
+            removeSessionCookies { success ->
+                L.d("MoodleFragment", "Cleared session cookies: $success")
+            }
+            flush()
+        }
+
+        webView.clearHistory()
+        webView.clearFormData()
+        WebStorage.getInstance().deleteAllData()
+
+        webView.loadUrl(loginUrl)
+
+        L.d("MoodleFragment", "Logout complete - all login data cleared")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            isHandlingLogout = false
+            wasOnLoginPage = true
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isFragmentActive && isAdded) {
+                    val currentUrl = webView.url ?: ""
+                    if (currentUrl == loginUrl || currentUrl.contains("login/index.php")) {
+                        L.d("MoodleFragment", "On login page after logout - checking for dialog setup")
+
+                        waitForPageReady(maxAttempts = 30) { pageReady ->
+                            if (pageReady && isFragmentActive && isAdded) {
+                                val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+
+                                if (!dontShowDialog) {
+                                    L.d("MoodleFragment", "Injecting dialog button after logout")
+                                    injectDialogButtonOnLoginPage()
+                                } else {
+                                    L.d("MoodleFragment", "Dialog disabled by user preference")
+                                }
+                            }
+                        }
+                    }
+                }
+            }, 800)
+        }, 1000)
+    }
+
+    private fun dismissSessionConfirmDialog(onDismissed: () -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                var cancelButton = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (cancelButton) {
+                    cancelButton.click();
+                    return true;
+                }
+
+                var dialogs = document.querySelectorAll('[role="dialog"], .modal');
+                for (var i = 0; i < dialogs.length; i++) {
+                    var dialog = dialogs[i];
+                    var cancelBtn = dialog.querySelector('button[data-action="cancel"], button:contains("Abbrechen"), button:contains("Cancel")');
+                    if (cancelBtn) {
+                        cancelBtn.click();
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Session dialog dismissed")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    onDismissed()
+                }, 500)
+            } else {
+                L.w("MoodleFragment", "Could not find session dialog to dismiss")
+                onDismissed()
+            }
+        }
+    }
+
+    private fun injectDialogButtonOnLoginPage() {
+        if (!isFragmentActive || !isAdded) {
+            L.d("MoodleFragment", "Fragment not active, skipping button injection")
+            return
+        }
+
+        stopDialogButtonMonitoring()
+
+        val jsCode = """
+        (function() {
+            try {
+                var loginHeading = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/h1',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!loginHeading || !loginHeading.textContent.toLowerCase().includes('login')) {
+                    return false;
+                }
+
+                var confirmHeader = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
+                    return false;
+                }
+
+                var existingButtons = document.querySelectorAll('#logindialogbtn');
+                existingButtons.forEach(function(btn) { btn.remove(); });
+
+                var submitContainer = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[3]',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!submitContainer) {
+                    return false;
+                }
+
+                var dialogButton = document.createElement('button');
+                dialogButton.id = 'logindialogbtn';
+                dialogButton.type = 'button';
+                dialogButton.className = 'btn btn-secondary btn-lg';
+                dialogButton.textContent = '${getString(R.string.moodle_show_dialog)}';
+                dialogButton.style.marginLeft = '8px';
+                dialogButton.style.zIndex = '9999';
+
+                dialogButton.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.showLoginDialogFromApp = true;
+                    console.log('Dialog button clicked');
+                    return false;
+                };
+
+                submitContainer.appendChild(dialogButton);
+                console.log('Dialog button injected successfully');
+                
+                return true;
+            } catch(e) {
+                console.error('Error injecting button: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment detached during button injection")
+                return@evaluateJavascript
+            }
+
+            if (result == "true") {
+                L.d("MoodleFragment", "Dialog button injected successfully")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (isFragmentActive && isAdded) {
+                        monitorDialogButtonClick()
+                    }
+                }, 100)
+            } else {
+                L.d("MoodleFragment", "Could not inject dialog button (might not be on login page)")
+            }
+        }
+    }
+
+    private fun monitorDialogButtonClick() {
+        if (!isFragmentActive || !isAdded) {
+            L.d("MoodleFragment", "Fragment not active, stopping dialog button monitoring")
+            return
+        }
+
+        stopDialogButtonMonitoring()
+
+        isMonitoringDialogButton = true
+        val checkInterval = 300L
+        dialogButtonMonitorHandler = Handler(Looper.getMainLooper())
+
+        dialogButtonMonitorRunnable = object : Runnable {
+            override fun run() {
+                if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
+                    L.d("MoodleFragment", "Fragment detached or monitoring stopped")
+                    stopDialogButtonMonitoring()
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+
+                if (!currentUrl.contains("login/index.php")) {
+                    L.d("MoodleFragment", "No longer on login page, stopping monitoring")
+                    stopDialogButtonMonitoring()
+                    return
+                }
+
+                val jsCode = """
+                (function() {
+                    try {
+                        var confirmHeader = document.evaluate(
+                            '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                            document,
+                            null,
+                            XPathResult.FIRST_ORDERED_NODE_TYPE,
+                            null
+                        ).singleNodeValue;
+                        
+                        if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
+                            return 'terminate';
+                        }
+                        
+                        if (window.showLoginDialogFromApp === true) {
+                            window.showLoginDialogFromApp = false;
+                            return true;
+                        }
+                        
+                        var button = document.getElementById('logindialogbtn');
+                        if (!button) {
+                            return 'reinject';
+                        }
+                        
+                        return false;
+                    } catch(e) {
+                        return false;
+                    }
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
+                        L.d("MoodleFragment", "Fragment detached during evaluation")
+                        stopDialogButtonMonitoring()
+                        return@evaluateJavascript
+                    }
+
+                    when (result.trim('"')) {
+                        "true" -> {
+                            L.d("MoodleFragment", "Dialog button clicked - showing login dialog")
+                            activity?.runOnUiThread {
+                                if (isFragmentActive && isAdded && !isLoginDialogShown) {
+                                    showLoginDialog()
+                                }
+                            }
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
+                        }
+                        "reinject" -> {
+                            L.d("MoodleFragment", "Button missing, re-injecting")
+                            if (isFragmentActive && isAdded) {
+                                injectDialogButtonOnLoginPage()
+                            }
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
+                        }
+                        "terminate" -> {
+                            L.d("MoodleFragment", "On termination page, stopping monitoring")
+                            stopDialogButtonMonitoring()
+                        }
+                        else -> {
+                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
+                        }
+                    }
+                }
+            }
+        }
+
+        dialogButtonMonitorHandler?.post(dialogButtonMonitorRunnable!!)
+    }
+
+    //endregion
+
+    //region **TABS**
+
     private fun navigateFromCurrentTab(url: String) {
         if (isPdfTab(currentTabIndex)) {
             saveCurrentTabState()
@@ -1384,6 +2963,1410 @@ class MoodleFragment : Fragment() {
         )
     }
 
+    private fun ensureCleanDefaultTab() {
+        if (tabs.isNotEmpty() && tabs[0].isDefault) {
+            val defaultTab = tabs[0]
+
+            tabs[0] = defaultTab.copy(
+                webViewState = null,
+                thumbnail = null
+            )
+
+            if (currentTabIndex == 0) {
+                webView.clearHistory()
+                webView.clearCache(false)
+            }
+
+            L.d("MoodleFragment", "Cleaned default tab state")
+        }
+    }
+
+    private fun initializeTabSystem() {
+        isCompactTabLayout = sharedPrefs.getBoolean("moodle_tab_layout_compact", false)
+
+        tabs.clear()
+
+        val defaultTab = TabInfo(
+            id = "default_tab",
+            url = loginUrl,
+            title = "Moodle",
+            isPinned = false,
+            isDefault = true,
+            thumbnail = null,
+            webViewState = null
+        )
+        tabs.add(defaultTab)
+        currentTabIndex = 0
+
+        loadSavedTabs()
+
+        L.d("MoodleFragment", "Initialized tab system with ${tabs.size} tabs (clean default tab)")
+    }
+
+    private fun savePinnedTabs() {
+        val pinnedTabs = tabs.filter { it.isPinned && !it.isDefault }
+        val jsonArray = JSONArray()
+
+        pinnedTabs.forEach { tab ->
+            val tabJson = JSONObject().apply {
+                put("id", tab.id)
+                put("url", tab.url)
+                put("title", tab.title)
+                put("isPinned", true)
+                put("createdAt", tab.createdAt)
+
+                if (tab.id.startsWith(PDF_TAB_PREFIX)) {
+                    tab.webViewState?.let { bundle ->
+                        put("pdf_file_path", bundle.getString("pdf_file_path"))
+                        put("pdf_current_page", bundle.getInt("pdf_current_page", 0))
+                        put("pdf_scroll_mode", bundle.getBoolean("pdf_scroll_mode", true))
+                        put("pdf_dark_mode", bundle.getBoolean("pdf_dark_mode", false))
+                    }
+                }
+
+                tab.thumbnail?.let { bitmap ->
+                    try {
+                        val outputStream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+                        val base64 = Base64.encodeToString(
+                            outputStream.toByteArray(),
+                            Base64.DEFAULT
+                        )
+                        put("thumbnail", base64)
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Error saving thumbnail", e)
+                    }
+                }
+            }
+            jsonArray.put(tabJson)
+        }
+
+        sharedPrefs.edit {
+            putString("saved_tabs", jsonArray.toString())
+        }
+        L.d("MoodleFragment", "Saved ${pinnedTabs.size} pinned tabs (excluding default)")
+    }
+
+    private fun loadSavedTabs() {
+        val savedTabsJson = sharedPrefs.getString("saved_tabs", null) ?: return
+
+        try {
+            val jsonArray = JSONArray(savedTabsJson)
+            L.d("MoodleFragment", "Loading ${jsonArray.length()} saved tabs")
+
+            val loadedTabs = mutableListOf<TabInfo>()
+
+            for (i in 0 until jsonArray.length()) {
+                val tabJson = jsonArray.getJSONObject(i)
+                val tabId = tabJson.getString("id")
+
+                if (tabId == "default_tab") continue
+                if (!tabJson.optBoolean("isPinned", false)) continue
+
+                val thumbnail = try {
+                    val base64 = tabJson.optString("thumbnail", "")
+                    if (base64.isNotEmpty()) {
+                        val decodedBytes = Base64.decode(base64, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    } else null
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Error decoding thumbnail", e)
+                    null
+                }
+
+                val webViewState = if (tabId.startsWith(PDF_TAB_PREFIX)) {
+                    Bundle().apply {
+                        putString("pdf_file_path", tabJson.optString("pdf_file_path"))
+                        putInt("pdf_current_page", tabJson.optInt("pdf_current_page", 0))
+                        putBoolean("pdf_scroll_mode", tabJson.optBoolean("pdf_scroll_mode", true))
+                        putBoolean("pdf_dark_mode", tabJson.optBoolean("pdf_dark_mode", false))
+                    }
+                } else null
+
+                loadedTabs.add(TabInfo(
+                    id = tabId,
+                    url = tabJson.getString("url"),
+                    title = tabJson.getString("title"),
+                    isPinned = true,
+                    isDefault = false,
+                    thumbnail = thumbnail,
+                    webViewState = webViewState,
+                    createdAt = tabJson.optLong("createdAt", System.currentTimeMillis())
+                ))
+            }
+
+            tabs.addAll(loadedTabs)
+            L.d("MoodleFragment", "Loaded ${loadedTabs.size} pinned tabs")
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error loading saved tabs", e)
+        }
+    }
+
+    private fun captureWebViewThumbnail(): Bitmap? {
+        try {
+            if (webView.width <= 0 || webView.height <= 0) {
+                L.w("MoodleFragment", "WebView has invalid dimensions: ${webView.width}x${webView.height}")
+                return null
+            }
+
+            val bitmap = createBitmap(webView.width, webView.height)
+            val canvas = Canvas(bitmap)
+            webView.draw(canvas)
+
+            val scaledBitmap = bitmap.scale(bitmap.width / 4, bitmap.height / 4)
+            bitmap.recycle()
+            return scaledBitmap
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error capturing thumbnail", e)
+            return null
+        }
+    }
+
+    private fun saveCurrentTabState() {
+        if (currentTabIndex in tabs.indices) {
+            val currentTab = tabs[currentTabIndex]
+
+            if (isPdfTab(currentTabIndex)) {
+                val pdfState = pdfViewerManager?.getCurrentState()
+                val bundle = Bundle().apply {
+                    putString("pdf_file_path", pdfState?.file?.absolutePath)
+                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
+                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
+                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
+                }
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = currentTab.url,
+                    title = currentTab.title,
+                    thumbnail = capturePdfThumbnail(),
+                    webViewState = bundle
+                )
+            } else {
+                val bundle = Bundle()
+                webView.saveState(bundle)
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = webView.url ?: currentTab.url,
+                    title = webView.title ?: currentTab.title,
+                    thumbnail = captureWebViewThumbnail(),
+                    webViewState = bundle
+                )
+            }
+
+            savePinnedTabs()
+        }
+    }
+
+    private fun capturePdfThumbnail(): Bitmap? {
+        return try {
+            val bitmap = pdfViewerManager?.renderPage(0)
+            bitmap?.scale(bitmap.width / 4, bitmap.height / 4)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun switchToTab(index: Int) {
+        if (index !in tabs.indices) return
+
+        if (index == currentTabIndex) {
+            L.d("MoodleFragment", "Already on tab $index, skipping switch")
+            return
+        }
+
+        L.d("MoodleFragment", "Switching from tab $currentTabIndex to tab $index")
+
+        saveCurrentTabState()
+
+        val previousIndex = currentTabIndex
+        currentTabIndex = index
+
+        val tab = tabs[index]
+
+        if (isTextViewerMode) {
+            isTextViewerMode = false
+            textViewerContainer.visibility = View.GONE
+            textViewerManager = null
+        }
+
+        if (isPdfTab(index)) {
+            loadPdfTab(tab)
+        } else {
+            if (isPdfTab(previousIndex)) {
+                pdfViewerManager?.closePdf()
+                pdfViewerManager = null
+                pdfFileUrl = null
+            }
+
+            activity?.runOnUiThread {
+                webView.visibility = if (moodleDarkModeEnabled) View.INVISIBLE else View.VISIBLE
+                pdfContainer.visibility = View.GONE
+                textViewerContainer.visibility = View.GONE
+                webControlsLayout.visibility = View.VISIBLE
+                pdfControlsLayout.visibility = View.GONE
+                btnBack.visibility = View.VISIBLE
+                btnOpenInBrowser.visibility = View.VISIBLE
+
+                webView.post {
+                    if (tab.webViewState != null) {
+                        webView.clearHistory()
+                        webView.setInitialScale(0)
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            webView.restoreState(tab.webViewState)
+
+                            L.d("MoodleFragment", "Tab state restored, checking for session dialog...")
+
+                            checkForSessionDialogAfterTabSwitch()
+
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                L.d("MoodleFragment", "Second check after 300ms...")
+                                checkForSessionDialogAfterTabSwitch()
+                            }, 300)
+
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                L.d("MoodleFragment", "Final check after 800ms...")
+                                checkForSessionDialogAfterTabSwitch()
+                            }, 800)
+                        }, 50)
+                    } else {
+                        webView.loadUrl(tab.url)
+                    }
+                }
+            }
+        }
+
+        updateUIState()
+        updateDashboardButtonIcon()
+
+        L.d("MoodleFragment", "Switch complete - now on tab $currentTabIndex showing ${tab.url}")
+    }
+
+    private fun checkForSessionDialogAfterTabSwitch() {
+        if (!isFragmentActive || !isAdded) {
+            L.d("MoodleFragment", "Fragment not active, skipping session dialog check")
+            return
+        }
+
+        val currentUrl = webView.url ?: ""
+
+        L.d("MoodleFragment", "=== Checking for session dialog after tab switch ===")
+        L.d("MoodleFragment", "Current URL: $currentUrl")
+        L.d("MoodleFragment", "Current tab index: $currentTabIndex")
+        L.d("MoodleFragment", "WebView visibility: ${webView.visibility}")
+
+        if (!currentUrl.contains("login/index.php")) {
+            L.d("MoodleFragment", "Not on login page, skipping dialog check")
+            return
+        }
+
+        L.d("MoodleFragment", "On login page URL, proceeding with dialog check...")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment detached during check delay")
+                return@postDelayed
+            }
+
+            L.d("MoodleFragment", "Executing dialog detection JavaScript...")
+
+            checkIfSessionTerminationDialogDirect { isTerminationDialog ->
+                if (!isFragmentActive || !isAdded) {
+                    L.d("MoodleFragment", "Fragment detached during dialog check result")
+                    return@checkIfSessionTerminationDialogDirect
+                }
+
+                L.d("MoodleFragment", "Dialog check result: $isTerminationDialog")
+
+                if (isTerminationDialog) {
+                    L.d("MoodleFragment", "!!! SESSION TERMINATION DIALOG FOUND AFTER TAB SWITCH - Dismissing !!!")
+
+                    activity?.runOnUiThread {
+                        if (isFragmentActive && isAdded) {
+                            dismissSessionTerminationDialog()
+                        }
+                    }
+                } else {
+                    L.d("MoodleFragment", "No session termination dialog found after tab switch")
+
+                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+
+                    if (!dontShowDialog && !isLoginDialogShown) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded && !isLoginDialogShown) {
+                                L.d("MoodleFragment", "Injecting dialog button on login page")
+                                injectDialogButtonOnLoginPage()
+                            }
+                        }, 500)
+                    }
+                }
+            }
+        }, 100)
+    }
+
+    private fun checkIfSessionTerminationDialogDirect(callback: (Boolean) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== DIRECT Session Termination Dialog Check ===');
+                console.log('Current URL: ' + window.location.href);
+                console.log('Document ready state: ' + document.readyState);
+                console.log('Document title: ' + document.title);
+                console.log('Page visibility: ' + document.visibilityState);
+
+                var body = document.body;
+                if (body) {
+                    console.log('Body exists, innerHTML length: ' + body.innerHTML.length);
+                    console.log('Body first 200 chars: ' + body.innerHTML.substring(0, 200));
+                } else {
+                    console.log('ERROR: Body is null!');
+                    return JSON.stringify({ isDialog: false, reason: 'no_body' });
+                }
+
+                if (!window.location.pathname.includes('/login/index.php')) {
+                    console.log('Not on login page path: ' + window.location.pathname);
+                    return JSON.stringify({ isDialog: false, reason: 'wrong_path' });
+                }
+                
+                console.log('On login page path, checking for dialog header...');
+
+                var confirmHeader = document.evaluate(
+                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!confirmHeader) {
+                    console.log('Primary XPath failed, trying querySelector...');
+
+                    var possibleHeaders = document.querySelectorAll('h4');
+                    console.log('Found ' + possibleHeaders.length + ' h4 elements on page');
+                    
+                    for (var i = 0; i < possibleHeaders.length; i++) {
+                        var headerText = possibleHeaders[i].textContent.trim();
+                        console.log('h4[' + i + ']: "' + headerText + '"');
+                        
+                        if (headerText === 'Bestätigen' || headerText === 'Confirm') {
+                            console.log('!!! Found dialog header via querySelector !!!');
+                            confirmHeader = possibleHeaders[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!confirmHeader) {
+                        console.log('No dialog header found - checking for login form...');
+                        
+                        var loginForm = document.querySelector('form[action*="login"]');
+                        var usernameField = document.querySelector('input[name="username"]');
+                        
+                        if (loginForm || usernameField) {
+                            console.log('Found login form elements - this is login page');
+                            return JSON.stringify({ isDialog: false, reason: 'login_form_found' });
+                        }
+                        
+                        return JSON.stringify({ isDialog: false, reason: 'no_header', h4Count: possibleHeaders.length });
+                    }
+                }
+                
+                var headerText = confirmHeader.textContent.trim();
+                console.log('Found header with text: "' + headerText + '"');
+                console.log('Header parent: ' + (confirmHeader.parentElement ? confirmHeader.parentElement.tagName : 'null'));
+                
+                if (headerText === 'Bestätigen' || headerText === 'Confirm') {
+                    console.log('✓✓✓ THIS IS THE SESSION TERMINATION DIALOG ✓✓✓');
+
+                    var cancelButton = document.evaluate(
+                        '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
+                        document,
+                        null,
+                        XPathResult.FIRST_ORDERED_NODE_TYPE,
+                        null
+                    ).singleNodeValue;
+                    
+                    if (cancelButton) {
+                        console.log('Cancel button found via XPath: "' + cancelButton.textContent.trim() + '"');
+                        console.log('Button visible: ' + (cancelButton.offsetParent !== null));
+                        console.log('Button disabled: ' + cancelButton.disabled);
+                        return JSON.stringify({ 
+                            isDialog: true, 
+                            reason: 'dialog_detected',
+                            buttonText: cancelButton.textContent.trim(),
+                            buttonVisible: (cancelButton.offsetParent !== null),
+                            buttonDisabled: cancelButton.disabled
+                        });
+                    } else {
+                        console.log('Cancel button not found via XPath, searching all buttons...');
+                        
+                        var allButtons = document.querySelectorAll('button');
+                        console.log('Total buttons on page: ' + allButtons.length);
+                        
+                        for (var j = 0; j < allButtons.length; j++) {
+                            var btn = allButtons[j];
+                            var btnText = btn.textContent.trim().toLowerCase();
+                            console.log('Button[' + j + ']: "' + btn.textContent.trim() + '" (type: ' + btn.type + ')');
+                            
+                            if (btnText.includes('abbrechen') || btnText.includes('cancel')) {
+                                console.log('!!! Found cancel button via text search !!!');
+                                return JSON.stringify({ 
+                                    isDialog: true, 
+                                    reason: 'dialog_detected_alt',
+                                    buttonText: btn.textContent.trim(),
+                                    buttonIndex: j
+                                });
+                            }
+                        }
+                        
+                        return JSON.stringify({ 
+                            isDialog: true, 
+                            reason: 'dialog_no_button',
+                            buttonText: null,
+                            totalButtons: allButtons.length
+                        });
+                    }
+                }
+                
+                console.log('Header text does not match - this is login page');
+                console.log('Expected: "Bestätigen" or "Confirm", Got: "' + headerText + '"');
+                return JSON.stringify({ 
+                    isDialog: false, 
+                    reason: 'header_mismatch',
+                    foundText: headerText
+                });
+                
+            } catch(e) {
+                console.error('!!! EXCEPTION in dialog check !!!');
+                console.error('Error: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return JSON.stringify({ 
+                    isDialog: false, 
+                    reason: 'exception',
+                    error: e.message,
+                    stack: e.stack
+                });
+            }
+        })();
+    """.trimIndent()
+
+        L.d("MoodleFragment", "Executing checkIfSessionTerminationDialogDirect JavaScript...")
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "=== Direct Dialog Check Result ===")
+                L.d("MoodleFragment", "Raw result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+                val isDialog = jsonResult.optBoolean("isDialog", false)
+                val reason = jsonResult.optString("reason", "unknown")
+
+                L.d("MoodleFragment", "isDialog: $isDialog")
+                L.d("MoodleFragment", "reason: $reason")
+
+                when (reason) {
+                    "exception" -> {
+                        val error = jsonResult.optString("error", "")
+                        val stack = jsonResult.optString("stack", "")
+                        L.e("MoodleFragment", "JS Exception: $error")
+                        L.e("MoodleFragment", "Stack: $stack")
+                    }
+                    "dialog_detected", "dialog_detected_alt" -> {
+                        val buttonText = jsonResult.optString("buttonText", "")
+                        val buttonVisible = jsonResult.optBoolean("buttonVisible", true)
+                        val buttonDisabled = jsonResult.optBoolean("buttonDisabled", false)
+                        L.d("MoodleFragment", "!!! DIALOG DETECTED !!!")
+                        L.d("MoodleFragment", "Button text: '$buttonText'")
+                        L.d("MoodleFragment", "Button visible: $buttonVisible")
+                        L.d("MoodleFragment", "Button disabled: $buttonDisabled")
+                    }
+                    "dialog_no_button" -> {
+                        val totalButtons = jsonResult.optInt("totalButtons", 0)
+                        L.e("MoodleFragment", "Dialog header found but NO BUTTON! Total buttons: $totalButtons")
+                    }
+                    "no_header" -> {
+                        val h4Count = jsonResult.optInt("h4Count", 0)
+                        L.d("MoodleFragment", "No dialog header found. Total h4 elements: $h4Count")
+                    }
+                    "header_mismatch" -> {
+                        val foundText = jsonResult.optString("foundText", "")
+                        L.d("MoodleFragment", "Header mismatch. Found: '$foundText'")
+                    }
+                    "login_form_found" -> {
+                        L.d("MoodleFragment", "Login form detected - this is login page")
+                    }
+                }
+
+                L.d("MoodleFragment", "=== End Dialog Check Result ===")
+
+                callback(isDialog)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing direct dialog check result: $result", e)
+                callback(false)
+            }
+        }
+    }
+
+    private fun loadPdfTab(tab: TabInfo) {
+        val pdfFilePath = tab.webViewState?.getString("pdf_file_path")
+        pdfFileUrl = tab.webViewState?.getString("pdf_url") ?: tab.url
+
+        if (pdfFilePath != null) {
+            val pdfFile = File(pdfFilePath)
+
+            if (pdfFile.exists()) {
+                pdfViewerManager?.closePdf()
+                pdfViewerManager = null
+
+                pdfViewerManager = PdfViewerManager(requireContext())
+
+                if (pdfViewerManager?.openPdf(pdfFile) == true) {
+                    val savedPage = tab.webViewState.getInt("pdf_current_page", 0)
+                    val scrollMode = tab.webViewState.getBoolean("pdf_scroll_mode", true)
+                    val darkMode = tab.webViewState.getBoolean("pdf_dark_mode", isDarkTheme)
+
+                    if (darkMode != (pdfViewerManager?.forceDarkMode ?: false)) {
+                        pdfViewerManager?.toggleDarkMode()
+                    }
+
+                    pdfViewerManager?.setCurrentPage(savedPage)
+                    if (!scrollMode) pdfViewerManager?.toggleScrollMode()
+
+                    webView.visibility = View.GONE
+                    pdfContainer.visibility = View.VISIBLE
+                    webControlsLayout.visibility = View.GONE
+                    pdfControlsLayout.visibility = View.VISIBLE
+
+                    btnBack.visibility = View.GONE
+                    btnOpenInBrowser.visibility = View.VISIBLE
+
+                    setupPdfControls()
+                    renderPdfContent()
+
+                    isAtTop = true
+                    showExtendedHeaderWithAnimation()
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_load_failed), Toast.LENGTH_SHORT).show()
+                    closeTab(currentTabIndex)
+                }
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.moodle_pdf_file_not_found), Toast.LENGTH_SHORT).show()
+                closeTab(currentTabIndex)
+            }
+        }
+    }
+
+    private fun createNewTab(url: String = "$moodleBaseUrl/my/") {
+        if (tabs.size >= MAX_TABS) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_max_tabs_reached), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        saveCurrentTabState()
+
+        val wasPdfTab = isPdfTab(currentTabIndex)
+        if (wasPdfTab) {
+            pdfViewerManager?.closePdf()
+        }
+
+        val newTab = TabInfo(
+            url = url,
+            title = getString(R.string.moodle_new_tab)
+        )
+        tabs.add(newTab)
+        currentTabIndex = tabs.size - 1
+
+        webView.visibility = View.VISIBLE
+        pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.GONE
+        webControlsLayout.visibility = View.VISIBLE
+        pdfControlsLayout.visibility = View.GONE
+        btnBack.visibility = View.VISIBLE
+        btnOpenInBrowser.visibility = View.VISIBLE
+
+        webView.loadUrl(url)
+        updateUIState()
+        updateDashboardButtonIcon()
+
+        if (isTabViewVisible) {
+            hideTabOverlay()
+        }
+    }
+
+    private fun closeTab(index: Int) {
+        if (index !in tabs.indices) return
+
+        if (tabs.size == 1) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_cannot_close_last_tab), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val wasClosingCurrentTab = (index == currentTabIndex)
+
+        val tabToClose = tabs[index]
+        if (isPdfTab(index) && !tabToClose.isPinned) {
+            tabToClose.webViewState?.getString("pdf_file_path")?.let { pdfPath ->
+                try {
+                    File(pdfPath).delete()
+                    L.d("MoodleFragment", "Deleted PDF file for closed tab: $pdfPath")
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Failed to delete PDF file", e)
+                }
+            }
+        }
+
+        tabs[index].thumbnail?.recycle()
+        tabs.removeAt(index)
+
+        val newCurrentIndex = when {
+            index < currentTabIndex -> currentTabIndex - 1
+            index == currentTabIndex -> {
+                if (index >= tabs.size) tabs.size - 1 else index
+            }
+            else -> currentTabIndex
+        }
+
+        if (wasClosingCurrentTab) {
+            resetWebViewState()
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                switchToTab(newCurrentIndex)
+            }, 50)
+        } else {
+            currentTabIndex = newCurrentIndex
+        }
+
+        savePinnedTabs()
+
+        if (isTabViewVisible && !isDraggingTab) {
+            tabAdapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun clearAllTabs() {
+        tabs.forEach { it.thumbnail?.recycle() }
+        tabs.clear()
+
+        tabs.add(TabInfo(
+            id = "default_tab",
+            url = "$moodleBaseUrl/my/",
+            title = "Dashboard",
+            isDefault = true
+        ))
+        currentTabIndex = 0
+        webView.loadUrl("$moodleBaseUrl/my/")
+
+        savePinnedTabs()
+        Toast.makeText(requireContext(), getString(R.string.moodle_tabs_cleared), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showTabOverlay() {
+        L.d("MoodleFragment", "showTabOverlay called. Current tabs: ${tabs.size}, compact=$isCompactTabLayout")
+
+        if (isTabViewVisible) {
+            hideTabOverlay()
+            return
+        }
+
+        if (currentTabIndex in tabs.indices) {
+            val currentTab = tabs[currentTabIndex]
+
+            if (isPdfTab(currentTabIndex)) {
+                val pdfState = pdfViewerManager?.getCurrentState()
+                val bundle = Bundle().apply {
+                    putString("pdf_file_path", pdfState?.file?.absolutePath)
+                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
+                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
+                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
+                }
+
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = pdfFileUrl ?: currentTab.url,
+                    title = currentTab.title,
+                    thumbnail = capturePdfThumbnail(),
+                    webViewState = bundle
+                )
+            } else {
+                tabs[currentTabIndex] = currentTab.copy(
+                    url = webView.url ?: currentTab.url,
+                    title = webView.title ?: currentTab.title,
+                    thumbnail = captureWebViewThumbnail()
+                )
+            }
+        }
+
+        isTabViewVisible = true
+        updateTabButtonIcon()
+
+        val overlayView = layoutInflater.inflate(R.layout.overlay_tab_view, null)
+        tabOverlayView = overlayView
+
+        val rootView = view as ViewGroup
+        rootView.addView(overlayView)
+
+        setupTabRecyclerView(overlayView)
+        setupTabOverlayControls(overlayView)
+
+        overlayView.alpha = 0f
+        overlayView.animate()
+            .alpha(1f)
+            .setDuration(200)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        L.d("MoodleFragment", "Tab overlay shown with ${tabs.size} tabs")
+    }
+
+    private fun resetDefaultTab() {
+        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+
+        if (defaultTabIndex != -1) {
+            L.d("MoodleFragment", "Resetting default tab at index $defaultTabIndex")
+
+            val defaultTab = tabs[defaultTabIndex]
+            tabs[defaultTabIndex] = defaultTab.copy(
+                url = loginUrl,
+                title = "Moodle",
+                thumbnail = null,
+                webViewState = null
+            )
+
+            if (currentTabIndex == defaultTabIndex) {
+                webView.clearHistory()
+                webView.clearCache(false)
+            }
+
+            L.d("MoodleFragment", "Default tab reset to login page")
+        }
+    }
+
+    private fun resetDefaultTabToLogin() {
+        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+
+        if (defaultTabIndex != -1) {
+            L.d("MoodleFragment", "Resetting default tab to login page")
+
+            val defaultTab = tabs[defaultTabIndex]
+            tabs[defaultTabIndex] = defaultTab.copy(
+                url = loginUrl,
+                title = "Moodle",
+                thumbnail = null,
+                webViewState = null
+            )
+
+            if (currentTabIndex == defaultTabIndex) {
+                webView.clearHistory()
+                webView.clearCache(false)
+                webView.loadUrl(loginUrl)
+            }
+
+            savePinnedTabs()
+            L.d("MoodleFragment", "Default tab reset complete")
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        if (wasOnLogoutConfirmPage) {
+            L.d("MoodleFragment", "App stopped while on logout page - cancelling logout")
+            wasOnLogoutConfirmPage = false
+            logoutConfirmPageUrl = ""
+        }
+
+        resetDefaultTabToLogin()
+        savePinnedTabs()
+        L.d("MoodleFragment", "onStop - reset default tab and saved pinned tabs")
+    }
+
+    private fun setupTabOverlayControls(overlayView: View) {
+        val btnClearAll = overlayView.findViewById<ImageButton>(R.id.btnClearAllTabs)
+        val btnCloseOverlay = overlayView.findViewById<ImageButton>(R.id.btnCloseTabOverlay)
+        val layoutToggleHandle = overlayView.findViewById<View>(R.id.layoutToggleHandle)
+        val tabHeaderLayout = overlayView.findViewById<LinearLayout>(R.id.tabHeaderLayout)
+
+        btnClearAll.setOnClickListener {
+            showClearAllTabsDialog()
+        }
+
+        btnCloseOverlay.setOnClickListener {
+            hideTabOverlay()
+        }
+
+        val density = resources.displayMetrics.density
+
+        if (isCompactTabLayout) {
+            tabHeaderLayout?.setPadding(
+                (8 * density).toInt(),
+                (2 * density).toInt(),
+                (8 * density).toInt(),
+                (2 * density).toInt()
+            )
+
+            val compactButtonSize = (36 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (24 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = 0
+            }
+        } else {
+            // Normal view
+            tabHeaderLayout?.setPadding(
+                (16 * density).toInt(),
+                (8 * density).toInt(),
+                (16 * density).toInt(),
+                (12 * density).toInt()
+            )
+
+            val normalButtonSize = (40 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (28 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = (4 * density).toInt()
+            }
+        }
+
+        btnClearAll.requestLayout()
+        btnCloseOverlay.requestLayout()
+        layoutToggleHandle.requestLayout()
+        tabHeaderLayout?.requestLayout()
+
+        setupLayoutToggle(layoutToggleHandle, overlayView)
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupLayoutToggle(handle: View, overlayView: View) {
+        handle.alpha = 0.6f
+        handle.scaleX = 1f
+        handle.scaleY = 1f
+
+        var startY = 0f
+        var isDragging = false
+        var overlayHeight: Int
+        var initialOverlayHeight = 0
+        val density = resources.displayMetrics.density
+        val minHeight = (190 * density).toInt()
+        val maxHeight = (310 * density).toInt()
+        val closeThreshold = (50 * density).toInt()
+
+        overlayHeight = if (isCompactTabLayout) minHeight else maxHeight
+        val layoutParams = overlayView.layoutParams
+        layoutParams.height = overlayHeight
+        overlayView.layoutParams = layoutParams
+
+        var lastCompactState = isCompactTabLayout
+
+        handle.setOnTouchListener { view, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startY = event.rawY
+                    initialOverlayHeight = overlayView.layoutParams.height
+                    isDragging = true
+                    lastCompactState = isCompactTabLayout
+
+                    handle.animate()
+                        .scaleX(1.1f)
+                        .scaleY(1.2f)
+                        .alpha(1f)
+                        .setDuration(100)
+                        .start()
+
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (!isDragging) return@setOnTouchListener false
+
+                    val deltaY = startY - event.rawY
+                    val newHeight = (initialOverlayHeight + deltaY).toInt()
+                        .coerceIn(closeThreshold, maxHeight)
+
+                    val layoutParams = overlayView.layoutParams
+                    layoutParams.height = newHeight
+                    overlayView.layoutParams = layoutParams
+
+                    val heightRatio = (newHeight - minHeight).toFloat() / (maxHeight - minHeight)
+
+                    val shouldBeCompact = heightRatio < 0.3f
+
+                    if (shouldBeCompact != isCompactTabLayout) {
+                        isCompactTabLayout = shouldBeCompact
+                        refreshTabLayoutDuringDrag(overlayView)
+                        lastCompactState = isCompactTabLayout
+                    }
+
+                    if (newHeight < minHeight) {
+                        val closeProgress = (minHeight - newHeight).toFloat() / (minHeight - closeThreshold)
+                        overlayView.alpha = 1f - (closeProgress * 0.5f)
+                    } else {
+                        overlayView.alpha = 1f
+                    }
+
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!isDragging) return@setOnTouchListener false
+                    isDragging = false
+
+                    handle.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .alpha(0.6f)
+                        .setDuration(100)
+                        .start()
+
+                    val layoutParams = overlayView.layoutParams
+                    val currentHeight = layoutParams.height
+
+                    if (currentHeight <= closeThreshold) {
+                        hideTabOverlay()
+                        return@setOnTouchListener true
+                    }
+
+                    val targetHeight = if (currentHeight < (minHeight + maxHeight) / 2) {
+                        isCompactTabLayout = true
+                        minHeight
+                    } else {
+                        isCompactTabLayout = false
+                        maxHeight
+                    }
+
+                    if (currentHeight != targetHeight) {
+                        ValueAnimator.ofInt(currentHeight, targetHeight).apply {
+                            duration = 200
+                            addUpdateListener { animator ->
+                                layoutParams.height = animator.animatedValue as Int
+                                overlayView.layoutParams = layoutParams
+                            }
+                            doOnEnd {
+                                if (lastCompactState != isCompactTabLayout) {
+                                    setupTabOverlayControls(overlayView)
+                                }
+                            }
+                            start()
+                        }
+                    } else if (lastCompactState != isCompactTabLayout) {
+                        setupTabOverlayControls(overlayView)
+                    }
+
+                    overlayHeight = targetHeight
+                    overlayView.alpha = 1f
+
+                    sharedPrefs.edit {
+                        putBoolean("moodle_tab_layout_compact", isCompactTabLayout)
+                    }
+
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun refreshTabLayoutDuringDrag(overlayView: View) {
+        overlayView.animate()
+            .alpha(0.85f)
+            .setDuration(100)
+            .withEndAction {
+                overlayView.animate()
+                    .alpha(1f)
+                    .setDuration(100)
+                    .start()
+            }
+            .start()
+
+        val btnClearAll = overlayView.findViewById<ImageButton>(R.id.btnClearAllTabs)
+        val btnCloseOverlay = overlayView.findViewById<ImageButton>(R.id.btnCloseTabOverlay)
+        val layoutToggleHandle = overlayView.findViewById<View>(R.id.layoutToggleHandle)
+        val tabHeaderLayout = overlayView.findViewById<LinearLayout>(R.id.tabHeaderLayout)
+
+        val density = resources.displayMetrics.density
+
+        if (isCompactTabLayout) {
+            tabHeaderLayout?.setPadding(
+                (8 * density).toInt(),
+                (2 * density).toInt(),
+                (8 * density).toInt(),
+                (2 * density).toInt()
+            )
+
+            val compactButtonSize = (36 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = compactButtonSize
+                height = compactButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (24 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = 0
+            }
+        } else {
+            tabHeaderLayout?.setPadding(
+                (16 * density).toInt(),
+                (8 * density).toInt(),
+                (16 * density).toInt(),
+                (12 * density).toInt()
+            )
+
+            val normalButtonSize = (40 * density).toInt()
+            btnClearAll.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+            btnCloseOverlay.layoutParams?.apply {
+                width = normalButtonSize
+                height = normalButtonSize
+            }
+
+            layoutToggleHandle.layoutParams?.height = (28 * density).toInt()
+
+            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                topMargin = (8 * density).toInt()
+                bottomMargin = (4 * density).toInt()
+            }
+        }
+
+        btnClearAll.requestLayout()
+        btnCloseOverlay.requestLayout()
+        layoutToggleHandle.requestLayout()
+        tabHeaderLayout?.requestLayout()
+
+        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
+        tabRecyclerView.animate()
+            .scaleX(0.97f)
+            .scaleY(0.97f)
+            .setDuration(80)
+            .withEndAction {
+                tabRecyclerView.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(120)
+                    .start()
+            }
+            .start()
+
+        setupTabRecyclerView(overlayView)
+    }
+
+    private fun hideTabOverlay() {
+        if (!isTabViewVisible) return
+
+        tabOverlayView?.let { overlay ->
+            val animationsEnabled = Settings.Global.getFloat(
+                requireContext().contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+            ) != 0.0f
+
+            if (animationsEnabled) {
+                overlay.animate()
+                    .alpha(0f)
+                    .setDuration(150)
+                    .setInterpolator(AccelerateInterpolator())
+                    .withEndAction {
+                        (view as? ViewGroup)?.removeView(overlay)
+                        tabOverlayView = null
+                        isTabViewVisible = false
+                        updateTabButtonIcon()
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            checkForSessionDialogAfterTabSwitch()
+                        }, 300)
+                    }
+                    .start()
+            } else {
+                (view as? ViewGroup)?.removeView(overlay)
+                tabOverlayView = null
+                isTabViewVisible = false
+                updateTabButtonIcon()
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    checkForSessionDialogAfterTabSwitch()
+                }, 100)
+            }
+        }
+    }
+
+    private fun setupTabRecyclerView(overlayView: View) {
+        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val density = resources.displayMetrics.density
+
+        val horizontalSpacing: Int
+        val sideMargin: Int
+        val itemWidth: Int
+        val itemHeight: Int
+
+        if (isCompactTabLayout) {
+            horizontalSpacing = (4 * density).toInt()
+            sideMargin = (6 * density).toInt()
+            val totalHorizontalPadding = (2 * sideMargin) + (3 * horizontalSpacing)
+            itemWidth = ((screenWidth - totalHorizontalPadding) / 4.46f).toInt()
+            itemHeight = (100 * density).toInt()
+        } else {
+            horizontalSpacing = (6 * density).toInt()
+            sideMargin = (8 * density).toInt()
+            val totalHorizontalPadding = (2 * sideMargin) + horizontalSpacing
+            itemWidth = ((screenWidth - totalHorizontalPadding) / 2.27f).toInt()
+            itemHeight = (180 * density).toInt()
+        }
+
+        val floatingDeleteZone = view?.findViewById<FrameLayout>(R.id.floatingDeleteZone)
+        val floatingDeleteIcon = view?.findViewById<ImageView>(R.id.floatingDeleteIcon)
+
+        tabAdapter = TabAdapter(
+            tabs = tabs,
+            getCurrentTabIndex = { currentTabIndex },
+            isCompactLayout = isCompactTabLayout,
+            itemWidth = itemWidth,
+            itemHeight = itemHeight,
+            onTabClick = { index ->
+                if (index in tabs.indices) {
+                    switchToTab(index)
+                    hideTabOverlay()
+                }
+            },
+            onTabClose = { index ->
+                if (index in tabs.indices && !tabs[index].isDefault) {
+                    closeTab(index)
+                    tabAdapter.notifyDataSetChanged()
+                }
+            },
+            onTabPin = { index ->
+                if (index in tabs.indices && !tabs[index].isDefault) {
+                    tabs[index] = tabs[index].copy(isPinned = !tabs[index].isPinned)
+                    savePinnedTabs()
+                    tabAdapter.notifyItemChanged(index)
+                }
+            },
+            onTabDragStart = { index ->
+                if (index in tabs.indices && !tabs[index].isDefault) {
+                    isDraggingTab = true
+                    draggedTabIndex = index
+
+                    floatingDeleteZone?.visibility = View.VISIBLE
+                    floatingDeleteIcon?.apply {
+                        scaleX = 1f
+                        scaleY = 1f
+                        translationY = 0f
+                        clearAnimation()
+                        alpha = 1f
+                    }
+                }
+            },
+            onTabDragEnd = { index, x, y ->
+                if (index in tabs.indices && !tabs[index].isDefault && isDraggingTab) {
+                    var shouldDelete = false
+
+                    floatingDeleteIcon?.let { icon ->
+                        val iconLocation = IntArray(2)
+                        icon.getLocationOnScreen(iconLocation)
+                        val iconCenterX = iconLocation[0] + icon.width / 2
+                        val iconCenterY = iconLocation[1] + icon.height / 2
+
+                        val distance = sqrt(
+                            (x - iconCenterX).toDouble().pow(2.0) +
+                                    (y - iconCenterY).toDouble().pow(2.0)
+                        )
+
+                        val hitRadius = (icon.width / 2f + 10 * density)
+                        shouldDelete = distance < hitRadius
+                    }
+
+                    if (shouldDelete) {
+                        animateTabDeletion(index)
+                    }
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        floatingDeleteIcon?.clearAnimation()
+                        floatingDeleteIcon?.animate()
+                            ?.scaleX(0.8f)
+                            ?.scaleY(0.8f)
+                            ?.alpha(0f)
+                            ?.setDuration(200)
+                            ?.withEndAction {
+                                floatingDeleteZone?.visibility = View.GONE
+                            }
+                            ?.start()
+                    }, 100)
+                }
+                draggedTabIndex = -1
+                isDraggingTab = false
+            },
+            onTabMove = { fromIndex, toIndex ->
+                if (fromIndex in tabs.indices && toIndex in tabs.indices &&
+                    !tabs[fromIndex].isDefault && !tabs[toIndex].isDefault) {
+                    Collections.swap(tabs, fromIndex, toIndex)
+                    tabAdapter.notifyItemMoved(fromIndex, toIndex)
+                    if (currentTabIndex == fromIndex) {
+                        currentTabIndex = toIndex
+                    } else if (currentTabIndex == toIndex) {
+                        currentTabIndex = fromIndex
+                    }
+                    savePinnedTabs()
+                }
+            },
+            onTabDragUpdate = { index, x, y ->
+                if (isDraggingTab) {
+                    floatingDeleteIcon?.let { icon ->
+                        val iconLocation = IntArray(2)
+                        icon.getLocationOnScreen(iconLocation)
+                        val iconCenterX = iconLocation[0] + icon.width / 2
+                        val iconCenterY = iconLocation[1] + icon.height / 2
+
+                        val distance = sqrt(
+                            (x - iconCenterX).toDouble().pow(2.0) +
+                                    (y - iconCenterY).toDouble().pow(2.0)
+                        )
+
+                        val hitRadius = (icon.width / 2f + 10 * density)
+                        val hoverRadius = (icon.width / 2f + 50 * density)
+
+                        when {
+                            distance < hitRadius -> {
+                                icon.clearAnimation()
+                                icon.animate()
+                                    .translationY(-10f * density)
+                                    .scaleX(1.3f)
+                                    .scaleY(1.3f)
+                                    .setDuration(150)
+                                    .start()
+
+                                val shake = RotateAnimation(
+                                    -10f, 10f,
+                                    Animation.RELATIVE_TO_SELF, 0.5f,
+                                    Animation.RELATIVE_TO_SELF, 0.5f
+                                ).apply {
+                                    duration = 100
+                                    repeatCount = Animation.INFINITE
+                                    repeatMode = Animation.REVERSE
+                                }
+                                icon.startAnimation(shake)
+                            }
+                            distance < hoverRadius -> {
+                                icon.clearAnimation()
+                                icon.animate()
+                                    .translationY(-5f * density)
+                                    .scaleX(1.1f)
+                                    .scaleY(1.1f)
+                                    .setDuration(150)
+                                    .start()
+                            }
+                            else -> {
+                                icon.clearAnimation()
+                                icon.animate()
+                                    .translationY(0f)
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(150)
+                                    .start()
+                            }
+                        }
+                    }
+                }
+            },
+            onNewTabClick = {
+                if (tabs.size < MAX_TABS) {
+                    createNewTab()
+                }
+            }
+        )
+
+        val layoutManager = LinearLayoutManager(
+            requireContext(),
+            LinearLayoutManager.HORIZONTAL,
+            false
+        )
+
+        tabRecyclerView.apply {
+            this.layoutManager = layoutManager
+            adapter = tabAdapter
+            itemAnimator = DefaultItemAnimator().apply {
+                changeDuration = 200
+                moveDuration = 200
+            }
+
+            while (itemDecorationCount > 0) {
+                removeItemDecorationAt(0)
+            }
+            addItemDecoration(HorizontalSpacingItemDecoration(horizontalSpacing))
+
+            setPadding(sideMargin, 0, sideMargin, 0)
+            clipToPadding = false
+            clipChildren = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+    }
+
+    private fun animateTabDeletion(index: Int) {
+        if (index !in tabs.indices) return
+
+        val viewHolder = tabRecyclerView.findViewHolderForAdapterPosition(index)
+        viewHolder?.itemView?.let { itemView ->
+            itemView.animate()
+                .alpha(0f)
+                .scaleX(0.8f)
+                .scaleY(0.8f)
+                .translationX(itemView.width.toFloat())
+                .setDuration(200)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction {
+                    closeTab(index)
+                    tabAdapter.notifyDataSetChanged()
+                }
+                .start()
+        } ?: run {
+            closeTab(index)
+            tabAdapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun showClearAllTabsDialog() {
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_clear_all_tabs))
+            .setMessage(getString(R.string.moodle_clear_all_tabs_confirm))
+            .setPositiveButton(getString(R.string.moodle_clear)) { _, _ ->
+                clearAllTabs()
+                hideTabOverlay()
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    //endregion
+
+    //region **HEADER**
     private fun updateDashboardButtonIcon() {
         val currentUrl = if (isPdfTab(currentTabIndex)) {
             tabs.getOrNull(currentTabIndex)?.url ?: ""
@@ -1397,22 +4380,6 @@ class MoodleFragment : Fragment() {
 
         btnDashboard.setImageResource(
             if (isOnDashboard) R.drawable.ic_dashboard_filled else R.drawable.ic_dashboard
-        )
-    }
-
-    private fun setupSharedPreferences() {
-        sharedPrefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-
-        val masterKey = MasterKey.Builder(requireContext())
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            requireContext(),
-            "moodle_credentials",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
 
@@ -1555,62 +4522,12 @@ class MoodleFragment : Fragment() {
         }, 200)
     }
 
-    private fun navigateToUrl(userInput: String) {
-        val url = when {
-            userInput.startsWith(moodleBaseUrl) -> {
-                userInput
-            }
-            userInput.startsWith("https://moodle.kleyer.eu/") -> {
-                userInput
-            }
-            else -> {
-                "$moodleBaseUrl/$userInput"
-            }
-        }
-
-        if (url.startsWith(moodleBaseUrl)) {
-            loadUrlInBackground(url)
-        } else {
-            Toast.makeText(requireContext(), getString(R.string.moodle_invalid_url), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun loadUrlInBackground(url: String) {
-        if (isPdfTab(currentTabIndex)) {
-            saveCurrentTabState()
-
-            val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
-            if (defaultTabIndex != -1) {
-                currentTabIndex = defaultTabIndex
-                switchToTab(defaultTabIndex)
-            } else {
-                val newTab = TabInfo(
-                    url = url,
-                    title = getString(R.string.act_set_loading)
-                )
-                tabs.add(newTab)
-                currentTabIndex = tabs.size - 1
-            }
-
-            webView.visibility = View.VISIBLE
-            pdfContainer.visibility = View.GONE
-            textViewerContainer.visibility = View.GONE
-            webControlsLayout.visibility = View.VISIBLE
-            pdfControlsLayout.visibility = View.GONE
-            btnBack.visibility = View.VISIBLE
-        }
-
-        showLoadingBar()
-        webView.loadUrl(url)
-    }
-
     private fun performSearch() {
         val query = searchBarMoodle.text.toString().trim()
         if (query.isEmpty()) return
 
         val searchType = spinnerSearchType.selectedItemPosition
 
-        // If on PDF tab, convert to web tab first
         if (isPdfTab(currentTabIndex)) {
             saveCurrentTabState()
             pdfViewerManager?.closePdf()
@@ -1883,51 +4800,6 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun checkConfirmDialog() {
-        val shouldAutoDismiss = sharedPrefs.getBoolean("moodle_auto_dismiss_confirm", true)
-
-        if (!shouldAutoDismiss) {
-            isLoginDialogShown = true
-            return
-        }
-
-        waitForPageReady { pageReady ->
-            if (pageReady) {
-                val jsCode = """
-            (function() {
-                try {
-                    var confirmHeader = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
-                        var cancelButton = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                        if (cancelButton) {
-                            cancelButton.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                } catch(e) {
-                    return false;
-                }
-            })();
-        """.trimIndent()
-
-                webView.evaluateJavascript(jsCode) { result ->
-                    if (!isFragmentActive || !isAdded) {
-                        L.d("MoodleFragment", "Fragment not active, skipping dialog handling")
-                        return@evaluateJavascript
-                    }
-
-                    if (result == "true") {
-                        isLoginDialogShown = true
-                        context?.let {
-                            Toast.makeText(it, getString(R.string.moodle_session_term_cancel), Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private fun isUserLoggedIn(callback: (Boolean) -> Unit) {
         val jsCode = """
         (function() {
@@ -1970,592 +4842,6 @@ class MoodleFragment : Fragment() {
             }
 
             callback(isLoggedIn)
-        }
-    }
-
-    private fun ensureCleanDefaultTab() {
-        if (tabs.isNotEmpty() && tabs[0].isDefault) {
-            val defaultTab = tabs[0]
-
-            tabs[0] = defaultTab.copy(
-                webViewState = null,
-                thumbnail = null
-            )
-
-            if (currentTabIndex == 0) {
-                webView.clearHistory()
-                webView.clearCache(false)
-            }
-
-            L.d("MoodleFragment", "Cleaned default tab state")
-        }
-    }
-
-    private fun checkAutoLogin() {
-        if (isLoginInProgress) {
-            L.d("MoodleFragment", "Login already in progress, skipping checkAutoLogin")
-            return
-        }
-
-        if (isLoginDialogShown) {
-            L.d("MoodleFragment", "Login dialog already shown, skipping")
-            return
-        }
-
-        if (isHandlingLogout || isProcessingInstantLogout) {
-            L.d("MoodleFragment", "Currently handling logout, skipping auto-login")
-            return
-        }
-
-        if (!isNetworkAvailable()) {
-            L.d("MoodleFragment", "No network connection, skipping auto-login")
-            return
-        }
-
-        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
-            L.d("MoodleFragment", "Max login failures reached, skipping auto-login")
-            return
-        }
-
-        if (sessionExpiredDetected && System.currentTimeMillis() - lastSessionExpiredTime < SESSION_RETRY_DELAY) {
-            L.d("MoodleFragment", "In session expired cooldown, skipping auto-login")
-            return
-        }
-
-        ensureCleanDefaultTab()
-
-        isConfirmDialogPage { isConfirmDialog ->
-            if (isConfirmDialog) {
-                return@isConfirmDialogPage
-            }
-
-            val timeSinceLastCheck = System.currentTimeMillis() - lastSuccessfulLoginCheck
-            if (loginSuccessConfirmed && timeSinceLastCheck < 30000) {
-                return@isConfirmDialogPage
-            }
-
-            isUserLoggedIn { isLoggedIn ->
-                if (isLoggedIn) {
-                    loginRetryCount = 0
-                    consecutiveLoginFailures = 0
-                    sessionExpiredDetected = false
-                    loginSuccessConfirmed = true
-                    lastSuccessfulLoginCheck = System.currentTimeMillis()
-                    isLoginDialogShown = false
-                    return@isUserLoggedIn
-                }
-
-                loginSuccessConfirmed = false
-
-                checkSessionExpired { isSessionExpired ->
-                    if (isSessionExpired) {
-                        L.e("MoodleFragment", "Session expired detected - preventing auto-login")
-                        sessionExpiredDetected = true
-                        lastSessionExpiredTime = System.currentTimeMillis()
-                        consecutiveLoginFailures++
-
-                        CookieManager.getInstance().removeSessionCookies(null)
-
-                        activity?.runOnUiThread {
-                            if (isFragmentActive && isAdded) {
-                                Toast.makeText(
-                                    requireContext(),
-                                    getString(R.string.moodle_session_expired_retry_later),
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                        return@checkSessionExpired
-                    }
-
-                    val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
-                    val hasCredentials = encryptedPrefs.contains("moodle_username") &&
-                            encryptedPrefs.contains("moodle_password")
-
-                    if (hasCredentials && !dontShowDialog && !isLoginDialogShown && !sessionExpiredDetected) {
-                        performAutoLogin()
-                    } else if (!hasCredentials && !dontShowDialog && !isLoginDialogShown) {
-                        val delay = if (loginRetryCount > 0) {
-                            loginRetryCount * 400L
-                        } else {
-                            0L
-                        }
-
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            if (!loginSuccessConfirmed && !isLoginDialogShown && !sessionExpiredDetected && isFragmentActive && isAdded) {
-                                showLoginDialog()
-                            }
-                        }, delay)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun isConfirmDialogPage(callback: (Boolean) -> Unit) {
-        val jsCode = """
-        (function() {
-            try {
-                var confirmHeader = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
-                    return true;
-                }
-                return false;
-            } catch(e) {
-                return false;
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            callback(result == "true")
-        }
-    }
-
-    private fun extractUsernameFromForm(callback: (String?) -> Unit) {
-        val jsCode = """
-        (function() {
-            try {
-                var usernameField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (usernameField && usernameField.value) {
-                    return usernameField.value.trim();
-                }
-                return '';
-            } catch(e) {
-                return '';
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            val username = result.replace("\"", "").trim()
-            callback(username.ifEmpty { null })
-        }
-    }
-
-    private fun checkLoginError(callback: (String?) -> Unit) {
-        val jsCode = """
-        (function() {
-            try {
-                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (errorDiv && errorDiv.classList.contains('alert') && errorDiv.classList.contains('alert-danger')) {
-                    var errorText = errorDiv.textContent.trim();
-                    return errorText;
-                }
-                return '';
-            } catch(e) {
-                return '';
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            val cleanResult = result.replace("\"", "").trim()
-            if (cleanResult.isEmpty() || cleanResult == "null") {
-                callback(null)
-            } else {
-                callback(cleanResult.ifEmpty { null })
-            }
-        }
-    }
-
-    private fun checkSessionExpired(callback: (Boolean) -> Unit) {
-        val jsCode = """
-    (function() {
-        try {
-            console.log('=== Checking for session expired ===');
-            console.log('Current URL: ' + window.location.href);
-            console.log('Document title: ' + document.title);
-            console.log('Referrer: ' + document.referrer);
-            
-            var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            
-            if (errorDiv && errorDiv.classList.contains('alert')) {
-                var errorText = errorDiv.textContent.trim().toLowerCase();
-                console.log('Found error alert: "' + errorText + '"');
-                
-                if (errorText.includes('sitzung') || errorText.includes('session') || 
-                    errorText.includes('expired') || errorText.includes('abgelaufen')) {
-                    console.log('*** SESSION EXPIRED DETECTED ***');
-                    return true;
-                }
-            }
-
-            if (window.location.href.includes('/login/')) {
-                console.log('*** ON LOGIN PAGE - Possible session loss ***');
-                var loginForm = document.querySelector('form[action*="login"]');
-                if (loginForm) {
-                    console.log('Login form detected - session likely expired');
-                }
-            }
-            
-            console.log('No session expiry detected');
-            return false;
-        } catch(e) {
-            console.error('Error checking session: ' + e.message);
-            return false;
-        }
-    })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            val isExpired = result == "true"
-            L.d("MoodleFragment", "Session expired check result: $isExpired")
-            L.d("MoodleFragment", "WebView URL when checking: ${webView.url}")
-            callback(isExpired)
-        }
-    }
-
-    private fun showLoginDialog() {
-        if (isLoginDialogShown) return
-
-        if (!isNetworkAvailable()) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
-            return
-        }
-
-        isLoginDialogShown = true
-        loginRetryCount++
-
-        val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_login, null)
-        val etUsername = dialogView.findViewById<EditText>(R.id.etUsername)
-        val etPassword = dialogView.findViewById<EditText>(R.id.etPassword)
-        val cbSaveCredentials = dialogView.findViewById<CheckBox>(R.id.cbSaveCredentials)
-        val cbDontShowAgain = dialogView.findViewById<CheckBox>(R.id.cbDontShowAgain)
-        val tvErrorMessage = dialogView.findViewById<TextView>(R.id.tvErrorMessage)
-        val btnTogglePassword = dialogView.findViewById<ImageButton>(R.id.btnTogglePasswordVisibility)
-
-        val monoFont = Typeface.MONOSPACE
-        etUsername.typeface = monoFont
-        etPassword.typeface = monoFont
-
-        cbSaveCredentials.isChecked = encryptedPrefs.contains("moodle_username")
-        cbDontShowAgain.isChecked = false
-
-        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
-            cbSaveCredentials.isChecked = false
-            cbDontShowAgain.isChecked = false
-        }
-
-        var isPasswordVisible = false
-        btnTogglePassword.setOnClickListener {
-            isPasswordVisible = !isPasswordVisible
-            if (isPasswordVisible) {
-                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                btnTogglePassword.setImageResource(R.drawable.ic_eye_open)
-            } else {
-                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-                btnTogglePassword.setImageResource(R.drawable.ic_eye_closed)
-            }
-            etPassword.typeface = monoFont
-            etPassword.setSelection(etPassword.text.length)
-        }
-
-        checkLoginError { errorMessage ->
-            if (errorMessage != null) {
-                tvErrorMessage.visibility = View.VISIBLE
-                tvErrorMessage.text = errorMessage
-            } else if (hasLoginFailed) {
-                tvErrorMessage.visibility = View.VISIBLE
-                tvErrorMessage.text = getString(R.string.moodle_login_failed)
-            } else {
-                tvErrorMessage.visibility = View.GONE
-            }
-
-            extractUsernameFromForm { extractedUsername ->
-                val savedUsername = if (encryptedPrefs.contains("moodle_username")) {
-                    encryptedPrefs.getString("moodle_username", "") ?: ""
-                } else ""
-
-                val usernameToShow = if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
-                    extractedUsername ?: ""
-                } else {
-                    extractedUsername ?: savedUsername
-                }
-
-                if (usernameToShow.isNotEmpty()) {
-                    etUsername.setText(usernameToShow)
-                }
-
-                val dialog = AlertDialog.Builder(requireContext())
-                    .setTitle(getString(R.string.moodle_auto_login_title))
-                    .setView(dialogView)
-                    .setPositiveButton(getString(R.string.moodle_continue)) { _, _ ->
-                        val username = etUsername.text.toString()
-                        val password = etPassword.text.toString()
-
-                        consecutiveLoginFailures = 0
-                        hasLoginFailed = false
-
-                        if (cbSaveCredentials.isChecked && username.isNotEmpty() && password.isNotEmpty()) {
-                            saveCredentials(username, password)
-                            L.d("MoodleFragment", "Credentials saved by user choice")
-                        } else {
-                            encryptedPrefs.edit {
-                                clear()
-                                apply()
-                            }
-                            L.d("MoodleFragment", "Credentials not saved or cleared")
-                        }
-
-                        if (cbDontShowAgain.isChecked) {
-                            sharedPrefs.edit {
-                                putBoolean("moodle_dont_show_login_dialog", true)
-                                apply()
-                            }
-                        } else {
-                            sharedPrefs.edit {
-                                remove("moodle_dont_show_login_dialog")
-                                apply()
-                            }
-                        }
-
-                        if (username.isNotEmpty() && password.isNotEmpty()) {
-                            fillLoginForm(username, password)
-                        }
-                    }
-                    .setNegativeButton(getString(R.string.moodle_cancel)) { _, _ ->
-                        isLoginDialogShown = false
-                        loginRetryCount = 0
-                        consecutiveLoginFailures = 0
-                    }
-                    .setOnDismissListener {
-                        isLoginDialogShown = false
-                    }
-                    .show()
-
-                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-            }
-        }
-    }
-
-    private fun saveCredentials(username: String, password: String) {
-        encryptedPrefs.edit {
-            putString("moodle_username", username)
-                .putString("moodle_password", password)
-        }
-    }
-
-    private fun performAutoLogin() {
-        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
-            L.d("MoodleFragment", "Skipping auto-login due to previous failures")
-            return
-        }
-
-        val username = encryptedPrefs.getString("moodle_username", "") ?: ""
-        val password = encryptedPrefs.getString("moodle_password", "") ?: ""
-
-        if (username.isNotEmpty() && password.isNotEmpty()) {
-            fillLoginForm(username, password)
-        }
-    }
-
-    private fun fillLoginForm(username: String, password: String) {
-        if (isLoginInProgress) {
-            L.d("MoodleFragment", "Login already in progress, ignoring duplicate call")
-            return
-        }
-
-        if (sessionExpiredDetected && System.currentTimeMillis() - lastSessionExpiredTime < SESSION_RETRY_DELAY) {
-            L.d("MoodleFragment", "Skipping login - session expired cooldown active")
-            Toast.makeText(requireContext(), getString(R.string.moodle_session_expired_wait), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (consecutiveLoginFailures >= MAX_LOGIN_ATTEMPTS) {
-            L.d("MoodleFragment", "Max failures reached - not attempting login")
-            return
-        }
-
-        if (isHandlingLogout) {
-            L.d("MoodleFragment", "Currently handling logout - not attempting login")
-            return
-        }
-
-        isLoginInProgress = true
-        loginAttemptCount++
-        L.d("MoodleFragment", "Starting login attempt #$loginAttemptCount")
-
-        fun escapeForJS(str: String): String {
-            return str
-                .replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("`", "\\`")
-                .replace("$", "\\$")
-                .replace("\t", "\\t")
-        }
-
-        val escapedUsername = escapeForJS(username)
-        val escapedPassword = escapeForJS(password)
-
-        L.d("MoodleFragment", "Username length: ${username.length}, Password length: ${password.length}")
-
-        val jsCode = """
-        (function() {
-            var usernameField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[1]/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            var passwordField = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[2]/div/input', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            var submitButton = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[3]/button', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-            if (!usernameField) usernameField = document.querySelector('input[name="username"], input[type="text"]');
-            if (!passwordField) passwordField = document.querySelector('input[name="password"], input[type="password"]');
-            if (!submitButton) submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
-            
-            if (usernameField && passwordField && submitButton) {
-                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                nativeInputValueSetter.call(usernameField, '$escapedUsername');
-                nativeInputValueSetter.call(passwordField, '$escapedPassword');
-
-                usernameField.dispatchEvent(new Event('input', { bubbles: true }));
-                passwordField.dispatchEvent(new Event('input', { bubbles: true }));
-
-                setTimeout(function() {
-                    submitButton.click();
-                }, 200);
-                
-                return true;
-            } else {
-                return false;
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            if (result == "false") {
-                isLoginInProgress = false
-                Toast.makeText(requireContext(), getString(R.string.moodle_login_form_not_found), Toast.LENGTH_SHORT).show()
-                isLoginDialogShown = false
-            } else {
-                L.d("MoodleFragment", "Login form submitted, waiting for response...")
-                Handler(Looper.getMainLooper()).postDelayed({
-                    checkLoginResult()
-                }, 1000)
-            }
-        }
-    }
-
-    private fun checkLoginResult() {
-        L.d("MoodleFragment", "Checking login result for attempt #$loginAttemptCount")
-
-        isUserLoggedIn { isLoggedIn ->
-            if (isLoggedIn) {
-                L.d("MoodleFragment", "Login successful!")
-                isLoginInProgress = false
-                loginAttemptCount = 0
-                loginRetryCount = 0
-                consecutiveLoginFailures = 0
-                sessionExpiredDetected = false
-                sessionExpiredRetryCount = 0
-                loginSuccessConfirmed = true
-                lastSuccessfulLoginCheck = System.currentTimeMillis()
-                isLoginDialogShown = false
-                Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
-                return@isUserLoggedIn
-            }
-
-            val jsCode = """
-        (function() {
-            try {
-                var errorDiv = document.evaluate('/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (errorDiv && errorDiv.textContent && errorDiv.textContent.trim() !== '') {
-                    return errorDiv.textContent.trim();
-                }
-                return '';
-            } catch(e) {
-                return '';
-            }
-        })();
-    """.trimIndent()
-
-            webView.evaluateJavascript(jsCode) { result ->
-                val errorMessage = result.replace("\"", "").trim()
-
-                if (errorMessage.isNotEmpty() && errorMessage != "null") {
-                    L.e("MoodleFragment", "Login error detected: $errorMessage")
-
-                    val isInvalidCredentials = errorMessage.contains("Ungültige", ignoreCase = true) ||
-                            errorMessage.contains("Invalid", ignoreCase = true) ||
-                            errorMessage.contains("falsch", ignoreCase = true)
-
-                    val isSessionExpired = errorMessage.lowercase().let { msg ->
-                        msg.contains("sitzung") || msg.contains("session") ||
-                                msg.contains("expired") || msg.contains("abgelaufen")
-                    }
-
-                    if (isInvalidCredentials) {
-                        L.e("MoodleFragment", "Invalid credentials - stopping all attempts")
-                        isLoginInProgress = false
-                        loginAttemptCount = 0
-                        loginRetryCount = 0
-                        consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
-                        sessionExpiredRetryCount = 0
-                        hasLoginFailed = true
-                        isLoginDialogShown = false
-                        loginSuccessConfirmed = false
-
-                        encryptedPrefs.edit { clear() }
-                        sharedPrefs.edit {
-                            remove("moodle_dont_show_login_dialog")
-                        }
-
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            if (!isLoginDialogShown) {
-                                showLoginDialog()
-                            }
-                        }, 500)
-
-                    } else if (isSessionExpired) {
-                        if (sessionExpiredRetryCount == 0) {
-                            L.d("MoodleFragment", "Session expired - retrying once")
-                            sessionExpiredRetryCount = 1
-                            isLoginInProgress = false
-
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                val username = encryptedPrefs.getString("moodle_username", "") ?: ""
-                                val password = encryptedPrefs.getString("moodle_password", "") ?: ""
-                                if (username.isNotEmpty() && password.isNotEmpty()) {
-                                    fillLoginForm(username, password)
-                                }
-                            }, 2000)
-                        } else {
-                            L.e("MoodleFragment", "Session expired on retry - entering cooldown")
-                            isLoginInProgress = false
-                            loginAttemptCount = 0
-                            sessionExpiredDetected = true
-                            sessionExpiredRetryCount = 0
-                            lastSessionExpiredTime = System.currentTimeMillis()
-                            hasLoginFailed = true
-                            isLoginDialogShown = false
-
-                            activity?.runOnUiThread {
-                                Toast.makeText(
-                                    requireContext(),
-                                    getString(R.string.moodle_session_expired_retry_later),
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    } else {
-                        L.e("MoodleFragment", "Unknown error - stopping")
-                        isLoginInProgress = false
-                        loginAttemptCount = 0
-                        sessionExpiredRetryCount = 0
-                        consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
-                        hasLoginFailed = true
-                        isLoginDialogShown = false
-                    }
-                } else {
-                    L.w("MoodleFragment", "No error message found, login status unclear")
-                    isLoginInProgress = false
-                    sessionExpiredRetryCount = 0
-                    hasLoginFailed = true
-                    isLoginDialogShown = false
-                }
-            }
         }
     }
 
@@ -2631,6 +4917,143 @@ class MoodleFragment : Fragment() {
         }
         popup.show()
     }
+
+    private fun showBackButtonMenu() {
+        val popup = PopupMenu(requireContext(), btnBack)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_forward)).apply {
+            setIcon(R.drawable.ic_arrow_forward)
+            isEnabled = webView.canGoForward()
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (_: Exception) {
+            // icons wont show but button will work anyways
+        }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    if (webView.canGoForward()) {
+                        webView.goForward()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun showGlobeButtonMenu() {
+        val currentUrl = webView.url
+        if (currentUrl.isNullOrBlank()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_no_url), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val popup = PopupMenu(requireContext(), btnOpenInBrowser)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_in_new_tab)).apply {
+            setIcon(R.drawable.ic_tab_background)
+        }
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_copy_url)).apply {
+            setIcon(R.drawable.ic_import_clipboard)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (_: Exception) {
+            // icons wont show but button will work anyways
+        }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    createNewTab(currentUrl)
+                    Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show() // strings.xml
+                    true
+                }
+                2 -> {
+                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText(getString(R.string.moodle_url), currentUrl)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    //endregion
+
+    //region **NAVIGATION**
+
+    private fun navigateToUrl(userInput: String) {
+        val url = when {
+            userInput.startsWith(moodleBaseUrl) -> {
+                userInput
+            }
+            userInput.startsWith("https://moodle.kleyer.eu/") -> {
+                userInput
+            }
+            else -> {
+                "$moodleBaseUrl/$userInput"
+            }
+        }
+
+        if (url.startsWith(moodleBaseUrl)) {
+            loadUrlInBackground(url)
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.moodle_invalid_url), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun loadUrlInBackground(url: String) {
+        if (isPdfTab(currentTabIndex)) {
+            saveCurrentTabState()
+
+            val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+            if (defaultTabIndex != -1) {
+                currentTabIndex = defaultTabIndex
+                switchToTab(defaultTabIndex)
+            } else {
+                val newTab = TabInfo(
+                    url = url,
+                    title = getString(R.string.act_set_loading)
+                )
+                tabs.add(newTab)
+                currentTabIndex = tabs.size - 1
+            }
+
+            webView.visibility = View.VISIBLE
+            pdfContainer.visibility = View.GONE
+            textViewerContainer.visibility = View.GONE
+            webControlsLayout.visibility = View.VISIBLE
+            pdfControlsLayout.visibility = View.GONE
+            btnBack.visibility = View.VISIBLE
+        }
+
+        showLoadingBar()
+        webView.loadUrl(url)
+    }
+
+    //endregion
+
+    //region **DATA**
 
     fun clearMoodleCache() {
         try {
@@ -2772,22 +5195,31 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        isFragmentActive = true
-        setupSharedPreferences()
-        performPeriodicCacheCleanup()
+    private fun cleanupTemporaryPdfs() {
+        try {
+            context?.let { ctx ->
+                val cacheDir = ctx.cacheDir
+                val currentTime = System.currentTimeMillis()
+                val maxAge = 24 * 60 * 60 * 1000L
 
-        if (webView.url == loginUrl) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                isConfirmDialogPage { isConfirmDialog ->
-                    if (!isConfirmDialog) {
-                        checkAutoLogin()
+                cacheDir.listFiles()?.filter { file ->
+                    file.name.startsWith("moodle_pdf_") &&
+                            (currentTime - file.lastModified()) > maxAge
+                }?.forEach { file ->
+                    try {
+                        file.delete()
+                        L.d("MoodleFragment", "Deleted old cached PDF: ${file.name}")
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Failed to delete cached PDF: ${file.name}", e)
                     }
                 }
-            }, 500)
+            }
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error cleaning temporary PDFs", e)
         }
     }
+
+    //endregion
 
     private fun isDownloadableFile(url: String): Boolean {
         val fileExtensions = listOf(
@@ -2804,17 +5236,6 @@ class MoodleFragment : Fragment() {
             startActivity(intent)
         } catch (_: Exception) {
             Toast.makeText(requireContext(), getString(R.string.moodle_browser_open_failed), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
-        val typedValue = TypedValue()
-        val theme = theme
-        theme.resolveAttribute(attrRes, typedValue, true)
-        return if (typedValue.resourceId != 0) {
-            ContextCompat.getColor(this, typedValue.resourceId)
-        } else {
-            typedValue.data
         }
     }
 
@@ -2902,6 +5323,29 @@ class MoodleFragment : Fragment() {
         }
 
         return false
+    }
+
+    //region **CALENDAR**
+
+    private fun refreshCalendarDataInBackground() {
+        try {
+            L.d("MoodleFragment", "Starting calendar data refresh...")
+
+            if (!isFragmentActive || !isAdded) {
+                L.d("MoodleFragment", "Fragment not active, skipping calendar refresh")
+                return
+            }
+
+            activity?.runOnUiThread {
+                if (!isFragmentActive || !isAdded) {
+                    L.d("MoodleFragment", "Fragment detached during calendar refresh")
+                    return@runOnUiThread
+                }
+                refreshCalendarDataViaForm()
+            }
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error in background calendar refresh", e)
+        }
     }
 
     private fun refreshCalendarDataViaForm() {
@@ -3325,54 +5769,9 @@ class MoodleFragment : Fragment() {
             .trim()
     }
 
-    private fun cleanupTemporaryPdfs() {
-        try {
-            context?.let { ctx ->
-                val cacheDir = ctx.cacheDir
-                val currentTime = System.currentTimeMillis()
-                val maxAge = 24 * 60 * 60 * 1000L
+    //endregion
 
-                cacheDir.listFiles()?.filter { file ->
-                    file.name.startsWith("moodle_pdf_") &&
-                            (currentTime - file.lastModified()) > maxAge
-                }?.forEach { file ->
-                    try {
-                        file.delete()
-                        L.d("MoodleFragment", "Deleted old cached PDF: ${file.name}")
-                    } catch (e: Exception) {
-                        L.e("MoodleFragment", "Failed to delete cached PDF: ${file.name}", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error cleaning temporary PDFs", e)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-
-        stopDialogButtonMonitoring()
-        stopMessageInputMonitoring()
-        messageInputDialog?.dismiss()
-        wasOnLogoutConfirmPage = false
-        logoutConfirmPageUrl = ""
-        isHandlingLogout = false
-
-        pdfViewerManager?.closePdf()
-        resetDefaultTabToLogin()
-        savePinnedTabs()
-        tabs.forEach { it.thumbnail?.recycle() }
-        pdfRenderer?.close()
-        backgroundExecutor.shutdown()
-        cleanupRefreshIndicator()
-        scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
-        scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
-        cleanupFetchProcess()
-        cleanupTemporaryPdfs()
-        textViewerManager = null
-        textSearchDialog?.dismiss()
-    }
+    //region **CAL_SEARCH**
 
     private fun resetSearchState() {
         val jsCode = """
@@ -3442,14 +5841,6 @@ class MoodleFragment : Fragment() {
         searchProgressDialog?.dismiss()
         searchProgressDialog = null
         searchCancelled = false
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun searchForMoodleEntry(category: String, summary: String, entryId: String) {
@@ -4030,6 +6421,10 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    //endregion
+
+    //region **REFRESH_INDICATOR**
+
     private fun createRefreshIndicator() {
         refreshContainer?.visibility = View.VISIBLE
         refreshIndicator?.apply {
@@ -4286,6 +6681,15 @@ class MoodleFragment : Fragment() {
                 return
             }
 
+            val currentUrl = webView.url ?: ""
+            if (currentUrl.contains("/message/index.php")) {
+                isAtTop = false
+                if (extendedHeaderLayout.isVisible) {
+                    hideExtendedHeaderWithAnimation()
+                }
+                return
+            }
+
             val currentScrollY = webView.scrollY
             val shouldBeAtTop = currentScrollY <= scrollThreshold
 
@@ -4299,85 +6703,9 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun showBackButtonMenu() {
-        val popup = PopupMenu(requireContext(), btnBack)
+    //endregion
 
-        popup.menu.add(0, 1, 0, getString(R.string.moodle_forward)).apply {
-            setIcon(R.drawable.ic_arrow_forward)
-            isEnabled = webView.canGoForward()
-        }
-
-        try {
-            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
-            fieldMPopup.isAccessible = true
-            val mPopup = fieldMPopup.get(popup)
-            mPopup.javaClass
-                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
-                .invoke(mPopup, true)
-        } catch (_: Exception) {
-            // icons wont show but button will work anyways
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> {
-                    if (webView.canGoForward()) {
-                        webView.goForward()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
-    }
-
-    private fun showGlobeButtonMenu() {
-        val currentUrl = webView.url
-        if (currentUrl.isNullOrBlank()) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_no_url), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val popup = PopupMenu(requireContext(), btnOpenInBrowser)
-
-        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_in_new_tab)).apply {
-            setIcon(R.drawable.ic_tab_background)
-        }
-        popup.menu.add(0, 2, 0, getString(R.string.moodle_copy_url)).apply {
-            setIcon(R.drawable.ic_import_clipboard)
-        }
-
-        try {
-            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
-            fieldMPopup.isAccessible = true
-            val mPopup = fieldMPopup.get(popup)
-            mPopup.javaClass
-                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
-                .invoke(mPopup, true)
-        } catch (_: Exception) {
-            // icons wont show but button will work anyways
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> {
-                    createNewTab(currentUrl)
-                    Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show() // strings.xml
-                    true
-                }
-                2 -> {
-                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText(getString(R.string.moodle_url), currentUrl)
-                    clipboard.setPrimaryClip(clip)
-                    Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
-    }
+    //region **WEBVIEW**
 
     private fun parseDocxToText(inputStream: InputStream): String? {
         try {
@@ -4650,294 +6978,609 @@ class MoodleFragment : Fragment() {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
-    private fun initializeTabSystem() {
-        isCompactTabLayout = sharedPrefs.getBoolean("moodle_tab_layout_compact", false)
+    private fun resetWebViewState() {
+        activity?.runOnUiThread {
+            try {
+                webView.stopLoading()
 
-        tabs.clear()
+                webView.clearView()
+                webView.clearHistory()
+                webView.clearCache(true)
+                webView.clearFormData()
 
-        val defaultTab = TabInfo(
-            id = "default_tab",
-            url = loginUrl,
-            title = "Moodle",
-            isPinned = false,
-            isDefault = true,
-            thumbnail = null,
-            webViewState = null
-        )
-        tabs.add(defaultTab)
-        currentTabIndex = 0
-
-        loadSavedTabs()
-
-        L.d("MoodleFragment", "Initialized tab system with ${tabs.size} tabs (clean default tab)")
-    }
-
-    private fun savePinnedTabs() {
-        val pinnedTabs = tabs.filter { it.isPinned && !it.isDefault }
-        val jsonArray = JSONArray()
-
-        pinnedTabs.forEach { tab ->
-            val tabJson = JSONObject().apply {
-                put("id", tab.id)
-                put("url", tab.url)
-                put("title", tab.title)
-                put("isPinned", true)
-                put("createdAt", tab.createdAt)
-
-                if (tab.id.startsWith(PDF_TAB_PREFIX)) {
-                    tab.webViewState?.let { bundle ->
-                        put("pdf_file_path", bundle.getString("pdf_file_path"))
-                        put("pdf_current_page", bundle.getInt("pdf_current_page", 0))
-                        put("pdf_scroll_mode", bundle.getBoolean("pdf_scroll_mode", true))
-                        put("pdf_dark_mode", bundle.getBoolean("pdf_dark_mode", false))
-                    }
+                webView.setInitialScale(0)
+                webView.settings.apply {
+                    loadWithOverviewMode = true
+                    useWideViewPort = true
+                    setSupportZoom(true)
+                    builtInZoomControls = true
+                    displayZoomControls = false
                 }
 
-                tab.thumbnail?.let { bitmap ->
-                    try {
-                        val outputStream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
-                        val base64 = Base64.encodeToString(
-                            outputStream.toByteArray(),
-                            Base64.DEFAULT
-                        )
-                        put("thumbnail", base64)
-                    } catch (e: Exception) {
-                        L.e("MoodleFragment", "Error saving thumbnail", e)
-                    }
-                }
-            }
-            jsonArray.put(tabJson)
-        }
+                webView.layoutParams = webView.layoutParams
+                webView.requestLayout()
 
-        sharedPrefs.edit {
-            putString("saved_tabs", jsonArray.toString())
-        }
-        L.d("MoodleFragment", "Saved ${pinnedTabs.size} pinned tabs (excluding default)")
-    }
-
-    private fun loadSavedTabs() {
-        val savedTabsJson = sharedPrefs.getString("saved_tabs", null) ?: return
-
-        try {
-            val jsonArray = JSONArray(savedTabsJson)
-            L.d("MoodleFragment", "Loading ${jsonArray.length()} saved tabs")
-
-            val loadedTabs = mutableListOf<TabInfo>()
-
-            for (i in 0 until jsonArray.length()) {
-                val tabJson = jsonArray.getJSONObject(i)
-                val tabId = tabJson.getString("id")
-
-                if (tabId == "default_tab") continue
-                if (!tabJson.optBoolean("isPinned", false)) continue
-
-                val thumbnail = try {
-                    val base64 = tabJson.optString("thumbnail", "")
-                    if (base64.isNotEmpty()) {
-                        val decodedBytes = Base64.decode(base64, Base64.DEFAULT)
-                        BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-                    } else null
-                } catch (e: Exception) {
-                    L.e("MoodleFragment", "Error decoding thumbnail", e)
-                    null
-                }
-
-                val webViewState = if (tabId.startsWith(PDF_TAB_PREFIX)) {
-                    Bundle().apply {
-                        putString("pdf_file_path", tabJson.optString("pdf_file_path"))
-                        putInt("pdf_current_page", tabJson.optInt("pdf_current_page", 0))
-                        putBoolean("pdf_scroll_mode", tabJson.optBoolean("pdf_scroll_mode", true))
-                        putBoolean("pdf_dark_mode", tabJson.optBoolean("pdf_dark_mode", false))
-                    }
-                } else null
-
-                loadedTabs.add(TabInfo(
-                    id = tabId,
-                    url = tabJson.getString("url"),
-                    title = tabJson.getString("title"),
-                    isPinned = true,
-                    isDefault = false,
-                    thumbnail = thumbnail,
-                    webViewState = webViewState,
-                    createdAt = tabJson.optLong("createdAt", System.currentTimeMillis())
-                ))
-            }
-
-            tabs.addAll(loadedTabs)
-            L.d("MoodleFragment", "Loaded ${loadedTabs.size} pinned tabs")
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error loading saved tabs", e)
-        }
-    }
-
-    private fun captureWebViewThumbnail(): Bitmap? {
-        try {
-            if (webView.width <= 0 || webView.height <= 0) {
-                L.w("MoodleFragment", "WebView has invalid dimensions: ${webView.width}x${webView.height}")
-                return null
-            }
-
-            val bitmap = createBitmap(webView.width, webView.height)
-            val canvas = Canvas(bitmap)
-            webView.draw(canvas)
-
-            val scaledBitmap = bitmap.scale(bitmap.width / 4, bitmap.height / 4)
-            bitmap.recycle()
-            return scaledBitmap
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error capturing thumbnail", e)
-            return null
-        }
-    }
-
-    private fun saveCurrentTabState() {
-        if (currentTabIndex in tabs.indices) {
-            val currentTab = tabs[currentTabIndex]
-
-            if (isPdfTab(currentTabIndex)) {
-                val pdfState = pdfViewerManager?.getCurrentState()
-                val bundle = Bundle().apply {
-                    putString("pdf_file_path", pdfState?.file?.absolutePath)
-                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
-                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
-                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
-                }
-
-                tabs[currentTabIndex] = currentTab.copy(
-                    url = currentTab.url,
-                    title = currentTab.title,
-                    thumbnail = capturePdfThumbnail(),
-                    webViewState = bundle
-                )
-            } else {
-                val bundle = Bundle()
-                webView.saveState(bundle)
-
-                tabs[currentTabIndex] = currentTab.copy(
-                    url = webView.url ?: currentTab.url,
-                    title = webView.title ?: currentTab.title,
-                    thumbnail = captureWebViewThumbnail(),
-                    webViewState = bundle
-                )
-            }
-
-            savePinnedTabs()
-        }
-    }
-
-    private fun capturePdfThumbnail(): Bitmap? {
-        return try {
-            val bitmap = pdfViewerManager?.renderPage(0)
-            bitmap?.scale(bitmap.width / 4, bitmap.height / 4)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun switchToTab(index: Int) {
-        if (index !in tabs.indices) return
-
-        if (index == currentTabIndex) {
-            L.d("MoodleFragment", "Already on tab $index, skipping switch")
-            return
-        }
-
-        L.d("MoodleFragment", "Switching from tab $currentTabIndex to tab $index")
-
-        saveCurrentTabState()
-
-        val previousIndex = currentTabIndex
-        currentTabIndex = index
-
-        val tab = tabs[index]
-
-        if (isTextViewerMode) {
-            isTextViewerMode = false
-            textViewerContainer.visibility = View.GONE
-            textViewerManager = null
-        }
-
-        if (isPdfTab(index)) {
-            loadPdfTab(tab)
-        } else {
-            if (isPdfTab(previousIndex)) {
-                pdfViewerManager?.closePdf()
-                pdfViewerManager = null
-                pdfFileUrl = null
-            }
-
-            activity?.runOnUiThread {
+                isDarkModeReady = false
+                pendingDarkModeUrl = null
                 webView.visibility = View.VISIBLE
-                pdfContainer.visibility = View.GONE
-                textViewerContainer.visibility = View.GONE
-                webControlsLayout.visibility = View.VISIBLE
-                pdfControlsLayout.visibility = View.GONE
-                btnBack.visibility = View.VISIBLE
-                btnOpenInBrowser.visibility = View.VISIBLE
-            }
 
-            if (tab.webViewState != null) {
-                webView.restoreState(tab.webViewState)
-            } else {
-                webView.loadUrl(tab.url)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error resetting WebView state", e)
+            }
+        }
+    }
+
+    private fun handleInterceptedDownload(
+        url: String,
+        cookies: String?,
+        contentDisposition: String = "",
+        mimetype: String? = null
+    ) {
+        L.d("MoodleFragment", "Handling intercepted download")
+
+        val fileName = when {
+            contentDisposition.contains("filename=") -> {
+                val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
+                match?.groupValues?.get(1) ?: ""
+            }
+            else -> {
+                try {
+                    URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                } catch (_: Exception) {
+                    ""
+                }
             }
         }
 
-        updateUIState()
-        updateDashboardButtonIcon()
+        val isPdf = mimetype == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)
+        val isDocx = mimetype?.contains("wordprocessingml") == true ||
+                fileName.endsWith(".docx", ignoreCase = true)
 
-        L.d("MoodleFragment", "Switch complete - now on tab $currentTabIndex showing ${tab.url}")
+        when {
+            isPdf && tabs.size < MAX_TABS -> handlePdfForViewerWithCookies(url, cookies)
+            isDocx && tabs.size < MAX_TABS -> handleDocxFile(url, cookies, forceDownload = false)
+            else -> downloadToDeviceWithCookies(url, cookies, contentDisposition)
+        }
     }
 
-    private fun loadPdfTab(tab: TabInfo) {
-        val pdfFilePath = tab.webViewState?.getString("pdf_file_path")
-        pdfFileUrl = tab.webViewState?.getString("pdf_url") ?: tab.url
+    private fun downloadToDeviceWithCookies(url: String, cookies: String?, contentDisposition: String = "") {
+        try {
+            val request = DownloadManager.Request(url.toUri())
 
-        if (pdfFilePath != null) {
-            val pdfFile = File(pdfFilePath)
+            var fileName = URLUtil.guessFileName(url, contentDisposition, null)
+            if (fileName.isBlank()) {
+                fileName = try {
+                    val decodedUrl = URLDecoder.decode(url, "UTF-8")
+                    decodedUrl.substringAfterLast("/").substringBefore("?")
+                } catch (_: Exception) {
+                    "moodle_file_${System.currentTimeMillis()}"
+                }
+            }
 
-            if (pdfFile.exists()) {
-                pdfViewerManager?.closePdf()
-                pdfViewerManager = null
+            request.setTitle(fileName)
+            request.setDescription("Moodle Download")
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            request.setAllowedOverMetered(true)
+            request.setAllowedOverRoaming(true)
 
-                pdfViewerManager = PdfViewerManager(requireContext())
+            if (!cookies.isNullOrBlank()) {
+                request.addRequestHeader("Cookie", cookies)
+                L.d("MoodleFragment", "Added cookies to download: ${cookies.take(50)}...")
+            } else {
+                L.w("MoodleFragment", "WARNING: No cookies available for download!")
+            }
 
-                if (pdfViewerManager?.openPdf(pdfFile) == true) {
-                    val savedPage = tab.webViewState.getInt("pdf_current_page", 0)
-                    val scrollMode = tab.webViewState.getBoolean("pdf_scroll_mode", true)
-                    val darkMode = tab.webViewState.getBoolean("pdf_dark_mode", isDarkTheme)
+            request.addRequestHeader("User-Agent", userAgent)
+            request.addRequestHeader("Referer", moodleBaseUrl)
+            request.addRequestHeader("Accept", "*/*")
 
-                    if (darkMode != (pdfViewerManager?.forceDarkMode ?: false)) {
-                        pdfViewerManager?.toggleDarkMode()
+            val downloadManager = requireContext().getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val downloadId = downloadManager.enqueue(request)
+
+            L.d("MoodleFragment", "Download enqueued with ID: $downloadId")
+            Toast.makeText(requireContext(), getString(R.string.moodle_download_started, fileName), Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Download failed", e)
+            Toast.makeText(requireContext(), getString(R.string.moodle_download_failed, e.message), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
+        if (pdfFileUrl == null) {
+            pdfFileUrl = viewUrl
+        }
+
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
+                L.d("MoodleFragment", "Initial URL: $viewUrl")
+                L.d("MoodleFragment", "Force download to device: $forceDownload")
+
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                L.d("MoodleFragment", "Fresh cookies from CookieManager: ${freshCookies != null}")
+                if (cookiesToUse != null) {
+                    L.d("MoodleFragment", "Cookie preview: ${cookiesToUse.take(100)}...")
+                } else {
+                    L.e("MoodleFragment", "ERROR: No cookies available!")
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available. Please reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@execute
+                }
+
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+                var contentType: String? = null
+                var contentDisposition: String? = null
+
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "--- Redirect attempt $redirectCount ---")
+                    L.d("MoodleFragment", "Current URL: $currentUrl")
+
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page - session may have expired")
+
+                        activity?.runOnUiThread {
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveDownloadUrl(viewUrl, newCookies, forceDownload)
+                                }, 1000)
+                            }
+                        }
+                        return@execute
                     }
 
-                    pdfViewerManager?.setCurrentPage(savedPage)
-                    if (!scrollMode) pdfViewerManager?.toggleScrollMode()
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
 
-                    webView.visibility = View.GONE
-                    pdfContainer.visibility = View.VISIBLE
-                    webControlsLayout.visibility = View.GONE
-                    pdfControlsLayout.visibility = View.VISIBLE
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
 
-                    btnBack.visibility = View.GONE
-                    btnOpenInBrowser.visibility = View.VISIBLE
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Response code: $responseCode")
 
-                    setupPdfControls()
-                    renderPdfContent()
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            L.d("MoodleFragment", "Got redirect to: $location")
 
-                    isAtTop = true
-                    showExtendedHeaderWithAnimation()
-                } else {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_load_failed), Toast.LENGTH_SHORT).show()
-                    closeTab(currentTabIndex)
+                            val setCookie = conn.getHeaderField("Set-Cookie")
+                            if (setCookie != null) {
+                                L.d("MoodleFragment", "Server set new cookie: ${setCookie.take(100)}...")
+                            }
+
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "ERROR: Redirect without Location header")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            contentType = conn.getHeaderField("Content-Type")
+                            contentDisposition = conn.getHeaderField("Content-Disposition")
+                            L.d("MoodleFragment", "SUCCESS: Found final file")
+                            L.d("MoodleFragment", "Final URL: $finalUrl")
+                            L.d("MoodleFragment", "Content-Type: $contentType")
+                            L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
+                            conn.disconnect()
+                            break
+                        }
+                        401, 403 -> {
+                            L.e("MoodleFragment", "ERROR: Authentication failed (code $responseCode)")
+                            conn.disconnect()
+
+                            activity?.runOnUiThread {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Session expired. Please reload the page.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            return@execute
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "ERROR: Unexpected response code: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
                 }
-            } else {
-                Toast.makeText(requireContext(), getString(R.string.moodle_pdf_file_not_found), Toast.LENGTH_SHORT).show()
-                closeTab(currentTabIndex)
+
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
+                    pdfFileUrl = finalUrl
+
+                    activity?.runOnUiThread {
+                        if (forceDownload) {
+                            downloadToDeviceWithCookies(finalUrl, cookiesToUse, contentDisposition ?: "")
+                        } else {
+                            handleInterceptedDownload(finalUrl, cookiesToUse, contentDisposition ?: "", contentType)
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "FAILED: Could not resolve after $redirectCount attempts")
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve download URL. Try again or reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "EXCEPTION in resolveDownloadUrl", e)
+                activity?.runOnUiThread {
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }
+
+    private fun resolveAndParseDocument(viewUrl: String, cookies: String?, progressDialog: AlertDialog) {
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Resolving document for parsing ===")
+                L.d("MoodleFragment", "View URL: $viewUrl")
+
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                if (cookiesToUse == null) {
+                    L.e("MoodleFragment", "No cookies available for parsing")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    return@execute
+                }
+
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "Parse redirect attempt $redirectCount: $currentUrl")
+
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page during parsing")
+
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newProgressDialog = AlertDialog.Builder(requireContext())
+                                        .setMessage(getString(R.string.moodle_parsing_document))
+                                        .setCancelable(false)
+                                        .show()
+
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveAndParseDocument(viewUrl, newCookies, newProgressDialog)
+                                }, 1000)
+                            }
+                        }
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "*/*")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Parse redirect response: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "Redirect without location")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            L.d("MoodleFragment", "Found final document URL: $finalUrl")
+                            conn.disconnect()
+                            break
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unexpected response: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                }
+
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "Downloading and parsing: $finalUrl")
+                    downloadAndParseDocumentWithCookies(finalUrl, cookiesToUse) { text ->
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            if (text != null) {
+                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "Failed to resolve document URL")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve file URL for parsing",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error resolving document", e)
+                activity?.runOnUiThread {
+                    progressDialog.dismiss()
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun downloadAndParseDocumentWithCookies(url: String, cookies: String?, callback: (String?) -> Unit) {
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Downloading document for parsing ===")
+                L.d("MoodleFragment", "URL: $url")
+
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (!cookies.isNullOrBlank()) {
+                    connection.setRequestProperty("Cookie", cookies)
+                }
+
+                connection.setRequestProperty("User-Agent", userAgent)
+                connection.setRequestProperty("Referer", moodleBaseUrl)
+                connection.setRequestProperty("Accept", "*/*")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.instanceFollowRedirects = false
+
+                val responseCode = connection.responseCode
+                L.d("MoodleFragment", "Download response code: $responseCode")
+
+                if (responseCode == 200) {
+                    val contentType = connection.getHeaderField("Content-Type")
+                    L.d("MoodleFragment", "Content-Type: $contentType")
+
+                    val inputStream = connection.inputStream
+                    val text = when {
+                        url.endsWith(".pdf", ignoreCase = true) -> {
+                            L.d("MoodleFragment", "Parsing as PDF")
+                            try {
+                                val pdfReader = PdfReader(inputStream)
+                                val textBuilder = StringBuilder()
+
+                                for (page in 1..pdfReader.numberOfPages) {
+                                    val strategy = LocationTextExtractionStrategy()
+                                    val pageText = PdfTextExtractor.getTextFromPage(
+                                        pdfReader,
+                                        page,
+                                        strategy
+                                    )
+                                    textBuilder.append(pageText)
+                                    if (page < pdfReader.numberOfPages) {
+                                        textBuilder.append("\n\n--- Page ${page + 1} ---\n\n")
+                                    }
+                                }
+
+                                pdfReader.close()
+                                val result = textBuilder.toString()
+                                L.d("MoodleFragment", "PDF parsed successfully, ${result.length} chars")
+                                result
+                            } catch (e: Exception) {
+                                L.e("MoodleFragment", "Error parsing PDF", e)
+                                null
+                            }
+                        }
+                        url.endsWith(".docx", ignoreCase = true) -> {
+                            L.d("MoodleFragment", "Parsing as DOCX")
+                            val result = parseDocxToText(inputStream)
+                            if (result != null) {
+                                L.d("MoodleFragment", "DOCX parsed successfully, ${result.length} chars")
+                            } else {
+                                L.e("MoodleFragment", "DOCX parsing returned null")
+                            }
+                            result
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unknown file type for URL: $url")
+                            null
+                        }
+                    }
+
+                    inputStream.close()
+                    connection.disconnect()
+                    callback(text)
+                } else {
+                    L.e("MoodleFragment", "Document download failed with code: $responseCode")
+                    connection.disconnect()
+                    callback(null)
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Exception downloading document", e)
+                callback(null)
+            }
+        }
+    }
+
+    private fun showLoadingBar() {
+        if (loadingBarContainer.isVisible) return
+
+        val animationsEnabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            loadingBarContainer.visibility = View.VISIBLE
+            loadingBarContainer.measure(
+                View.MeasureSpec.makeMeasureSpec((loadingBarContainer.parent as View).width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            val targetHeight = loadingBarContainer.measuredHeight
+
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = 0
+            loadingBarContainer.layoutParams = layoutParams
+
+            ValueAnimator.ofInt(0, targetHeight).apply {
+                duration = 200
+                interpolator = DecelerateInterpolator()
+
+                addUpdateListener { animator ->
+                    val animatedHeight = animator.animatedValue as Int
+                    layoutParams.height = animatedHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                doOnEnd {
+                    layoutParams.height = targetHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                start()
+            }
+        } else {
+            loadingBarContainer.visibility = View.VISIBLE
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            loadingBarContainer.layoutParams = layoutParams
+        }
+    }
+
+    private fun hideLoadingBar() {
+        if (loadingBarContainer.visibility != View.VISIBLE) return
+
+        val animationsEnabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            val currentHeight = loadingBarContainer.height
+            val layoutParams = loadingBarContainer.layoutParams
+
+            ValueAnimator.ofInt(currentHeight, 0).apply {
+                duration = 200
+                interpolator = AccelerateInterpolator()
+
+                addUpdateListener { animator ->
+                    val animatedHeight = animator.animatedValue as Int
+                    layoutParams.height = animatedHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                doOnEnd {
+                    loadingBarContainer.visibility = View.GONE
+                    layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    loadingBarContainer.layoutParams = layoutParams
+                    horizontalProgressBar.progress = 0
+                }
+
+                start()
+            }
+        } else {
+            loadingBarContainer.visibility = View.GONE
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            loadingBarContainer.layoutParams = layoutParams
+            horizontalProgressBar.progress = 0
+        }
+    }
+
+    private fun showImagePageDialog(url: String) { // may be temporary, as i cant figure out how to preserve session cookies on moodle image pages
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_image_page_detected))
+            .setMessage(getString(R.string.moodle_image_page_message))
+            .setPositiveButton(getString(R.string.moodle_open_browser)) { _, _ ->
+                openInExternalBrowser(url)
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+            .apply {
+                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+                getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
+    }
+
+    //endregion
+
+    //region **PDF_VIEWER**
 
     private fun setupPdfControls() {
         btnOpenInBrowser2.setOnClickListener {
@@ -5129,866 +7772,97 @@ class MoodleFragment : Fragment() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupSwipeGestures() {
+        setupPdfZoom()
+
         var startX = 0f
         var startY = 0f
+        var hasMoved = false
+        var initialPointerCount = 0
 
-        pdfSinglePageView.setOnTouchListener { _, event ->
-            when (event.action) {
+        pdfSinglePageView.setOnTouchListener { view, event ->
+            val scaleHandled = pdfScaleDetector?.onTouchEvent(event) ?: false
+
+            when (event.action and MotionEvent.ACTION_MASK) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.x
                     startY = event.y
+                    pdfSwipeStartX = event.x
+                    isPdfSwiping = false
+                    hasMoved = false
+                    initialPointerCount = event.pointerCount
+
+                    zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    val deltaX = event.x - startX
-                    val deltaY = event.y - startY
-
-                    if (abs(deltaX) > abs(deltaY) && abs(deltaX) > 100) {
-                        if (deltaX > 0) {
-                            // swipe right -> previous page
-                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
-                            if (currentPage > 0) {
-                                pdfViewerManager?.setCurrentPage(currentPage - 1)
-                                renderSinglePdfPage(currentPage - 1)
-                                updatePdfControls()
-                            }
-                        } else {
-                            // swipe left -> next page
-                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
-                            val pageCount = pdfViewerManager?.getPageCount() ?: 0
-                            if (currentPage < pageCount - 1) {
-                                pdfViewerManager?.setCurrentPage(currentPage + 1)
-                                renderSinglePdfPage(currentPage + 1)
-                                updatePdfControls()
-                            }
-                        }
-                    }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    hidePdfSwipeIndicator()
+                    isPdfSwiping = false
                     true
                 }
-                else -> false
-            }
-        }
-    }
-
-    private fun createNewTab(url: String = "$moodleBaseUrl/my/") {
-        if (tabs.size >= MAX_TABS) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_max_tabs_reached), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        saveCurrentTabState()
-
-        val wasPdfTab = isPdfTab(currentTabIndex)
-        if (wasPdfTab) {
-            pdfViewerManager?.closePdf()
-        }
-
-        val newTab = TabInfo(
-            url = url,
-            title = getString(R.string.moodle_new_tab)
-        )
-        tabs.add(newTab)
-        currentTabIndex = tabs.size - 1
-
-        webView.visibility = View.VISIBLE
-        pdfContainer.visibility = View.GONE
-        textViewerContainer.visibility = View.GONE
-        webControlsLayout.visibility = View.VISIBLE
-        pdfControlsLayout.visibility = View.GONE
-        btnBack.visibility = View.VISIBLE
-        btnOpenInBrowser.visibility = View.VISIBLE
-
-        webView.loadUrl(url)
-        updateUIState()
-        updateDashboardButtonIcon()
-
-        if (isTabViewVisible) {
-            hideTabOverlay()
-        }
-    }
-
-    private fun closeTab(index: Int) {
-        if (index !in tabs.indices) return
-
-        if (tabs.size == 1) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_cannot_close_last_tab), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val wasClosingCurrentTab = (index == currentTabIndex)
-
-        val tabToClose = tabs[index]
-        if (isPdfTab(index) && !tabToClose.isPinned) {
-            tabToClose.webViewState?.getString("pdf_file_path")?.let { pdfPath ->
-                try {
-                    File(pdfPath).delete()
-                    L.d("MoodleFragment", "Deleted PDF file for closed tab: $pdfPath")
-                } catch (e: Exception) {
-                    L.e("MoodleFragment", "Failed to delete PDF file", e)
-                }
-            }
-        }
-
-        tabs[index].thumbnail?.recycle()
-        tabs.removeAt(index)
-
-        val newCurrentIndex = when {
-            index < currentTabIndex -> currentTabIndex - 1
-            index == currentTabIndex -> {
-                if (index >= tabs.size) tabs.size - 1 else index
-            }
-            else -> currentTabIndex
-        }
-
-        if (wasClosingCurrentTab) {
-            switchToTab(newCurrentIndex)
-        } else {
-            currentTabIndex = newCurrentIndex
-        }
-
-        savePinnedTabs()
-
-        if (isTabViewVisible && !isDraggingTab) {
-            tabAdapter.notifyDataSetChanged()
-        }
-    }
-
-    private fun clearAllTabs() {
-        tabs.forEach { it.thumbnail?.recycle() }
-        tabs.clear()
-
-        tabs.add(TabInfo(
-            id = "default_tab",
-            url = "$moodleBaseUrl/my/",
-            title = "Dashboard",
-            isDefault = true
-        ))
-        currentTabIndex = 0
-        webView.loadUrl("$moodleBaseUrl/my/")
-
-        savePinnedTabs()
-        Toast.makeText(requireContext(), getString(R.string.moodle_tabs_cleared), Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showTabOverlay() {
-        L.d("MoodleFragment", "showTabOverlay called. Current tabs: ${tabs.size}, compact=$isCompactTabLayout")
-
-        if (isTabViewVisible) {
-            hideTabOverlay()
-            return
-        }
-
-        if (currentTabIndex in tabs.indices) {
-            val currentTab = tabs[currentTabIndex]
-
-            if (isPdfTab(currentTabIndex)) {
-                val pdfState = pdfViewerManager?.getCurrentState()
-                val bundle = Bundle().apply {
-                    putString("pdf_file_path", pdfState?.file?.absolutePath)
-                    putInt("pdf_current_page", pdfState?.currentPage ?: 0)
-                    putBoolean("pdf_scroll_mode", pdfState?.scrollMode ?: true)
-                    putBoolean("pdf_dark_mode", pdfState?.darkMode ?: false)
-                }
-
-                tabs[currentTabIndex] = currentTab.copy(
-                    url = pdfFileUrl ?: currentTab.url,
-                    title = currentTab.title,
-                    thumbnail = capturePdfThumbnail(),
-                    webViewState = bundle
-                )
-            } else {
-                tabs[currentTabIndex] = currentTab.copy(
-                    url = webView.url ?: currentTab.url,
-                    title = webView.title ?: currentTab.title,
-                    thumbnail = captureWebViewThumbnail()
-                )
-            }
-        }
-
-        isTabViewVisible = true
-        updateTabButtonIcon()
-
-        val overlayView = layoutInflater.inflate(R.layout.overlay_tab_view, null)
-        tabOverlayView = overlayView
-
-        val rootView = view as ViewGroup
-        rootView.addView(overlayView)
-
-        setupTabRecyclerView(overlayView)
-        setupTabOverlayControls(overlayView)
-
-        overlayView.alpha = 0f
-        overlayView.animate()
-            .alpha(1f)
-            .setDuration(200)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-
-        L.d("MoodleFragment", "Tab overlay shown with ${tabs.size} tabs")
-    }
-
-    private fun resetDefaultTab() {
-        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
-
-        if (defaultTabIndex != -1) {
-            L.d("MoodleFragment", "Resetting default tab at index $defaultTabIndex")
-
-            val defaultTab = tabs[defaultTabIndex]
-            tabs[defaultTabIndex] = defaultTab.copy(
-                url = loginUrl,
-                title = "Moodle",
-                thumbnail = null,
-                webViewState = null
-            )
-
-            if (currentTabIndex == defaultTabIndex) {
-                webView.clearHistory()
-                webView.clearCache(false)
-            }
-
-            L.d("MoodleFragment", "Default tab reset to login page")
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        isFragmentActive = false
-        stopDialogButtonMonitoring()
-        stopMessageInputMonitoring()
-        messageInputDialog?.dismiss()
-
-        if (wasOnLogoutConfirmPage) {
-            L.d("MoodleFragment", "User left while on logout page - cancelling logout")
-            wasOnLogoutConfirmPage = false
-            logoutConfirmPageUrl = ""
-        }
-
-        if (isProcessingInstantLogout) {
-            L.d("MoodleFragment", "User left during instant logout - resetting state")
-            isProcessingInstantLogout = false
-        }
-
-        saveCurrentTabState()
-        savePinnedTabs()
-        resetDefaultTab()
-
-        L.d("MoodleFragment", "onPause - saved tabs and reset default tab")
-    }
-
-    private fun resetDefaultTabToLogin() {
-        val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
-
-        if (defaultTabIndex != -1) {
-            L.d("MoodleFragment", "Resetting default tab to login page")
-
-            val defaultTab = tabs[defaultTabIndex]
-            tabs[defaultTabIndex] = defaultTab.copy(
-                url = loginUrl,
-                title = "Moodle",
-                thumbnail = null,
-                webViewState = null
-            )
-
-            if (currentTabIndex == defaultTabIndex) {
-                webView.clearHistory()
-                webView.clearCache(false)
-                webView.loadUrl(loginUrl)
-            }
-
-            savePinnedTabs()
-            L.d("MoodleFragment", "Default tab reset complete")
-        }
-    }
-
-    override fun onStop() {
-        super.onStop()
-
-        if (wasOnLogoutConfirmPage) {
-            L.d("MoodleFragment", "App stopped while on logout page - cancelling logout")
-            wasOnLogoutConfirmPage = false
-            logoutConfirmPageUrl = ""
-        }
-
-        resetDefaultTabToLogin()
-        savePinnedTabs()
-        L.d("MoodleFragment", "onStop - reset default tab and saved pinned tabs")
-    }
-
-    private fun setupTabOverlayControls(overlayView: View) {
-        val btnClearAll = overlayView.findViewById<ImageButton>(R.id.btnClearAllTabs)
-        val btnCloseOverlay = overlayView.findViewById<ImageButton>(R.id.btnCloseTabOverlay)
-        val layoutToggleHandle = overlayView.findViewById<View>(R.id.layoutToggleHandle)
-        val tabHeaderLayout = overlayView.findViewById<LinearLayout>(R.id.tabHeaderLayout)
-
-        btnClearAll.setOnClickListener {
-            showClearAllTabsDialog()
-        }
-
-        btnCloseOverlay.setOnClickListener {
-            hideTabOverlay()
-        }
-
-        val density = resources.displayMetrics.density
-
-        if (isCompactTabLayout) {
-            tabHeaderLayout?.setPadding(
-                (8 * density).toInt(),
-                (2 * density).toInt(),
-                (8 * density).toInt(),
-                (2 * density).toInt()
-            )
-
-            val compactButtonSize = (36 * density).toInt()
-            btnClearAll.layoutParams?.apply {
-                width = compactButtonSize
-                height = compactButtonSize
-            }
-            btnCloseOverlay.layoutParams?.apply {
-                width = compactButtonSize
-                height = compactButtonSize
-            }
-
-            layoutToggleHandle.layoutParams?.height = (24 * density).toInt()
-
-            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
-                topMargin = (8 * density).toInt()
-                bottomMargin = 0
-            }
-        } else {
-            // Normal view
-            tabHeaderLayout?.setPadding(
-                (16 * density).toInt(),
-                (8 * density).toInt(),
-                (16 * density).toInt(),
-                (12 * density).toInt()
-            )
-
-            val normalButtonSize = (40 * density).toInt()
-            btnClearAll.layoutParams?.apply {
-                width = normalButtonSize
-                height = normalButtonSize
-            }
-            btnCloseOverlay.layoutParams?.apply {
-                width = normalButtonSize
-                height = normalButtonSize
-            }
-
-            layoutToggleHandle.layoutParams?.height = (28 * density).toInt()
-
-            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
-                topMargin = (8 * density).toInt()
-                bottomMargin = (4 * density).toInt()
-            }
-        }
-
-        btnClearAll.requestLayout()
-        btnCloseOverlay.requestLayout()
-        layoutToggleHandle.requestLayout()
-        tabHeaderLayout?.requestLayout()
-
-        setupLayoutToggle(layoutToggleHandle, overlayView)
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupLayoutToggle(handle: View, overlayView: View) {
-        handle.alpha = 0.6f
-        handle.scaleX = 1f
-        handle.scaleY = 1f
-
-        var startY = 0f
-        var isDragging = false
-        var overlayHeight: Int
-        var initialOverlayHeight = 0
-        val density = resources.displayMetrics.density
-        val minHeight = (190 * density).toInt()
-        val maxHeight = (310 * density).toInt()
-        val closeThreshold = (50 * density).toInt()
-
-        overlayHeight = if (isCompactTabLayout) minHeight else maxHeight
-        val layoutParams = overlayView.layoutParams
-        layoutParams.height = overlayHeight
-        overlayView.layoutParams = layoutParams
-
-        var lastCompactState = isCompactTabLayout
-
-        handle.setOnTouchListener { view, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    startY = event.rawY
-                    initialOverlayHeight = overlayView.layoutParams.height
-                    isDragging = true
-                    lastCompactState = isCompactTabLayout
-
-                    handle.animate()
-                        .scaleX(1.1f)
-                        .scaleY(1.2f)
-                        .alpha(1f)
-                        .setDuration(100)
-                        .start()
-
-                    true
-                }
-
                 MotionEvent.ACTION_MOVE -> {
-                    if (!isDragging) return@setOnTouchListener false
-
-                    val deltaY = startY - event.rawY
-                    val newHeight = (initialOverlayHeight + deltaY).toInt()
-                        .coerceIn(closeThreshold, maxHeight)
-
-                    val layoutParams = overlayView.layoutParams
-                    layoutParams.height = newHeight
-                    overlayView.layoutParams = layoutParams
-
-                    val heightRatio = (newHeight - minHeight).toFloat() / (maxHeight - minHeight)
-
-                    val shouldBeCompact = heightRatio < 0.3f
-
-                    if (shouldBeCompact != isCompactTabLayout) {
-                        isCompactTabLayout = shouldBeCompact
-                        refreshTabLayoutDuringDrag(overlayView)
-                        lastCompactState = isCompactTabLayout
-                    }
-
-                    if (newHeight < minHeight) {
-                        val closeProgress = (minHeight - newHeight).toFloat() / (minHeight - closeThreshold)
-                        overlayView.alpha = 1f - (closeProgress * 0.5f)
-                    } else {
-                        overlayView.alpha = 1f
-                    }
-
-                    true
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (!isDragging) return@setOnTouchListener false
-                    isDragging = false
-
-                    handle.animate()
-                        .scaleX(1f)
-                        .scaleY(1f)
-                        .alpha(0.6f)
-                        .setDuration(100)
-                        .start()
-
-                    val layoutParams = overlayView.layoutParams
-                    val currentHeight = layoutParams.height
-
-                    if (currentHeight <= closeThreshold) {
-                        hideTabOverlay()
+                    if (event.pointerCount > 1 || isCurrentlyZooming) {
+                        hidePdfSwipeIndicator()
                         return@setOnTouchListener true
                     }
 
-                    val targetHeight = if (currentHeight < (minHeight + maxHeight) / 2) {
-                        isCompactTabLayout = true
-                        minHeight
-                    } else {
-                        isCompactTabLayout = false
-                        maxHeight
+                    if (pdfScaleFactor > 1.05f) {
+                        return@setOnTouchListener true
                     }
 
-                    if (currentHeight != targetHeight) {
-                        ValueAnimator.ofInt(currentHeight, targetHeight).apply {
-                            duration = 200
-                            addUpdateListener { animator ->
-                                layoutParams.height = animator.animatedValue as Int
-                                overlayView.layoutParams = layoutParams
-                            }
-                            doOnEnd {
-                                if (lastCompactState != isCompactTabLayout) {
-                                    setupTabOverlayControls(overlayView)
-                                }
-                            }
-                            start()
+                    val deltaX = event.x - pdfSwipeStartX
+                    val deltaY = event.y - startY
+
+                    if (abs(deltaX) > 30 && abs(deltaX) > abs(deltaY) * 0.5f) {
+                        hasMoved = true
+                        isPdfSwiping = true
+                        val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                        val pageCount = pdfViewerManager?.getPageCount() ?: 0
+
+                        val progress = kotlin.math.min(abs(deltaX) / 200f, 1f)
+                        pdfSwipeProgress = progress
+
+                        if (deltaX > 0 && currentPage > 0) {
+                            showPdfSwipeIndicator(currentPage - 1, true, progress)
+                        } else if (deltaX < 0 && currentPage < pageCount - 1) {
+                            showPdfSwipeIndicator(currentPage + 1, false, progress)
                         }
-                    } else if (lastCompactState != isCompactTabLayout) {
-                        setupTabOverlayControls(overlayView)
                     }
-
-                    overlayHeight = targetHeight
-                    overlayView.alpha = 1f
-
-                    sharedPrefs.edit {
-                        putBoolean("moodle_tab_layout_compact", isCompactTabLayout)
-                    }
-
                     true
                 }
-                else -> false
-            }
-        }
-    }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (initialPointerCount == 1 && !isCurrentlyZooming && pdfScaleFactor <= 1.05f && hasMoved) {
+                        val deltaX = event.x - startX
 
-    private fun refreshTabLayoutDuringDrag(overlayView: View) {
-        overlayView.animate()
-            .alpha(0.85f)
-            .setDuration(100)
-            .withEndAction {
-                overlayView.animate()
-                    .alpha(1f)
-                    .setDuration(100)
-                    .start()
-            }
-            .start()
-
-        val btnClearAll = overlayView.findViewById<ImageButton>(R.id.btnClearAllTabs)
-        val btnCloseOverlay = overlayView.findViewById<ImageButton>(R.id.btnCloseTabOverlay)
-        val layoutToggleHandle = overlayView.findViewById<View>(R.id.layoutToggleHandle)
-        val tabHeaderLayout = overlayView.findViewById<LinearLayout>(R.id.tabHeaderLayout)
-
-        val density = resources.displayMetrics.density
-
-        if (isCompactTabLayout) {
-            tabHeaderLayout?.setPadding(
-                (8 * density).toInt(),
-                (2 * density).toInt(),
-                (8 * density).toInt(),
-                (2 * density).toInt()
-            )
-
-            val compactButtonSize = (36 * density).toInt()
-            btnClearAll.layoutParams?.apply {
-                width = compactButtonSize
-                height = compactButtonSize
-            }
-            btnCloseOverlay.layoutParams?.apply {
-                width = compactButtonSize
-                height = compactButtonSize
-            }
-
-            layoutToggleHandle.layoutParams?.height = (24 * density).toInt()
-
-            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
-                topMargin = (8 * density).toInt()
-                bottomMargin = 0
-            }
-        } else {
-            tabHeaderLayout?.setPadding(
-                (16 * density).toInt(),
-                (8 * density).toInt(),
-                (16 * density).toInt(),
-                (12 * density).toInt()
-            )
-
-            val normalButtonSize = (40 * density).toInt()
-            btnClearAll.layoutParams?.apply {
-                width = normalButtonSize
-                height = normalButtonSize
-            }
-            btnCloseOverlay.layoutParams?.apply {
-                width = normalButtonSize
-                height = normalButtonSize
-            }
-
-            layoutToggleHandle.layoutParams?.height = (28 * density).toInt()
-
-            (layoutToggleHandle.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
-                topMargin = (8 * density).toInt()
-                bottomMargin = (4 * density).toInt()
-            }
-        }
-
-        btnClearAll.requestLayout()
-        btnCloseOverlay.requestLayout()
-        layoutToggleHandle.requestLayout()
-        tabHeaderLayout?.requestLayout()
-
-        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
-        tabRecyclerView.animate()
-            .scaleX(0.97f)
-            .scaleY(0.97f)
-            .setDuration(80)
-            .withEndAction {
-                tabRecyclerView.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(120)
-                    .start()
-            }
-            .start()
-
-        setupTabRecyclerView(overlayView)
-    }
-
-    private fun hideTabOverlay() {
-        if (!isTabViewVisible) return
-
-        tabOverlayView?.let { overlay ->
-            val animationsEnabled = Settings.Global.getFloat(
-                requireContext().contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
-            ) != 0.0f
-
-            if (animationsEnabled) {
-                overlay.animate()
-                    .alpha(0f)
-                    .setDuration(150)
-                    .setInterpolator(AccelerateInterpolator())
-                    .withEndAction {
-                        (view as? ViewGroup)?.removeView(overlay)
-                        tabOverlayView = null
-                        isTabViewVisible = false
-                        updateTabButtonIcon()
-                    }
-                    .start()
-            } else {
-                (view as? ViewGroup)?.removeView(overlay)
-                tabOverlayView = null
-                isTabViewVisible = false
-                updateTabButtonIcon()
-            }
-        }
-    }
-
-    private fun setupTabRecyclerView(overlayView: View) {
-        tabRecyclerView = overlayView.findViewById(R.id.tabRecyclerView)
-
-        val screenWidth = resources.displayMetrics.widthPixels
-        val density = resources.displayMetrics.density
-
-        val horizontalSpacing: Int
-        val sideMargin: Int
-        val itemWidth: Int
-        val itemHeight: Int
-
-        if (isCompactTabLayout) {
-            horizontalSpacing = (4 * density).toInt()
-            sideMargin = (6 * density).toInt()
-            val totalHorizontalPadding = (2 * sideMargin) + (3 * horizontalSpacing)
-            itemWidth = ((screenWidth - totalHorizontalPadding) / 4.46f).toInt()
-            itemHeight = (100 * density).toInt()
-        } else {
-            horizontalSpacing = (6 * density).toInt()
-            sideMargin = (8 * density).toInt()
-            val totalHorizontalPadding = (2 * sideMargin) + horizontalSpacing
-            itemWidth = ((screenWidth - totalHorizontalPadding) / 2.27f).toInt()
-            itemHeight = (180 * density).toInt()
-        }
-
-        val floatingDeleteZone = view?.findViewById<FrameLayout>(R.id.floatingDeleteZone)
-        val floatingDeleteIcon = view?.findViewById<ImageView>(R.id.floatingDeleteIcon)
-
-        tabAdapter = TabAdapter(
-            tabs = tabs,
-            getCurrentTabIndex = { currentTabIndex },
-            isCompactLayout = isCompactTabLayout,
-            itemWidth = itemWidth,
-            itemHeight = itemHeight,
-            onTabClick = { index ->
-                if (index in tabs.indices) {
-                    switchToTab(index)
-                    hideTabOverlay()
-                }
-            },
-            onTabClose = { index ->
-                if (index in tabs.indices && !tabs[index].isDefault) {
-                    closeTab(index)
-                    tabAdapter.notifyDataSetChanged()
-                }
-            },
-            onTabPin = { index ->
-                if (index in tabs.indices && !tabs[index].isDefault) {
-                    tabs[index] = tabs[index].copy(isPinned = !tabs[index].isPinned)
-                    savePinnedTabs()
-                    tabAdapter.notifyItemChanged(index)
-                }
-            },
-            onTabDragStart = { index ->
-                if (index in tabs.indices && !tabs[index].isDefault) {
-                    isDraggingTab = true
-                    draggedTabIndex = index
-
-                    floatingDeleteZone?.visibility = View.VISIBLE
-                    floatingDeleteIcon?.apply {
-                        scaleX = 1f
-                        scaleY = 1f
-                        translationY = 0f
-                        clearAnimation()
-                        alpha = 1f
-                    }
-                }
-            },
-            onTabDragEnd = { index, x, y ->
-                if (index in tabs.indices && !tabs[index].isDefault && isDraggingTab) {
-                    var shouldDelete = false
-
-                    floatingDeleteIcon?.let { icon ->
-                        val iconLocation = IntArray(2)
-                        icon.getLocationOnScreen(iconLocation)
-                        val iconCenterX = iconLocation[0] + icon.width / 2
-                        val iconCenterY = iconLocation[1] + icon.height / 2
-
-                        val distance = sqrt(
-                            (x - iconCenterX).toDouble().pow(2.0) +
-                                    (y - iconCenterY).toDouble().pow(2.0)
-                        )
-
-                        val hitRadius = (icon.width / 2f + 10 * density)
-                        shouldDelete = distance < hitRadius
-                    }
-
-                    if (shouldDelete) {
-                        animateTabDeletion(index)
-                    }
-
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        floatingDeleteIcon?.clearAnimation()
-                        floatingDeleteIcon?.animate()
-                            ?.scaleX(0.8f)
-                            ?.scaleY(0.8f)
-                            ?.alpha(0f)
-                            ?.setDuration(200)
-                            ?.withEndAction {
-                                floatingDeleteZone?.visibility = View.GONE
-                            }
-                            ?.start()
-                    }, 100)
-                }
-                draggedTabIndex = -1
-                isDraggingTab = false
-            },
-            onTabMove = { fromIndex, toIndex ->
-                if (fromIndex in tabs.indices && toIndex in tabs.indices &&
-                    !tabs[fromIndex].isDefault && !tabs[toIndex].isDefault) {
-                    Collections.swap(tabs, fromIndex, toIndex)
-                    tabAdapter.notifyItemMoved(fromIndex, toIndex)
-                    if (currentTabIndex == fromIndex) {
-                        currentTabIndex = toIndex
-                    } else if (currentTabIndex == toIndex) {
-                        currentTabIndex = fromIndex
-                    }
-                    savePinnedTabs()
-                }
-            },
-            onTabDragUpdate = { index, x, y ->
-                if (isDraggingTab) {
-                    floatingDeleteIcon?.let { icon ->
-                        val iconLocation = IntArray(2)
-                        icon.getLocationOnScreen(iconLocation)
-                        val iconCenterX = iconLocation[0] + icon.width / 2
-                        val iconCenterY = iconLocation[1] + icon.height / 2
-
-                        val distance = sqrt(
-                            (x - iconCenterX).toDouble().pow(2.0) +
-                                    (y - iconCenterY).toDouble().pow(2.0)
-                        )
-
-                        val hitRadius = (icon.width / 2f + 10 * density)
-                        val hoverRadius = (icon.width / 2f + 50 * density)
-
-                        when {
-                            distance < hitRadius -> {
-                                icon.clearAnimation()
-                                icon.animate()
-                                    .translationY(-10f * density)
-                                    .scaleX(1.3f)
-                                    .scaleY(1.3f)
-                                    .setDuration(150)
-                                    .start()
-
-                                val shake = RotateAnimation(
-                                    -10f, 10f,
-                                    Animation.RELATIVE_TO_SELF, 0.5f,
-                                    Animation.RELATIVE_TO_SELF, 0.5f
-                                ).apply {
-                                    duration = 100
-                                    repeatCount = Animation.INFINITE
-                                    repeatMode = Animation.REVERSE
+                        if (isPdfSwiping && abs(deltaX) > 100) {
+                            if (deltaX > 0) {
+                                val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                                if (currentPage > 0) {
+                                    pdfViewerManager?.setCurrentPage(currentPage - 1)
+                                    renderSinglePdfPage(currentPage - 1)
+                                    updatePdfControls()
                                 }
-                                icon.startAnimation(shake)
-                            }
-                            distance < hoverRadius -> {
-                                icon.clearAnimation()
-                                icon.animate()
-                                    .translationY(-5f * density)
-                                    .scaleX(1.1f)
-                                    .scaleY(1.1f)
-                                    .setDuration(150)
-                                    .start()
-                            }
-                            else -> {
-                                icon.clearAnimation()
-                                icon.animate()
-                                    .translationY(0f)
-                                    .scaleX(1f)
-                                    .scaleY(1f)
-                                    .setDuration(150)
-                                    .start()
+                            } else {
+                                val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                                val pageCount = pdfViewerManager?.getPageCount() ?: 0
+                                if (currentPage < pageCount - 1) {
+                                    pdfViewerManager?.setCurrentPage(currentPage + 1)
+                                    renderSinglePdfPage(currentPage + 1)
+                                    updatePdfControls()
+                                }
                             }
                         }
                     }
+
+                    hidePdfSwipeIndicator()
+                    isPdfSwiping = false
+                    pdfSwipeProgress = 0f
+                    hasMoved = false
+                    initialPointerCount = 0
+                    true
                 }
-            },
-            onNewTabClick = {
-                if (tabs.size < MAX_TABS) {
-                    createNewTab()
-                }
+                else -> scaleHandled
             }
-        )
-
-        val layoutManager = LinearLayoutManager(
-            requireContext(),
-            LinearLayoutManager.HORIZONTAL,
-            false
-        )
-
-        tabRecyclerView.apply {
-            this.layoutManager = layoutManager
-            adapter = tabAdapter
-            itemAnimator = DefaultItemAnimator().apply {
-                changeDuration = 200
-                moveDuration = 200
-            }
-
-            while (itemDecorationCount > 0) {
-                removeItemDecorationAt(0)
-            }
-            addItemDecoration(HorizontalSpacingItemDecoration(horizontalSpacing))
-
-            setPadding(sideMargin, 0, sideMargin, 0)
-            clipToPadding = false
-            clipChildren = false
-            overScrollMode = View.OVER_SCROLL_NEVER
         }
-    }
-
-    private fun animateTabDeletion(index: Int) {
-        if (index !in tabs.indices) return
-
-        val viewHolder = tabRecyclerView.findViewHolderForAdapterPosition(index)
-        viewHolder?.itemView?.let { itemView ->
-            itemView.animate()
-                .alpha(0f)
-                .scaleX(0.8f)
-                .scaleY(0.8f)
-                .translationX(itemView.width.toFloat())
-                .setDuration(200)
-                .setInterpolator(AccelerateInterpolator())
-                .withEndAction {
-                    closeTab(index)
-                    tabAdapter.notifyDataSetChanged()
-                }
-                .start()
-        } ?: run {
-            closeTab(index)
-            tabAdapter.notifyDataSetChanged()
-        }
-    }
-
-    private fun showClearAllTabsDialog() {
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_clear_all_tabs))
-            .setMessage(getString(R.string.moodle_clear_all_tabs_confirm))
-            .setPositiveButton(getString(R.string.moodle_clear)) { _, _ ->
-                clearAllTabs()
-                hideTabOverlay()
-            }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun showPdfViewer(pdfFile: File, fileName: String, pdfUrl: String) {
@@ -6221,6 +8095,14 @@ class MoodleFragment : Fragment() {
     private fun renderSinglePdfPage(page: Int) {
         val bitmap = pdfViewerManager?.renderPage(page)
         pdfSinglePageView.setImageBitmap(bitmap)
+
+        pdfScaleFactor = 1f
+        lastAppliedScale = 1f
+        isCurrentlyZooming = false
+        pdfSinglePageView.scaleX = 1f
+        pdfSinglePageView.scaleY = 1f
+
+        zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
     }
 
     private fun updatePdfControls() {
@@ -6909,97 +8791,6 @@ class MoodleFragment : Fragment() {
         popup.show()
     }
 
-    private fun toggleTextViewerDarkMode() {
-        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
-        textViewerManager?.setDarkMode(!currentDarkMode)
-
-        applyTextViewerPreferences()
-        val displayWidth = textContentScrollView.width
-        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
-        textViewerContent.text = formattedText
-        generateLineNumbers()
-
-        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
-        textViewerContainer.setBackgroundColor(bgColor)
-    }
-
-    private fun handleInterceptedDownload(
-        url: String,
-        cookies: String?,
-        contentDisposition: String = "",
-        mimetype: String? = null
-    ) {
-        L.d("MoodleFragment", "Handling intercepted download")
-
-        val fileName = when {
-            contentDisposition.contains("filename=") -> {
-                val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
-                match?.groupValues?.get(1) ?: ""
-            }
-            else -> {
-                try {
-                    URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
-                } catch (_: Exception) {
-                    ""
-                }
-            }
-        }
-
-        val isPdf = mimetype == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)
-        val isDocx = mimetype?.contains("wordprocessingml") == true ||
-                fileName.endsWith(".docx", ignoreCase = true)
-
-        when {
-            isPdf && tabs.size < MAX_TABS -> handlePdfForViewerWithCookies(url, cookies)
-            isDocx && tabs.size < MAX_TABS -> handleDocxFile(url, cookies, forceDownload = false)
-            else -> downloadToDeviceWithCookies(url, cookies, contentDisposition)
-        }
-    }
-
-    private fun downloadToDeviceWithCookies(url: String, cookies: String?, contentDisposition: String = "") {
-        try {
-            val request = DownloadManager.Request(url.toUri())
-
-            var fileName = URLUtil.guessFileName(url, contentDisposition, null)
-            if (fileName.isBlank()) {
-                fileName = try {
-                    val decodedUrl = URLDecoder.decode(url, "UTF-8")
-                    decodedUrl.substringAfterLast("/").substringBefore("?")
-                } catch (_: Exception) {
-                    "moodle_file_${System.currentTimeMillis()}"
-                }
-            }
-
-            request.setTitle(fileName)
-            request.setDescription("Moodle Download")
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            request.setAllowedOverMetered(true)
-            request.setAllowedOverRoaming(true)
-
-            if (!cookies.isNullOrBlank()) {
-                request.addRequestHeader("Cookie", cookies)
-                L.d("MoodleFragment", "Added cookies to download: ${cookies.take(50)}...")
-            } else {
-                L.w("MoodleFragment", "WARNING: No cookies available for download!")
-            }
-
-            request.addRequestHeader("User-Agent", userAgent)
-            request.addRequestHeader("Referer", moodleBaseUrl)
-            request.addRequestHeader("Accept", "*/*")
-
-            val downloadManager = requireContext().getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            val downloadId = downloadManager.enqueue(request)
-
-            L.d("MoodleFragment", "Download enqueued with ID: $downloadId")
-            Toast.makeText(requireContext(), getString(R.string.moodle_download_started, fileName), Toast.LENGTH_SHORT).show()
-
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Download failed", e)
-            Toast.makeText(requireContext(), getString(R.string.moodle_download_failed, e.message), Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun handlePdfForViewerWithCookies(url: String, cookies: String?) {
         pdfFileUrl = url
 
@@ -7125,527 +8916,617 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
-        if (pdfFileUrl == null) {
-            pdfFileUrl = viewUrl
+    private fun createPdfSwipeIndicator() {
+        pdfSwipeIndicator?.let {
+            (it.parent as? ViewGroup)?.removeView(it)
         }
 
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
-                L.d("MoodleFragment", "Initial URL: $viewUrl")
-                L.d("MoodleFragment", "Force download to device: $forceDownload")
+        val indicator = TextView(requireContext()).apply {
+            textSize = 16f
+            setTextColor(requireContext().getThemeColor(R.attr.settingsColorPrimary))
+            setTypeface(null, Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            setPadding(32, 16, 32, 16)
+            alpha = 0f
+            visibility = View.INVISIBLE
+            elevation = 30f
+            isClickable = false
+            isFocusable = false
+            id = View.generateViewId()
 
-                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                val cookiesToUse = freshCookies ?: cookies
-
-                L.d("MoodleFragment", "Fresh cookies from CookieManager: ${freshCookies != null}")
-                if (cookiesToUse != null) {
-                    L.d("MoodleFragment", "Cookie preview: ${cookiesToUse.take(100)}...")
-                } else {
-                    L.e("MoodleFragment", "ERROR: No cookies available!")
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "No session cookies available. Please reload the page.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    return@execute
-                }
-
-                var currentUrl = viewUrl
-                var redirectCount = 0
-                val maxRedirects = 10
-                var finalUrl: String? = null
-                var contentType: String? = null
-                var contentDisposition: String? = null
-
-                while (redirectCount < maxRedirects) {
-                    L.d("MoodleFragment", "--- Redirect attempt $redirectCount ---")
-                    L.d("MoodleFragment", "Current URL: $currentUrl")
-
-                    if (currentUrl.contains("/login/index.php")) {
-                        L.w("MoodleFragment", "Hit login page - session may have expired")
-
-                        activity?.runOnUiThread {
-                            dismissSessionConfirmDialog {
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                                    resolveDownloadUrl(viewUrl, newCookies, forceDownload)
-                                }, 1000)
-                            }
-                        }
-                        return@execute
-                    }
-
-                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.instanceFollowRedirects = false
-
-                    conn.setRequestProperty("Cookie", cookiesToUse)
-                    conn.setRequestProperty("User-Agent", userAgent)
-                    conn.setRequestProperty("Referer", moodleBaseUrl)
-                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-
-                    val responseCode = conn.responseCode
-                    L.d("MoodleFragment", "Response code: $responseCode")
-
-                    when (responseCode) {
-                        in 300..399 -> {
-                            val location = conn.getHeaderField("Location")
-                            L.d("MoodleFragment", "Got redirect to: $location")
-
-                            val setCookie = conn.getHeaderField("Set-Cookie")
-                            if (setCookie != null) {
-                                L.d("MoodleFragment", "Server set new cookie: ${setCookie.take(100)}...")
-                            }
-
-                            conn.disconnect()
-
-                            if (location.isNullOrBlank()) {
-                                L.e("MoodleFragment", "ERROR: Redirect without Location header")
-                                break
-                            }
-
-                            currentUrl = if (location.startsWith("http")) {
-                                location
-                            } else if (location.startsWith("/")) {
-                                "$moodleBaseUrl$location"
-                            } else {
-                                val baseUrl = currentUrl.substringBeforeLast("/")
-                                "$baseUrl/$location"
-                            }
-
-                            redirectCount++
-                        }
-                        200 -> {
-                            finalUrl = currentUrl
-                            contentType = conn.getHeaderField("Content-Type")
-                            contentDisposition = conn.getHeaderField("Content-Disposition")
-                            L.d("MoodleFragment", "SUCCESS: Found final file")
-                            L.d("MoodleFragment", "Final URL: $finalUrl")
-                            L.d("MoodleFragment", "Content-Type: $contentType")
-                            L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
-                            conn.disconnect()
-                            break
-                        }
-                        401, 403 -> {
-                            L.e("MoodleFragment", "ERROR: Authentication failed (code $responseCode)")
-                            conn.disconnect()
-
-                            activity?.runOnUiThread {
-                                Toast.makeText(
-                                    requireContext(),
-                                    "Session expired. Please reload the page.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                            return@execute
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "ERROR: Unexpected response code: $responseCode")
-                            conn.disconnect()
-                            break
-                        }
-                    }
-                }
-
-                if (finalUrl != null) {
-                    L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
-                    pdfFileUrl = finalUrl
-
-                    activity?.runOnUiThread {
-                        if (forceDownload) {
-                            downloadToDeviceWithCookies(finalUrl, cookiesToUse, contentDisposition ?: "")
-                        } else {
-                            handleInterceptedDownload(finalUrl, cookiesToUse, contentDisposition ?: "", contentType)
-                        }
-                    }
-                } else {
-                    L.e("MoodleFragment", "FAILED: Could not resolve after $redirectCount attempts")
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "Could not resolve download URL. Try again or reload the page.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "EXCEPTION in resolveDownloadUrl", e)
-                activity?.runOnUiThread {
-                    Toast.makeText(
-                        requireContext(),
-                        "Error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                setColor(requireContext().getThemeColor(R.attr.cardBackgroundColor))
+                cornerRadius = 28f
+                setStroke(3, requireContext().getThemeColor(R.attr.settingsColorPrimary))
             }
+
+            layoutParams = ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                ConstraintLayout.LayoutParams.WRAP_CONTENT
+            )
         }
+
+        pdfSinglePageContainer.addView(indicator)
+        pdfSwipeIndicator = indicator
     }
 
-    private fun dismissSessionConfirmDialog(onDismissed: () -> Unit) {
-        val jsCode = """
-        (function() {
-            try {
-                var cancelButton = document.evaluate(
-                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[3]/div/div[1]/form/button',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (cancelButton) {
-                    cancelButton.click();
-                    return true;
-                }
-
-                var dialogs = document.querySelectorAll('[role="dialog"], .modal');
-                for (var i = 0; i < dialogs.length; i++) {
-                    var dialog = dialogs[i];
-                    var cancelBtn = dialog.querySelector('button[data-action="cancel"], button:contains("Abbrechen"), button:contains("Cancel")');
-                    if (cancelBtn) {
-                        cancelBtn.click();
-                        return true;
-                    }
-                }
-                
-                return false;
-            } catch(e) {
-                return false;
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            if (result == "true") {
-                L.d("MoodleFragment", "Session dialog dismissed")
-                Handler(Looper.getMainLooper()).postDelayed({
-                    onDismissed()
-                }, 500)
-            } else {
-                L.w("MoodleFragment", "Could not find session dialog to dismiss")
-                onDismissed()
-            }
+    private fun showPdfSwipeIndicator(targetPage: Int, isRightSwipe: Boolean, progress: Float) {
+        if (pdfSwipeIndicator == null) {
+            createPdfSwipeIndicator()
         }
-    }
 
-    private fun resolveAndParseDocument(viewUrl: String, cookies: String?, progressDialog: AlertDialog) {
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Resolving document for parsing ===")
-                L.d("MoodleFragment", "View URL: $viewUrl")
+        pdfSwipeIndicator?.let { indicator ->
+            val pageCount = pdfViewerManager?.getPageCount() ?: 0
 
-                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                val cookiesToUse = freshCookies ?: cookies
-
-                if (cookiesToUse == null) {
-                    L.e("MoodleFragment", "No cookies available for parsing")
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        Toast.makeText(
-                            requireContext(),
-                            "No session cookies available",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    return@execute
-                }
-
-                var currentUrl = viewUrl
-                var redirectCount = 0
-                val maxRedirects = 10
-                var finalUrl: String? = null
-
-                while (redirectCount < maxRedirects) {
-                    L.d("MoodleFragment", "Parse redirect attempt $redirectCount: $currentUrl")
-
-                    if (currentUrl.contains("/login/index.php")) {
-                        L.w("MoodleFragment", "Hit login page during parsing")
-
-                        activity?.runOnUiThread {
-                            progressDialog.dismiss()
-                            dismissSessionConfirmDialog {
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    val newProgressDialog = AlertDialog.Builder(requireContext())
-                                        .setMessage(getString(R.string.moodle_parsing_document))
-                                        .setCancelable(false)
-                                        .show()
-
-                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                                    resolveAndParseDocument(viewUrl, newCookies, newProgressDialog)
-                                }, 1000)
-                            }
-                        }
-                        return@execute
-                    }
-
-                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.instanceFollowRedirects = false
-
-                    conn.setRequestProperty("Cookie", cookiesToUse)
-                    conn.setRequestProperty("User-Agent", userAgent)
-                    conn.setRequestProperty("Referer", moodleBaseUrl)
-                    conn.setRequestProperty("Accept", "*/*")
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-
-                    val responseCode = conn.responseCode
-                    L.d("MoodleFragment", "Parse redirect response: $responseCode")
-
-                    when (responseCode) {
-                        in 300..399 -> {
-                            val location = conn.getHeaderField("Location")
-                            conn.disconnect()
-
-                            if (location.isNullOrBlank()) {
-                                L.e("MoodleFragment", "Redirect without location")
-                                break
-                            }
-
-                            currentUrl = if (location.startsWith("http")) {
-                                location
-                            } else if (location.startsWith("/")) {
-                                "$moodleBaseUrl$location"
-                            } else {
-                                val baseUrl = currentUrl.substringBeforeLast("/")
-                                "$baseUrl/$location"
-                            }
-
-                            redirectCount++
-                        }
-                        200 -> {
-                            finalUrl = currentUrl
-                            L.d("MoodleFragment", "Found final document URL: $finalUrl")
-                            conn.disconnect()
-                            break
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "Unexpected response: $responseCode")
-                            conn.disconnect()
-                            break
-                        }
-                    }
-                }
-
-                if (finalUrl != null) {
-                    L.d("MoodleFragment", "Downloading and parsing: $finalUrl")
-                    downloadAndParseDocumentWithCookies(finalUrl, cookiesToUse) { text ->
-                        activity?.runOnUiThread {
-                            progressDialog.dismiss()
-                            if (text != null) {
-                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                } else {
-                    L.e("MoodleFragment", "Failed to resolve document URL")
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        Toast.makeText(
-                            requireContext(),
-                            "Could not resolve file URL for parsing",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error resolving document", e)
-                activity?.runOnUiThread {
-                    progressDialog.dismiss()
-                    Toast.makeText(
-                        requireContext(),
-                        "Error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+            if (targetPage < 0 || targetPage >= pageCount) {
+                hidePdfSwipeIndicator()
+                return
             }
-        }
-    }
 
-    private fun downloadAndParseDocumentWithCookies(url: String, cookies: String?, callback: (String?) -> Unit) {
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Downloading document for parsing ===")
-                L.d("MoodleFragment", "URL: $url")
+            val scaledProgress = kotlin.math.min(progress, 1f)
+            val targetAlpha = kotlin.math.min(scaledProgress * 1.2f, 0.95f)
 
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
+            indicator.text = getString(R.string.moodle_pdf_page_indicator, targetPage + 1, pageCount)
+            indicator.alpha = targetAlpha
+            indicator.visibility = View.VISIBLE
 
-                if (!cookies.isNullOrBlank()) {
-                    connection.setRequestProperty("Cookie", cookies)
-                }
-
-                connection.setRequestProperty("User-Agent", userAgent)
-                connection.setRequestProperty("Referer", moodleBaseUrl)
-                connection.setRequestProperty("Accept", "*/*")
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.instanceFollowRedirects = false
-
-                val responseCode = connection.responseCode
-                L.d("MoodleFragment", "Download response code: $responseCode")
-
-                if (responseCode == 200) {
-                    val contentType = connection.getHeaderField("Content-Type")
-                    L.d("MoodleFragment", "Content-Type: $contentType")
-
-                    val inputStream = connection.inputStream
-                    val text = when {
-                        url.endsWith(".pdf", ignoreCase = true) -> {
-                            L.d("MoodleFragment", "Parsing as PDF")
-                            try {
-                                val pdfReader = PdfReader(inputStream)
-                                val textBuilder = StringBuilder()
-
-                                for (page in 1..pdfReader.numberOfPages) {
-                                    val strategy = LocationTextExtractionStrategy()
-                                    val pageText = PdfTextExtractor.getTextFromPage(
-                                        pdfReader,
-                                        page,
-                                        strategy
-                                    )
-                                    textBuilder.append(pageText)
-                                    if (page < pdfReader.numberOfPages) {
-                                        textBuilder.append("\n\n--- Page ${page + 1} ---\n\n")
-                                    }
-                                }
-
-                                pdfReader.close()
-                                val result = textBuilder.toString()
-                                L.d("MoodleFragment", "PDF parsed successfully, ${result.length} chars")
-                                result
-                            } catch (e: Exception) {
-                                L.e("MoodleFragment", "Error parsing PDF", e)
-                                null
-                            }
-                        }
-                        url.endsWith(".docx", ignoreCase = true) -> {
-                            L.d("MoodleFragment", "Parsing as DOCX")
-                            val result = parseDocxToText(inputStream)
-                            if (result != null) {
-                                L.d("MoodleFragment", "DOCX parsed successfully, ${result.length} chars")
-                            } else {
-                                L.e("MoodleFragment", "DOCX parsing returned null")
-                            }
-                            result
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "Unknown file type for URL: $url")
-                            null
-                        }
-                    }
-
-                    inputStream.close()
-                    connection.disconnect()
-                    callback(text)
-                } else {
-                    L.e("MoodleFragment", "Document download failed with code: $responseCode")
-                    connection.disconnect()
-                    callback(null)
-                }
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Exception downloading document", e)
-                callback(null)
-            }
-        }
-    }
-
-    private fun showLoadingBar() {
-        if (loadingBarContainer.isVisible) return
-
-        val animationsEnabled = Settings.Global.getFloat(
-            requireContext().contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
-        ) != 0.0f
-
-        if (animationsEnabled) {
-            loadingBarContainer.visibility = View.VISIBLE
-            loadingBarContainer.measure(
-                View.MeasureSpec.makeMeasureSpec((loadingBarContainer.parent as View).width, View.MeasureSpec.EXACTLY),
+            indicator.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
-            val targetHeight = loadingBarContainer.measuredHeight
 
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = 0
-            loadingBarContainer.layoutParams = layoutParams
+            val containerWidth = pdfSinglePageContainer.width
+            val containerHeight = pdfSinglePageContainer.height
 
-            ValueAnimator.ofInt(0, targetHeight).apply {
-                duration = 200
-                interpolator = DecelerateInterpolator()
-
-                addUpdateListener { animator ->
-                    val animatedHeight = animator.animatedValue as Int
-                    layoutParams.height = animatedHeight
-                    loadingBarContainer.layoutParams = layoutParams
+            if (containerWidth == 0 || containerHeight == 0) {
+                pdfSinglePageContainer.post {
+                    showPdfSwipeIndicator(targetPage, isRightSwipe, progress)
                 }
-
-                doOnEnd {
-                    layoutParams.height = targetHeight
-                    loadingBarContainer.layoutParams = layoutParams
-                }
-
-                start()
+                return
             }
-        } else {
-            loadingBarContainer.visibility = View.VISIBLE
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            loadingBarContainer.layoutParams = layoutParams
+
+            val layoutParams = indicator.layoutParams as ConstraintLayout.LayoutParams
+
+            layoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            layoutParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            layoutParams.topMargin = 0
+            layoutParams.bottomMargin = 0
+
+            val horizontalMargin = 60
+
+            if (isRightSwipe) {
+                layoutParams.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID
+                layoutParams.rightToRight = ConstraintLayout.LayoutParams.UNSET
+                layoutParams.leftMargin = horizontalMargin
+                layoutParams.rightMargin = 0
+            } else {
+                layoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID
+                layoutParams.leftToLeft = ConstraintLayout.LayoutParams.UNSET
+                layoutParams.rightMargin = horizontalMargin
+                layoutParams.leftMargin = 0
+            }
+
+            indicator.layoutParams = layoutParams
+
+            val scale = 0.7f + (scaledProgress * 0.3f)
+            indicator.scaleX = scale
+            indicator.scaleY = scale
+
+            val rotation = if (isRightSwipe) -scaledProgress * 3f else scaledProgress * 3f
+            indicator.rotation = rotation
         }
     }
 
-    private fun hideLoadingBar() {
-        if (loadingBarContainer.visibility != View.VISIBLE) return
-
-        val animationsEnabled = Settings.Global.getFloat(
-            requireContext().contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
-        ) != 0.0f
-
-        if (animationsEnabled) {
-            val currentHeight = loadingBarContainer.height
-            val layoutParams = loadingBarContainer.layoutParams
-
-            ValueAnimator.ofInt(currentHeight, 0).apply {
-                duration = 200
-                interpolator = AccelerateInterpolator()
-
-                addUpdateListener { animator ->
-                    val animatedHeight = animator.animatedValue as Int
-                    layoutParams.height = animatedHeight
-                    loadingBarContainer.layoutParams = layoutParams
+    private fun hidePdfSwipeIndicator() {
+        pdfSwipeIndicator?.let { indicator ->
+            indicator.animate()
+                .alpha(0f)
+                .scaleX(0.8f)
+                .scaleY(0.8f)
+                .rotation(0f)
+                .setDuration(200)
+                .withEndAction {
+                    indicator.visibility = View.GONE
                 }
-
-                doOnEnd {
-                    loadingBarContainer.visibility = View.GONE
-                    layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                    loadingBarContainer.layoutParams = layoutParams
-                    horizontalProgressBar.progress = 0
-                }
-
-                start()
-            }
-        } else {
-            loadingBarContainer.visibility = View.GONE
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            loadingBarContainer.layoutParams = layoutParams
-            horizontalProgressBar.progress = 0
+                .start()
         }
     }
+
+    private fun setupPdfZoom() {
+        zoomHandler = Handler(Looper.getMainLooper())
+
+        pdfScaleDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                isCurrentlyZooming = true
+                lastAppliedScale = pdfScaleFactor
+
+                zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
+
+                return true
+            }
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val scaleDelta = detector.scaleFactor
+                val newScale = pdfScaleFactor * scaleDelta
+
+                val clampedScale = newScale.coerceIn(MIN_ZOOM, MAX_ZOOM)
+
+                if (abs(clampedScale - lastAppliedScale) > 0.01f) {
+                    pdfScaleFactor = clampedScale
+                    lastAppliedScale = clampedScale
+
+                    pdfSinglePageView.scaleX = pdfScaleFactor
+                    pdfSinglePageView.scaleY = pdfScaleFactor
+                }
+
+                return true
+            }
+
+            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                zoomStabilizeRunnable = Runnable {
+                    if (abs(pdfScaleFactor - 1f) < 0.08f) {
+                        pdfScaleFactor = 1f
+                        lastAppliedScale = 1f
+                        pdfSinglePageView.animate()
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(150)
+                            .withEndAction {
+                                isCurrentlyZooming = false
+                            }
+                            .start()
+                    } else {
+                        val finalScale = pdfScaleFactor.coerceIn(MIN_ZOOM, MAX_ZOOM)
+                        if (abs(finalScale - pdfScaleFactor) > 0.01f) {
+                            pdfScaleFactor = finalScale
+                            lastAppliedScale = finalScale
+                            pdfSinglePageView.animate()
+                                .scaleX(finalScale)
+                                .scaleY(finalScale)
+                                .setDuration(150)
+                                .withEndAction {
+                                    isCurrentlyZooming = false
+                                }
+                                .start()
+                        } else {
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                isCurrentlyZooming = false
+                            }, 50)
+                        }
+                    }
+                }
+
+                zoomHandler?.postDelayed(zoomStabilizeRunnable!!, 150)
+            }
+        })
+    }
+
+    //endregion
+
+    //region **TEXT_VIEWER**
+
+    private fun toggleTextViewerDarkMode() {
+        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
+        textViewerManager?.setDarkMode(!currentDarkMode)
+
+        applyTextViewerPreferences()
+        val displayWidth = textContentScrollView.width
+        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+        textViewerContent.text = formattedText
+        generateLineNumbers()
+
+        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+        textViewerContainer.setBackgroundColor(bgColor)
+    }
+
+    private fun switchToTextViewer() {
+        val pdfState = pdfViewerManager?.getCurrentState()
+        val pdfFile = pdfState?.file
+
+        if (pdfFile == null || !pdfFile.exists()) {
+            Toast.makeText(requireContext(), getString(R.string.text_viewer_no_pdf), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(R.string.text_viewer_loading))
+            .setCancelable(false)
+            .show()
+
+        backgroundExecutor.execute {
+            try {
+                textViewerManager = TextViewerManager(requireContext())
+                val darkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
+
+                if (textViewerManager?.parsePdfToText(pdfFile, darkMode) == true) {
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        saveOriginalBackground()
+                        displayTextViewer()
+                    }
+                } else {
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        Toast.makeText(requireContext(), getString(R.string.text_viewer_parse_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error switching to text viewer", e)
+                activity?.runOnUiThread {
+                    loadingDialog.dismiss()
+                    Toast.makeText(requireContext(), getString(R.string.text_viewer_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun saveOriginalBackground() {
+        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? android.graphics.drawable.ColorDrawable)?.color
+            ?: requireContext().getThemeColor(R.attr.homeworkFragmentBackgroundColor)
+    }
+
+    private fun displayTextViewer() {
+        isTextViewerMode = true
+
+        pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.VISIBLE
+
+        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+        textViewerContainer.setBackgroundColor(bgColor)
+
+        applyTextViewerPreferences()
+
+        val displayWidth = textContentScrollView.width
+        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+        textViewerContent.text = formattedText
+
+        generateLineNumbers()
+
+        textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            lineNumberScrollView.scrollTo(0, scrollY)
+        }
+
+        updatePdfControls()
+    }
+
+    private fun generateLineNumbers() {
+        lineNumbersContainer.removeAllViews()
+        val totalLines = textViewerManager?.getTotalLines() ?: 0
+        val fontSize = textViewerManager?.getFontSize() ?: 14
+        val lineHeight = (fontSize * 1.2f * resources.displayMetrics.density).toInt()
+
+        for (i in 1..totalLines) {
+            val lineNumber = TextView(requireContext()).apply {
+                text = i.toString()
+                textSize = (fontSize - 2).toFloat()
+                setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
+                alpha = 0.6f
+                gravity = android.view.Gravity.END
+                setPadding(4, 0, 8, 0)
+                minWidth = (40 * resources.displayMetrics.density).toInt()
+                height = lineHeight
+            }
+            lineNumbersContainer.addView(lineNumber)
+        }
+    }
+
+    private fun applyTextViewerPreferences() {
+        textViewerManager?.let { manager ->
+            textViewerContent.textSize = manager.getFontSize().toFloat()
+            textViewerContent.setTextColor(manager.getFontColor())
+            textViewerContent.typeface = manager.getFontFamily()
+            textViewerContent.setBackgroundColor(manager.getBackgroundColor())
+            lineNumbersContainer.setBackgroundColor(manager.getBackgroundColor())
+        }
+    }
+
+    private fun switchToPdfViewer() {
+        isTextViewerMode = false
+        textViewerContainer.visibility = View.GONE
+        pdfContainer.visibility = View.VISIBLE
+        textViewerManager = null
+        updatePdfControls()
+    }
+
+    private fun showTextSearchDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_text_search, null)
+        val etSearchQuery = dialogView.findViewById<EditText>(R.id.etSearchQuery)
+        val btnClearSearchQuery = dialogView.findViewById<ImageButton>(R.id.btnClearSearchQuery)
+        val tvSearchResults = dialogView.findViewById<TextView>(R.id.tvSearchResults)
+        val btnPreviousResult = dialogView.findViewById<ImageButton>(R.id.btnPreviousResult)
+        val btnNextResult = dialogView.findViewById<ImageButton>(R.id.btnNextResult)
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.text_viewer_search))
+            .setView(dialogView)
+            .setNegativeButton(getString(R.string.moodle_close), null)
+            .create()
+
+        btnClearSearchQuery.setOnClickListener {
+            etSearchQuery.setText("")
+            searchResults = emptyList()
+            currentSearchIndex = 0
+            tvSearchResults.text = getString(R.string.text_viewer_no_results)
+            btnPreviousResult.isEnabled = false
+            btnNextResult.isEnabled = false
+        }
+
+        etSearchQuery.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val query = s.toString()
+                if (query.isNotEmpty()) {
+                    searchResults = textViewerManager?.searchText(query) ?: emptyList()
+                    currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
+                    updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                    if (searchResults.isNotEmpty()) {
+                        highlightSearchResult(searchResults[0])
+                    }
+                } else {
+                    searchResults = emptyList()
+                    currentSearchIndex = 0
+                    tvSearchResults.text = getString(R.string.text_viewer_no_results)
+                    btnPreviousResult.isEnabled = false
+                    btnNextResult.isEnabled = false
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        btnPreviousResult.setOnClickListener {
+            if (currentSearchIndex > 0) {
+                currentSearchIndex--
+                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                highlightSearchResult(searchResults[currentSearchIndex])
+            }
+        }
+
+        btnNextResult.setOnClickListener {
+            if (currentSearchIndex < searchResults.size - 1) {
+                currentSearchIndex++
+                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
+                highlightSearchResult(searchResults[currentSearchIndex])
+            }
+        }
+
+        textSearchDialog = dialog
+        dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun updateSearchResults(tvResults: TextView, btnPrev: ImageButton, btnNext: ImageButton) {
+        if (searchResults.isEmpty()) {
+            tvResults.text = getString(R.string.text_viewer_no_results)
+            btnPrev.isEnabled = false
+            btnNext.isEnabled = false
+        } else {
+            tvResults.text = getString(R.string.text_viewer_search_results, currentSearchIndex + 1, searchResults.size)
+            btnPrev.isEnabled = currentSearchIndex > 0
+            btnNext.isEnabled = currentSearchIndex < searchResults.size - 1
+        }
+    }
+
+    private fun highlightSearchResult(position: Int) {
+        textContentScrollView.post {
+            val layout = textViewerContent.layout
+            if (layout != null) {
+                val line = layout.getLineForOffset(position)
+                val y = layout.getLineTop(line)
+                textContentScrollView.smoothScrollTo(0, y - 100)
+            }
+        }
+    }
+
+    private fun showTextViewerPreferences() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_text_viewer_preferences, null)
+        val tvPreviewText = dialogView.findViewById<TextView>(R.id.tvPreviewText)
+        val seekBarFontSize = dialogView.findViewById<SeekBar>(R.id.seekBarFontSize)
+        val tvFontSizeValue = dialogView.findViewById<TextView>(R.id.tvFontSizeValue)
+        val spinnerFontColor = dialogView.findViewById<Spinner>(R.id.spinnerFontColor)
+        val spinnerBgColor = dialogView.findViewById<Spinner>(R.id.spinnerBgColor)
+        val spinnerFontFamily = dialogView.findViewById<Spinner>(R.id.spinnerFontFamily)
+        val checkBoxDisableFormatting = dialogView.findViewById<CheckBox>(R.id.checkBoxDisableFormatting)
+
+        val currentFontSize = sharedPrefs.getInt("text_viewer_font_size", 14)
+        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
+        val fontColorKey = if (currentDarkMode) "text_viewer_font_color_dark" else "text_viewer_font_color_light"
+        val bgColorKey = if (currentDarkMode) "text_viewer_bg_color_dark" else "text_viewer_bg_color_light"
+        val currentFontFamily = sharedPrefs.getString("text_viewer_font_family", "monospace") ?: "monospace"
+        val disableFormatting = sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
+
+        seekBarFontSize.progress = currentFontSize - 10
+        "${currentFontSize}sp".also { tvFontSizeValue.text = it }
+
+        val fontColorOptions = if (currentDarkMode) {
+            arrayOf(
+                getString(R.string.text_viewer_color_light_gray),
+                getString(R.string.text_viewer_color_white),
+                getString(R.string.text_viewer_color_light_blue),
+                getString(R.string.text_viewer_color_light_green)
+            )
+        } else {
+            arrayOf(
+                getString(R.string.text_viewer_color_black),
+                getString(R.string.text_viewer_color_dark_gray),
+                getString(R.string.text_viewer_color_dark_blue),
+                getString(R.string.text_viewer_color_dark_green)
+            )
+        }
+
+        val bgColorOptions = if (currentDarkMode) {
+            arrayOf(
+                getString(R.string.text_viewer_bg_dark),
+                getString(R.string.text_viewer_bg_darker),
+                getString(R.string.text_viewer_bg_black)
+            )
+        } else {
+            arrayOf(
+                getString(R.string.text_viewer_bg_white),
+                getString(R.string.text_viewer_bg_light_gray),
+                getString(R.string.text_viewer_bg_beige)
+            )
+        }
+
+        val fontColorAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontColorOptions)
+        fontColorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerFontColor.adapter = fontColorAdapter
+
+        val bgColorAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, bgColorOptions)
+        bgColorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerBgColor.adapter = bgColorAdapter
+
+        val fontFamilies = arrayOf("Monospace", "Serif", "Sans-serif")
+        val fontAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontFamilies)
+        fontAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerFontFamily.adapter = fontAdapter
+        spinnerFontFamily.setSelection(when (currentFontFamily) {
+            "serif" -> 1
+            "sans-serif" -> 2
+            else -> 0
+        })
+
+        checkBoxDisableFormatting.isChecked = disableFormatting
+
+        val previewSpannable = SpannableStringBuilder()
+        previewSpannable.append("TITLE TEXT\n")
+        previewSpannable.setSpan(StyleSpan(Typeface.BOLD), 0, 10, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        previewSpannable.setSpan(RelativeSizeSpan(1.3f), 0, 10, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+        previewSpannable.append("Normal text with ")
+        val boldStart = previewSpannable.length
+        previewSpannable.append("bold")
+        previewSpannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        previewSpannable.append(" and ")
+        val italicStart = previewSpannable.length
+        previewSpannable.append("italic")
+        previewSpannable.setSpan(StyleSpan(Typeface.ITALIC), italicStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        previewSpannable.append(" text.")
+
+        tvPreviewText.text = previewSpannable
+
+        val updatePreview = {
+            val previewFontSize = seekBarFontSize.progress + 10
+            tvPreviewText.textSize = previewFontSize.toFloat()
+
+            val selectedFontColor = when (spinnerFontColor.selectedItemPosition) {
+                0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
+                3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
+                else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+            }
+            tvPreviewText.setTextColor(selectedFontColor)
+
+            val selectedBgColor = when (spinnerBgColor.selectedItemPosition) {
+                0 -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+                1 -> if (currentDarkMode) android.graphics.Color.rgb(20, 20, 20) else android.graphics.Color.rgb(245, 245, 245)
+                2 -> if (currentDarkMode) android.graphics.Color.BLACK else android.graphics.Color.rgb(255, 248, 220)
+                else -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+            }
+            tvPreviewText.setBackgroundColor(selectedBgColor)
+
+            tvPreviewText.typeface = when (spinnerFontFamily.selectedItemPosition) {
+                1 -> Typeface.SERIF
+                2 -> Typeface.SANS_SERIF
+                else -> Typeface.MONOSPACE
+            }
+        }
+
+        seekBarFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val size = progress + 10
+                "${size}sp".also { tvFontSizeValue.text = it }
+                updatePreview()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        spinnerFontColor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updatePreview()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        spinnerBgColor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updatePreview()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        spinnerFontFamily.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updatePreview()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        updatePreview()
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.text_viewer_preferences))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.moodle_save)) { _, _ ->
+                val newFontSize = seekBarFontSize.progress + 10
+                val newFontFamily = when (spinnerFontFamily.selectedItemPosition) {
+                    1 -> "serif"
+                    2 -> "sans-serif"
+                    else -> "monospace"
+                }
+
+                val newFontColor = when (spinnerFontColor.selectedItemPosition) {
+                    0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                    1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                    2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
+                    3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
+                    else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                }
+
+                val newBgColor = when (spinnerBgColor.selectedItemPosition) {
+                    0 -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+                    1 -> if (currentDarkMode) android.graphics.Color.rgb(20, 20, 20) else android.graphics.Color.rgb(245, 245, 245)
+                    2 -> if (currentDarkMode) android.graphics.Color.BLACK else android.graphics.Color.rgb(255, 248, 220)
+                    else -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+                }
+
+                sharedPrefs.edit {
+                    putInt("text_viewer_font_size", newFontSize)
+                    putInt(fontColorKey, newFontColor)
+                    putInt(bgColorKey, newBgColor)
+                    putString("text_viewer_font_family", newFontFamily)
+                    putBoolean("text_viewer_disable_formatting", checkBoxDisableFormatting.isChecked)
+                }
+
+                applyTextViewerPreferences()
+                val displayWidth = textContentScrollView.width
+                val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+                textViewerContent.text = formattedText
+                generateLineNumbers()
+
+                val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+                textViewerContainer.setBackgroundColor(bgColor)
+                view?.findViewById<LinearLayout>(R.id.headerLayout)?.setBackgroundColor(bgColor)
+                view?.findViewById<LinearLayout>(R.id.searchLayout)?.setBackgroundColor(bgColor)
+                view?.findViewById<LinearLayout>(R.id.extendedHeaderLayout)?.setBackgroundColor(bgColor)
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .create()
+
+        dialog.show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    //endregion
+
+    //region **MOODLE_FETCH**
 
     private fun startMoodleFetchProcess() {
         if (isFetchingFromMoodle) {
@@ -7666,7 +9547,7 @@ class MoodleFragment : Fragment() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             checkLoginStatusForFetch()
-        }, 1000)
+        }, 2500)
     }
 
     private fun showMoodleFetchProgressDialog() {
@@ -8504,17 +10385,9 @@ class MoodleFragment : Fragment() {
         moodleFetchProgressDialog = null
     }
 
-    private fun detectCurrentTheme() {
-        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
+    //endregion
 
-        isDarkTheme = if (followSystemTheme) {
-            val nightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        } else {
-            sharedPreferences.getBoolean("dark_mode_enabled", false)
-        }
-    }
+    //region **DOCX_CONVERT**
 
     private fun handleDocxFile(url: String, cookies: String?, forceDownload: Boolean = false) {
         if (forceDownload) {
@@ -9052,207 +10925,9 @@ class MoodleFragment : Fragment() {
         pdfDocument.add(table)
     }
 
-    private fun showImagePageDialog(url: String) { // may be temporary, as i cant figure out how to preserve session cookies on moodle image pages
-        AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_image_page_detected))
-            .setMessage(getString(R.string.moodle_image_page_message))
-            .setPositiveButton(getString(R.string.moodle_open_browser)) { _, _ ->
-                openInExternalBrowser(url)
-            }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .show()
-            .apply {
-                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-                getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-                getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-            }
-    }
+    //endregion
 
-    private fun injectDialogButtonOnLoginPage() {
-        if (!isFragmentActive || !isAdded) {
-            L.d("MoodleFragment", "Fragment not active, skipping button injection")
-            return
-        }
-
-        val jsCode = """
-        (function() {
-            try {
-                var loginHeading = document.evaluate(
-                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/h1',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (!loginHeading || !loginHeading.textContent.toLowerCase().includes('login')) {
-                    return false;
-                }
-
-                var confirmHeader = document.evaluate(
-                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
-                    return false;
-                }
-
-                var existingButton = document.getElementById('logindialogbtn');
-                if (existingButton) {
-                    existingButton.remove();
-                }
-
-                var submitContainer = document.evaluate(
-                    '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/form/div[3]',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (!submitContainer) {
-                    return false;
-                }
-
-                var dialogButton = document.createElement('button');
-                dialogButton.id = 'logindialogbtn';
-                dialogButton.type = 'button';
-                dialogButton.className = 'btn btn-secondary btn-lg';
-                dialogButton.textContent = '${getString(R.string.moodle_show_dialog)}';
-                dialogButton.style.marginLeft = '8px';
-
-                dialogButton.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.showLoginDialogFromApp = true;
-                });
-
-                submitContainer.appendChild(dialogButton);
-                
-                return true;
-            } catch(e) {
-                return false;
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            if (!isFragmentActive || !isAdded) {
-                L.d("MoodleFragment", "Fragment detached during button injection")
-                return@evaluateJavascript
-            }
-
-            if (result == "true") {
-                L.d("MoodleFragment", "Dialog button injected successfully")
-                monitorDialogButtonClick()
-            } else {
-                L.d("MoodleFragment", "Could not inject dialog button (might not be on login page)")
-            }
-        }
-    }
-
-    private fun monitorDialogButtonClick() {
-        if (!isFragmentActive || !isAdded) {
-            L.d("MoodleFragment", "Fragment not active, stopping dialog button monitoring")
-            return
-        }
-
-        stopDialogButtonMonitoring()
-
-        isMonitoringDialogButton = true
-        val checkInterval = 300L
-        dialogButtonMonitorHandler = Handler(Looper.getMainLooper())
-
-        dialogButtonMonitorRunnable = object : Runnable {
-            override fun run() {
-                if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
-                    L.d("MoodleFragment", "Fragment detached or monitoring stopped")
-                    stopDialogButtonMonitoring()
-                    return
-                }
-
-                val currentUrl = webView.url ?: ""
-
-                if (!currentUrl.contains("login/index.php")) {
-                    L.d("MoodleFragment", "No longer on login page, stopping monitoring")
-                    stopDialogButtonMonitoring()
-                    return
-                }
-
-                val jsCode = """
-                (function() {
-                    try {
-                        var confirmHeader = document.evaluate(
-                            '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div[1]/h4',
-                            document,
-                            null,
-                            XPathResult.FIRST_ORDERED_NODE_TYPE,
-                            null
-                        ).singleNodeValue;
-                        
-                        if (confirmHeader && (confirmHeader.textContent === 'Bestätigen' || confirmHeader.textContent === 'Confirm')) {
-                            return 'terminate';
-                        }
-                        
-                        if (window.showLoginDialogFromApp === true) {
-                            window.showLoginDialogFromApp = false;
-                            return true;
-                        }
-                        
-                        var button = document.getElementById('logindialogbtn');
-                        if (!button) {
-                            return 'reinject';
-                        }
-                        
-                        return false;
-                    } catch(e) {
-                        return false;
-                    }
-                })();
-            """.trimIndent()
-
-                webView.evaluateJavascript(jsCode) { result ->
-                    if (!isFragmentActive || !isAdded || !isMonitoringDialogButton) {
-                        L.d("MoodleFragment", "Fragment detached during evaluation")
-                        stopDialogButtonMonitoring()
-                        return@evaluateJavascript
-                    }
-
-                    when (result.trim('"')) {
-                        "true" -> {
-                            L.d("MoodleFragment", "Dialog button clicked - showing login dialog")
-                            activity?.runOnUiThread {
-                                if (isFragmentActive && isAdded && !isLoginDialogShown) {
-                                    showLoginDialog()
-                                }
-                            }
-                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
-                        }
-                        "reinject" -> {
-                            L.d("MoodleFragment", "Button missing, re-injecting")
-                            if (isFragmentActive && isAdded) {
-                                injectDialogButtonOnLoginPage()
-                            }
-                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
-                        }
-                        "terminate" -> {
-                            L.d("MoodleFragment", "On termination page, stopping monitoring")
-                            stopDialogButtonMonitoring()
-                        }
-                        else -> {
-                            dialogButtonMonitorHandler?.postDelayed(this, checkInterval)
-                        }
-                    }
-                }
-            }
-        }
-
-        dialogButtonMonitorHandler?.post(dialogButtonMonitorRunnable!!)
-    }
+    //region **MESSAGE_CUSTOM**
 
     private fun injectMobileOptimizations(url: String) {
         when {
@@ -9513,7 +11188,7 @@ class MoodleFragment : Fragment() {
                     null,
                     XPathResult.FIRST_ORDERED_NODE_TYPE,
                     null
-                ).singleNodeNode;
+                ).singleNodeValue;
                 
                 // "side bar chat" send button
                 var sidebarSendBtn = document.evaluate(
@@ -9523,24 +11198,44 @@ class MoodleFragment : Fragment() {
                     XPathResult.FIRST_ORDERED_NODE_TYPE,
                     null
                 ).singleNodeValue;
+
+                window.moodleTextareaHandlers = {};
+                window.moodleSendBtnHandlers = {};
                 
                 function setupTextareaOverride(textarea, chatType) {
                     if (!textarea) return false;
                     
-                    textarea.addEventListener('focus', function(e) {
+                    var focusHandler = function(e) {
+                        if (window.moodleDialogSuppressed) {
+                            console.log('Dialog suppressed - allowing native focus');
+                            return;
+                        }
                         e.preventDefault();
                         e.stopPropagation();
                         textarea.blur();
                         window.moodleMessageInputFocused = chatType;
                         console.log('Textarea focused: ' + chatType);
-                    }, true);
+                    };
                     
-                    textarea.addEventListener('click', function(e) {
+                    var clickHandler = function(e) {
+                        if (window.moodleDialogSuppressed) {
+                            console.log('Dialog suppressed - allowing native click');
+                            return;
+                        }
                         e.preventDefault();
                         e.stopPropagation();
                         window.moodleMessageInputFocused = chatType;
                         console.log('Textarea clicked: ' + chatType);
-                    }, true);
+                    };
+                    
+                    textarea.addEventListener('focus', focusHandler, true);
+                    textarea.addEventListener('click', clickHandler, true);
+                    
+                    window.moodleTextareaHandlers[chatType] = {
+                        element: textarea,
+                        focusHandler: focusHandler,
+                        clickHandler: clickHandler
+                    };
                     
                     return true;
                 }
@@ -9548,12 +11243,23 @@ class MoodleFragment : Fragment() {
                 function setupSendButtonOverride(button, chatType) {
                     if (!button) return false;
                     
-                    button.addEventListener('click', function(e) {
+                    var clickHandler = function(e) {
+                        if (window.moodleDialogSuppressed) {
+                            console.log('Dialog suppressed - allowing native send');
+                            return;
+                        }
                         e.preventDefault();
                         e.stopPropagation();
                         window.moodleMessageSendClicked = chatType;
                         console.log('Send button clicked: ' + chatType);
-                    }, true);
+                    };
+                    
+                    button.addEventListener('click', clickHandler, true);
+                    
+                    window.moodleSendBtnHandlers[chatType] = {
+                        element: button,
+                        clickHandler: clickHandler
+                    };
                     
                     return true;
                 }
@@ -9564,6 +11270,7 @@ class MoodleFragment : Fragment() {
                 var sidebarSendBtnSetup = setupSendButtonOverride(sidebarSendBtn, 'sidebar');
                 
                 window.moodleMessageInputOverrideSetup = true;
+                window.moodleDialogSuppressed = false;
                 
                 console.log('Message input override setup complete');
                 console.log('Main textarea: ' + mainTextareaSetup);
@@ -9699,6 +11406,7 @@ class MoodleFragment : Fragment() {
         messageInputMonitorHandler = null
         messageInputMonitorRunnable = null
         messageDialogSuppressedForSession = false
+        setSuppressedFlagInWebView(false)
         L.d("MoodleFragment", "Message input monitoring stopped - dialog suppression reset")
     }
 
@@ -9791,13 +11499,18 @@ class MoodleFragment : Fragment() {
 
     private fun showMessageInputDialog() {
         if (messageDialogSuppressedForSession) {
-            L.d("MoodleFragment", "Message input dialog suppressed for this session")
+            L.d("MoodleFragment", "Message input dialog suppressed - allowing native input")
+            allowNativeMessageInput()
             return
         }
 
         getRecipientInfo { recipientInfo ->
             if (recipientInfo == null) {
-                Toast.makeText(requireContext(), "Failed to get recipient information", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    requireContext(),
+                    "Failed to get recipient information",
+                    Toast.LENGTH_SHORT
+                ).show()
                 return@getRecipientInfo
             }
 
@@ -9821,14 +11534,33 @@ class MoodleFragment : Fragment() {
                 tvCharCounter.text = getString(R.string.moodle_char_count, 0, maxChars)
 
                 etMessageInput.addTextChangedListener(object : TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun beforeTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        count: Int,
+                        after: Int
+                    ) {
+                    }
+
+                    override fun onTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        before: Int,
+                        count: Int
+                    ) {
+                    }
+
                     override fun afterTextChanged(s: Editable?) {
                         val length = s?.length ?: 0
                         tvCharCounter.text = getString(R.string.moodle_char_count, length, maxChars)
 
                         if (length >= maxChars) {
-                            tvCharCounter.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+                            tvCharCounter.setTextColor(
+                                ContextCompat.getColor(
+                                    requireContext(),
+                                    android.R.color.holo_red_dark
+                                )
+                            )
                         } else {
                             tvCharCounter.setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
                         }
@@ -9838,10 +11570,20 @@ class MoodleFragment : Fragment() {
                 btnCopyText.setOnClickListener {
                     val text = etMessageInput.text.toString()
                     if (text.isNotEmpty()) {
-                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText(getString(R.string.moodle_message_to, recipientInfo.username), text)
+                        val clipboard =
+                            requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText(
+                            getString(
+                                R.string.moodle_message_to,
+                                recipientInfo.username
+                            ), text
+                        )
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(requireContext(), getString(R.string.moodle_text_copied_clipboard), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.moodle_text_copied_clipboard),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
 
@@ -9858,19 +11600,25 @@ class MoodleFragment : Fragment() {
                     .create()
 
                 dialog.setOnShowListener {
-                    val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+                    val buttonColor =
+                        requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
 
                     val positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                     positiveButton?.setTextColor(buttonColor)
                     positiveButton?.setOnClickListener {
                         val messageText = etMessageInput.text.toString()
                         if (messageText.isEmpty()) {
-                            Toast.makeText(requireContext(), getString(R.string.moodle_message_empty), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.moodle_message_empty),
+                                Toast.LENGTH_SHORT
+                            ).show()
                             return@setOnClickListener
                         }
 
                         if (cbDontShowForNow.isChecked) {
                             messageDialogSuppressedForSession = true
+                            setSuppressedFlagInWebView(true)
                             L.d("MoodleFragment", "Message dialog suppressed until page refresh")
                         }
 
@@ -9882,6 +11630,7 @@ class MoodleFragment : Fragment() {
                     negativeButton?.setOnClickListener {
                         if (cbDontShowForNow.isChecked) {
                             messageDialogSuppressedForSession = true
+                            setSuppressedFlagInWebView(true)
                             L.d("MoodleFragment", "Message dialog suppressed until page refresh")
                         }
                         showDiscardConfirmDialog(dialog)
@@ -9892,8 +11641,64 @@ class MoodleFragment : Fragment() {
                 dialog.show()
 
                 etMessageInput.requestFocus()
-                val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                val imm =
+                    requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showSoftInput(etMessageInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+    }
+
+    private fun setSuppressedFlagInWebView(suppressed: Boolean) {
+        val jsCode = """
+        (function() {
+            window.moodleDialogSuppressed = $suppressed;
+            console.log('Dialog suppression set to: $suppressed');
+            return true;
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            L.d("MoodleFragment", "Set dialog suppression flag: $suppressed, result: $result")
+        }
+    }
+
+    private fun allowNativeMessageInput() {
+        val chatType = currentMessageChatType ?: return
+
+        val textareaPath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/textarea"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/textarea"
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var textarea = document.evaluate(
+                    '$textareaPath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (textarea) {
+                    textarea.focus();
+                    console.log('Native input allowed for suppressed dialog');
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                console.error('Error allowing native input: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Native message input enabled")
+            } else {
+                L.e("MoodleFragment", "Failed to enable native message input")
             }
         }
     }
@@ -10080,6 +11885,12 @@ class MoodleFragment : Fragment() {
     }
 
     private fun showSendConfirmationDialog() {
+        if (messageDialogSuppressedForSession) {
+            L.d("MoodleFragment", "Send dialog suppressed - allowing native send")
+            allowNativeSend()
+            return
+        }
+
         getRecipientInfo { recipientInfo ->
             if (recipientInfo == null) {
                 Toast.makeText(requireContext(), "Failed to get recipient information", Toast.LENGTH_SHORT).show()
@@ -10095,6 +11906,8 @@ class MoodleFragment : Fragment() {
                 dialogView.findViewById<View>(R.id.etMessageInput)?.visibility = View.GONE
                 dialogView.findViewById<View>(R.id.tvCharCounter)?.visibility = View.GONE
                 dialogView.findViewById<View>(R.id.btnCopyText)?.visibility = View.GONE
+                dialogView.findViewById<View>(R.id.btnDeleteMsg)?.visibility = View.GONE
+                dialogView.findViewById<View>(R.id.cbDontShowForNow)?.visibility = View.GONE
 
                 tvRecipientName.text = recipientInfo.username
                 userInfoContainer.gravity = android.view.Gravity.CENTER
@@ -10116,6 +11929,59 @@ class MoodleFragment : Fragment() {
                 val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
                 dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            }
+        }
+    }
+
+    private fun allowNativeSend() {
+        val chatType = currentMessageChatType ?: return
+
+        val sendButtonPath = when (chatType) {
+            MessageChatType.MAIN_CHAT -> "/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/div/div[2]/div[3]/div/div[1]/div[2]/div/button[2]"
+            MessageChatType.SIDEBAR_CHAT -> "/html/body/div[1]/div[3]/div[2]/div[4]/div[1]/div[1]/div[2]/div/button[2]"
+        }
+
+        val jsCode = """
+        (function() {
+            try {
+                var sendButton = document.evaluate(
+                    '$sendButtonPath',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (sendButton) {
+                    window.moodleAllowSend = true;
+                    
+                    var clickEvent = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    sendButton.dispatchEvent(clickEvent);
+                    
+                    setTimeout(function() {
+                        window.moodleAllowSend = false;
+                    }, 100);
+                    
+                    console.log('Native send allowed');
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                console.error('Error allowing native send: ' + e.message);
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Native send executed")
+            } else {
+                L.e("MoodleFragment", "Failed to execute native send")
             }
         }
     }
@@ -10174,343 +12040,802 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun switchToTextViewer() {
-        val pdfState = pdfViewerManager?.getCurrentState()
-        val pdfFile = pdfState?.file
+    //endregion
 
-        if (pdfFile == null || !pdfFile.exists()) {
-            Toast.makeText(requireContext(), getString(R.string.text_viewer_no_pdf), Toast.LENGTH_SHORT).show()
-            return
+    //region **DARK_THEME_INJECTION**
+
+    private fun getSystemDarkMode(): Boolean {
+        val appContext = requireContext().applicationContext
+        val uiModeManager = appContext.getSystemService(android.app.UiModeManager::class.java)
+
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            uiModeManager?.nightMode == android.app.UiModeManager.MODE_NIGHT_YES
+        } else {
+            val baseConfig = appContext.resources.configuration
+            val nightMode = baseConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+    }
+
+    private fun removeMoodleDarkMode() {
+        val removeCSS = """
+        (function() {
+            const style = document.getElementById('darkreader-moodle-override');
+            if (style) {
+                style.remove();
+                window.moodleDarkModeInjected = false;
+                console.log('Moodle dark mode removed');
+                return true;
+            }
+            return false;
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(removeCSS) { result ->
+            if (result == "true") {
+                isDarkModeInjected = false
+                L.d("MoodleFragment", "Dark mode CSS removed successfully")
+            }
+        }
+    }
+
+    fun toggleMoodleDarkMode() {
+        moodleDarkModeEnabled = !moodleDarkModeEnabled
+        sharedPrefs.edit {
+            putBoolean("moodle_dark_mode_enabled", moodleDarkModeEnabled)
         }
 
-        val loadingDialog = AlertDialog.Builder(requireContext())
-            .setMessage(getString(R.string.text_viewer_loading))
-            .setCancelable(false)
-            .show()
+        if (moodleDarkModeEnabled) {
+            webView.visibility = View.INVISIBLE
+            isDarkModeReady = false
+            webView.reload()
+            Toast.makeText(requireContext(), "Moodle Dark Mode aktiviert", Toast.LENGTH_SHORT).show()
+        } else {
+            removeMoodleDarkMode()
+            webView.visibility = View.VISIBLE
+            isDarkModeReady = false
+            pendingDarkModeUrl = null
+            Toast.makeText(requireContext(), "Moodle Dark Mode deaktiviert", Toast.LENGTH_SHORT).show()
+        }
+    }
 
-        backgroundExecutor.execute {
+    private fun injectDarkTheme() {
+        darkModeInjectionAttempts++
+
+        val darkModeCSS = """
+        (function() {
+            // Return immediately if already injected
+            if (document.getElementById('darkreader-moodle-override')) {
+                return 'already_present';
+            }
+            
             try {
-                textViewerManager = TextViewerManager(requireContext())
-                val darkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
-
-                if (textViewerManager?.parsePdfToText(pdfFile, darkMode) == true) {
-                    activity?.runOnUiThread {
-                        loadingDialog.dismiss()
-                        saveOriginalBackground()
-                        displayTextViewer()
+                const css = `
+                    :root {
+                        --dark-bg-primary: #181818;
+                        --dark-bg-secondary: #1e1e1e;
+                        --dark-surface: #242424;
+                        --dark-surface-elevated: #2d2d2d;
+                        --dark-surface-hover: #333333;
+                        --dark-text-primary: #e8e6e3;
+                        --dark-text-secondary: #b3b1ad;
+                        --dark-text-tertiary: #8b8883;
+                        --dark-border: #3a3a3a;
+                        --dark-border-light: #2d2d2d;
+                        --dark-primary: #5094ff;
+                        --dark-primary-hover: #6ba4ff;
+                        --dark-link: #5094ff;
+                        --dark-link-hover: #6ba4ff;
                     }
-                } else {
-                    activity?.runOnUiThread {
-                        loadingDialog.dismiss()
-                        Toast.makeText(requireContext(), getString(R.string.text_viewer_parse_failed), Toast.LENGTH_SHORT).show()
+                    
+                    /* === PREVENT LIGHT THEME FLASH - CRITICAL === */
+                    * {
+                        background-color: transparent !important;
                     }
-                }
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error switching to text viewer", e)
-                activity?.runOnUiThread {
-                    loadingDialog.dismiss()
-                    Toast.makeText(requireContext(), getString(R.string.text_viewer_error), Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun saveOriginalBackground() {
-        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? android.graphics.drawable.ColorDrawable)?.color
-            ?: requireContext().getThemeColor(R.attr.homeworkFragmentBackgroundColor)
-    }
-
-    private fun displayTextViewer() {
-        isTextViewerMode = true
-
-        pdfContainer.visibility = View.GONE
-        textViewerContainer.visibility = View.VISIBLE
-
-        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
-        textViewerContainer.setBackgroundColor(bgColor)
-
-        applyTextViewerPreferences()
-
-        val displayWidth = textContentScrollView.width
-        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
-        textViewerContent.text = formattedText
-
-        generateLineNumbers()
-
-        textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            lineNumberScrollView.scrollTo(0, scrollY)
-        }
-
-        updatePdfControls()
-    }
-
-    private fun generateLineNumbers() {
-        lineNumbersContainer.removeAllViews()
-        val totalLines = textViewerManager?.getTotalLines() ?: 0
-        val fontSize = textViewerManager?.getFontSize() ?: 14
-        val lineHeight = (fontSize * 1.2f * resources.displayMetrics.density).toInt()
-
-        for (i in 1..totalLines) {
-            val lineNumber = TextView(requireContext()).apply {
-                text = i.toString()
-                textSize = (fontSize - 2).toFloat()
-                setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
-                alpha = 0.6f
-                gravity = android.view.Gravity.END
-                setPadding(4, 0, 8, 0)
-                minWidth = (40 * resources.displayMetrics.density).toInt()
-                height = lineHeight
-            }
-            lineNumbersContainer.addView(lineNumber)
-        }
-    }
-
-    private fun applyTextViewerPreferences() {
-        textViewerManager?.let { manager ->
-            textViewerContent.textSize = manager.getFontSize().toFloat()
-            textViewerContent.setTextColor(manager.getFontColor())
-            textViewerContent.typeface = manager.getFontFamily()
-            textViewerContent.setBackgroundColor(manager.getBackgroundColor())
-            lineNumbersContainer.setBackgroundColor(manager.getBackgroundColor())
-        }
-    }
-
-    private fun switchToPdfViewer() {
-        isTextViewerMode = false
-        textViewerContainer.visibility = View.GONE
-        pdfContainer.visibility = View.VISIBLE
-        textViewerManager = null
-        updatePdfControls()
-    }
-
-    private fun showTextSearchDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_text_search, null)
-        val etSearchQuery = dialogView.findViewById<EditText>(R.id.etSearchQuery)
-        val btnClearSearchQuery = dialogView.findViewById<ImageButton>(R.id.btnClearSearchQuery)
-        val tvSearchResults = dialogView.findViewById<TextView>(R.id.tvSearchResults)
-        val btnPreviousResult = dialogView.findViewById<ImageButton>(R.id.btnPreviousResult)
-        val btnNextResult = dialogView.findViewById<ImageButton>(R.id.btnNextResult)
-
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.text_viewer_search))
-            .setView(dialogView)
-            .setNegativeButton(getString(R.string.moodle_close), null)
-            .create()
-
-        btnClearSearchQuery.setOnClickListener {
-            etSearchQuery.setText("")
-            searchResults = emptyList()
-            currentSearchIndex = 0
-            tvSearchResults.text = getString(R.string.text_viewer_no_results)
-            btnPreviousResult.isEnabled = false
-            btnNextResult.isEnabled = false
-        }
-
-        etSearchQuery.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                val query = s.toString()
-                if (query.isNotEmpty()) {
-                    searchResults = textViewerManager?.searchText(query) ?: emptyList()
-                    currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
-                    updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                    if (searchResults.isNotEmpty()) {
-                        highlightSearchResult(searchResults[0])
+                    
+                    html {
+                        background-color: var(--dark-bg-primary) !important;
+                        color-scheme: dark !important;
                     }
-                } else {
-                    searchResults = emptyList()
-                    currentSearchIndex = 0
-                    tvSearchResults.text = getString(R.string.text_viewer_no_results)
-                    btnPreviousResult.isEnabled = false
-                    btnNextResult.isEnabled = false
-                }
+                    
+                    body {
+                        background-color: var(--dark-bg-primary) !important;
+                        color: var(--dark-text-primary) !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    
+                    #page, #page-wrapper, #page-content,
+                    .container, .container-fluid,
+                    #region-main-box, #region-main,
+                    .region-main, .region-main-content,
+                    [role="main"] {
+                        background-color: var(--dark-bg-primary) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === User initials should NOT be overridden === */
+                    .userinitials {
+                        color: inherit !important;
+                        background-color: inherit !important;
+                        filter: none !important;
+                    }
+                    
+                    /* === Collapse/Expand buttons === */
+                    .icons-collapse-expand,
+                    .btn-icon[data-bs-toggle="collapse"],
+                    a.btn.btn-icon[data-for="sectiontoggler"] {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .icons-collapse-expand:hover,
+                    .btn-icon[data-bs-toggle="collapse"]:hover {
+                        background-color: var(--dark-surface-hover) !important;
+                    }
+                    
+                    .icons-collapse-expand i,
+                    .btn-icon[data-bs-toggle="collapse"] i {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === Activity header and dates === */
+                    .activity-header,
+                    [data-for="page-activity-header"] {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-information,
+                    [data-region="activity-information"] {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-dates,
+                    [data-region="activity-dates"] {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-dates > div {
+                        background-color: transparent !important;
+                        color: var(--dark-text-secondary) !important;
+                    }
+                    
+                    .activity-dates strong {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-description {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-description .box,
+                    .activity-description .generalbox {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === Message popover toggle background === */
+                    .popover-region[data-region="popover-region-messages"] {
+                        background-color: transparent !important;
+                    }
+                    
+                    #message-drawer-toggle-68e669b44148568e669b43e32a23,
+                    a[id*="message-drawer-toggle"] {
+                        background-color: transparent !important;
+                    }
+                    
+                    .popover-region-messages .nav-link {
+                        background-color: transparent !important;
+                    }
+                    
+                    /* Ensure message icon has correct colors */
+                    .popover-region[data-region="popover-region-messages"] i.fa-message {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* Message count badge */
+                    .popover-region .count-container,
+                    .popover-region[data-region="popover-region-messages"] .count-container {
+                        background-color: var(--dark-primary) !important;
+                        color: #ffffff !important;
+                    }
+                    
+                    /* === LOGIN PAGE SPECIFIC BACKGROUND === */
+                    .pagelayout-login #page {
+                        background-color: var(--dark-bg-primary) !important;
+                        background-image: linear-gradient(to right, var(--dark-bg-primary) 0%, var(--dark-bg-secondary) 100%) !important;
+                    }
+                    
+                    /* === LOGIN PAGE SPECIFIC === */
+                    .login-wrapper, .login-container,
+                    .loginform, .login-form {
+                        background-color: var(--dark-bg-primary) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .login-heading {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .login-instructions, .login-divider {
+                        background-color: transparent !important;
+                        color: var(--dark-text-secondary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === CARDS & BLOCKS === */
+                    .card {
+                        background-color: var(--dark-surface) !important;
+                        border-color: var(--dark-border) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .card-body, .card-header, .card-footer {
+                        background-color: var(--dark-surface) !important;
+                        border-color: var(--dark-border) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .card-header {
+                        background-color: var(--dark-surface-elevated) !important;
+                    }
+                    
+                    [class*="block_"], [id*="block-"],
+                    .block, .block-region {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === NAVIGATION & HEADER === */
+                    .navbar, nav, .fixed-top {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .navbar-nav, .nav-link, .nav-item {
+                        color: var(--dark-text-primary) !important;
+                    }
+
+                    nav.navbar-nav.d-md-none {
+                        background-color: var(--dark-surface) !important;
+                    }
+                    
+                    #page-header, .page-header-headings {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+
+                    .page-context-header, .page-header-headings,
+                    .d-flex.align-items-center {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .breadcrumb {
+                        background-color: transparent !important;
+                    }
+                    
+                    .breadcrumb-item, .breadcrumb-item a {
+                        color: var(--dark-text-secondary) !important;
+                    }
+                    
+                    .breadcrumb-item + .breadcrumb-item::before {
+                        color: var(--dark-text-tertiary) !important;
+                    }
+
+                    nav[aria-label="Navigationsleiste"] {
+                        background-color: transparent !important;
+                    }
+                    
+                    /* === FORMS & INPUTS === */
+                    input, textarea, select {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .form-control, .form-control-lg {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .form-control:focus, input:focus, textarea:focus {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-primary) !important;
+                        box-shadow: 0 0 0 0.2rem rgba(80, 148, 255, 0.25) !important;
+                    }
+                    
+                    input::placeholder, textarea::placeholder {
+                        color: var(--dark-text-tertiary) !important;
+                        opacity: 0.7 !important;
+                    }
+                    
+                    .input-group-text {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-secondary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === BUTTONS === */
+                    .btn {
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .btn-secondary {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .btn-secondary:hover {
+                        background-color: var(--dark-surface-hover) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .btn-primary {
+                        background-color: var(--dark-primary) !important;
+                        border-color: var(--dark-primary) !important;
+                        color: #ffffff !important;
+                    }
+                    
+                    .btn-primary:hover {
+                        background-color: var(--dark-primary-hover) !important;
+                        border-color: var(--dark-primary-hover) !important;
+                    }
+                    
+                    .btn-link {
+                        color: var(--dark-link) !important;
+                        background-color: transparent !important;
+                    }
+                    
+                    .btn-link:hover {
+                        color: var(--dark-link-hover) !important;
+                        background-color: transparent !important;
+                    }
+
+                    .btn-submit.search-icon {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .btn-submit.search-icon:hover {
+                        background-color: var(--dark-surface-hover) !important;
+                    }
+                    
+                    button, [role="button"] {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === LINKS === */
+                    a {
+                        color: var(--dark-link) !important;
+                    }
+                    
+                    a:hover {
+                        color: var(--dark-link-hover) !important;
+                    }
+                    
+                    /* === DROPDOWNS & MENUS === */
+                    .dropdown-menu {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .dropdown-item {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .dropdown-item:hover, .dropdown-item:focus {
+                        background-color: var(--dark-surface-hover) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .dropdown-divider {
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === LISTS === */
+                    .list-group {
+                        background-color: transparent !important;
+                    }
+                    
+                    .list-group-item {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border-light) !important;
+                    }
+                    
+                    .list-group-item:hover {
+                        background-color: var(--dark-surface-elevated) !important;
+                    }
+                    
+                    /* === TABLES === */
+                    table, .table {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    thead, tbody, tfoot, tr, td, th {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border-light) !important;
+                    }
+                    
+                    .table-striped tbody tr:nth-of-type(odd) {
+                        background-color: var(--dark-surface-elevated) !important;
+                    }
+                    
+                    /* === MODALS & POPOVERS === */
+                    .modal-content {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .modal-header, .modal-footer {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .popover {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .popover-body, .popover-header {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .tooltip-inner {
+                        background-color: var(--dark-surface-elevated) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === POPOVER REGIONS === */
+                    .popover-region-container {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .popover-region-header-container {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-bottom: 1px solid var(--dark-border) !important;
+                    }
+                    
+                    .popover-region-content-container {
+                        background-color: var(--dark-surface) !important;
+                    }
+                    
+                    .popover-region-footer-container {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-top: 1px solid var(--dark-border) !important;
+                    }
+
+                    .popover-region-toggle,
+                    #message-drawer-toggle-68e6603dcdd8368e6603dc094318,
+                    a[id*="message-drawer-toggle"] {
+                        background-color: transparent !important;
+                    }
+                    
+                    [data-region="popover-region-messages"] .popover-region-toggle {
+                        background-color: transparent !important;
+                    }
+                    
+                    /* === ALERTS & NOTIFICATIONS === */
+                    .alert {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    [data-region*="notification"], [data-region*="message"] {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === PAGINATION === */
+                    .page-item .page-link {
+                        background-color: var(--dark-surface) !important;
+                        border-color: var(--dark-border) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .page-item.disabled .page-link {
+                        background-color: var(--dark-surface-elevated) !important;
+                        border-color: var(--dark-border-light) !important;
+                        color: var(--dark-text-tertiary) !important;
+                    }
+                    
+                    .page-item:not(.disabled) .page-link:hover {
+                        background-color: var(--dark-surface-hover) !important;
+                        border-color: var(--dark-border) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === MOODLE SPECIFIC ELEMENTS === */
+                    .activity, .section, .course-content,
+                    .activityinstance, .contentwithoutlink {
+                        background-color: transparent !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .activity-item, .section-item {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .course-info-container {
+                        background-color: var(--dark-surface) !important;
+                    }
+
+                    .activitybadge.badge {
+                        background-color: transparent !important;
+                        border: none !important;
+                    }
+
+                    .expanded-icon, .collapsed-icon {
+                        background-color: transparent !important;
+                    }
+                    
+                    .expanded-icon i, .collapsed-icon i {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === CALENDAR === */
+                    .calendar-month, .calendarmonth, .day {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === BADGES === */
+                    .badge {
+                        color: var(--dark-text-primary) !important;
+                        border: 1px solid var(--dark-border) !important;
+                    }
+                    
+                    .badge-primary, .bg-primary {
+                        background-color: var(--dark-primary) !important;
+                        color: #ffffff !important;
+                    }
+                    
+                    /* === TEXT UTILITIES === */
+                    .text-muted {
+                        color: var(--dark-text-secondary) !important;
+                    }
+                    
+                    .text-secondary {
+                        color: var(--dark-text-secondary) !important;
+                    }
+                    
+                    h1, h2, h3, h4, h5, h6,
+                    .h1, .h2, .h3, .h4, .h5, .h6 {
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    p, span, div, label, legend {
+                        color: inherit !important;
+                    }
+                    
+                    /* === BORDERS & DIVIDERS === */
+                    hr, .border, .border-top, .border-bottom,
+                    .border-left, .border-right {
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    .divider {
+                        background-color: var(--dark-border) !important;
+                        border-color: var(--dark-border) !important;
+                    }
+                    
+                    /* === FOOTER === */
+                    footer, #page-footer {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .footer-dark, .footer-dark-inner {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    .footer-dark.bg-dark {
+                        background-color: var(--dark-surface) !important;
+                    }
+                    
+                    /* === ICONS === */
+                    img.icon, img.iconsmall, img.iconlarge,
+                    img[class*="icon"], 
+                    .icon, i[class*="fa-"],
+                    [data-region="activity-icon"] {
+                        filter: none !important;
+                        opacity: 1 !important;
+                    }
+                    
+                    img.activityicon:not([src*=".svg"]) {
+                        filter: invert(0.9) hue-rotate(180deg) !important;
+                    }
+                    
+                    img[src*=".svg"], svg {
+                        filter: none !important;
+                    }
+                    
+                    /* === IMAGES === */
+                    img:not(.icon):not([class*="icon"]):not([data-region="activity-icon"]) {
+                        filter: brightness(0.8) contrast(1.05) !important;
+                    }
+                    
+                    /* === LOADING PLACEHOLDERS === */
+                    [class*="bg-pulse-grey"] {
+                        background-color: var(--dark-surface-elevated) !important;
+                    }
+                    
+                    .bg-light, .bg-white {
+                        background-color: var(--dark-surface) !important;
+                        color: var(--dark-text-primary) !important;
+                    }
+                    
+                    /* === SCROLLBARS === */
+                    ::-webkit-scrollbar {
+                        width: 12px;
+                        height: 12px;
+                        background-color: var(--dark-bg-primary);
+                    }
+                    
+                    ::-webkit-scrollbar-track {
+                        background-color: var(--dark-bg-secondary);
+                    }
+                    
+                    ::-webkit-scrollbar-thumb {
+                        background-color: var(--dark-surface-elevated);
+                        border-radius: 6px;
+                        border: 2px solid var(--dark-bg-secondary);
+                    }
+                    
+                    ::-webkit-scrollbar-thumb:hover {
+                        background-color: var(--dark-surface-hover);
+                    }
+                    
+                    /* === SELECTION === */
+                    ::selection {
+                        background-color: var(--dark-primary) !important;
+                        color: #ffffff !important;
+                    }
+                    
+                    ::-moz-selection {
+                        background-color: var(--dark-primary) !important;
+                        color: #ffffff !important;
+                    }
+                `;
+                
+                const style = document.createElement('style');
+                style.id = 'darkreader-moodle-override';
+                style.textContent = css;
+                document.head.appendChild(style);
+
+                document.documentElement.style.backgroundColor = '#181818';
+                document.body.style.backgroundColor = '#181818';
+                document.body.style.color = '#e8e6e3';
+                
+                window.moodleDarkModeInjected = true;
+                console.log('Moodle dark mode CSS injected');
+                return 'success';
+            } catch(e) {
+                console.error('Error injecting dark mode: ' + e.message);
+                return 'error: ' + e.message;
             }
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
+        })();
+    """.trimIndent()
 
-        btnPreviousResult.setOnClickListener {
-            if (currentSearchIndex > 0) {
-                currentSearchIndex--
-                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                highlightSearchResult(searchResults[currentSearchIndex])
-            }
-        }
-
-        btnNextResult.setOnClickListener {
-            if (currentSearchIndex < searchResults.size - 1) {
-                currentSearchIndex++
-                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                highlightSearchResult(searchResults[currentSearchIndex])
-            }
-        }
-
-        textSearchDialog = dialog
-        dialog.show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-    }
-
-    private fun updateSearchResults(tvResults: TextView, btnPrev: ImageButton, btnNext: ImageButton) {
-        if (searchResults.isEmpty()) {
-            tvResults.text = getString(R.string.text_viewer_no_results)
-            btnPrev.isEnabled = false
-            btnNext.isEnabled = false
-        } else {
-            tvResults.text = getString(R.string.text_viewer_search_results, currentSearchIndex + 1, searchResults.size)
-            btnPrev.isEnabled = currentSearchIndex > 0
-            btnNext.isEnabled = currentSearchIndex < searchResults.size - 1
-        }
-    }
-
-    private fun highlightSearchResult(position: Int) {
-        textContentScrollView.post {
-            val layout = textViewerContent.layout
-            if (layout != null) {
-                val line = layout.getLineForOffset(position)
-                val y = layout.getLineTop(line)
-                textContentScrollView.smoothScrollTo(0, y - 100)
-            }
-        }
-    }
-
-    private fun showTextViewerPreferences() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_text_viewer_preferences, null)
-        val tvPreviewText = dialogView.findViewById<TextView>(R.id.tvPreviewText)
-        val seekBarFontSize = dialogView.findViewById<SeekBar>(R.id.seekBarFontSize)
-        val tvFontSizeValue = dialogView.findViewById<TextView>(R.id.tvFontSizeValue)
-        val spinnerFontColor = dialogView.findViewById<Spinner>(R.id.spinnerFontColor)
-        val spinnerFontFamily = dialogView.findViewById<Spinner>(R.id.spinnerFontFamily)
-        val checkBoxDisableFormatting = dialogView.findViewById<CheckBox>(R.id.checkBoxDisableFormatting)
-
-        val currentFontSize = sharedPrefs.getInt("text_viewer_font_size", 14)
-        val currentDarkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
-        val colorKey = if (currentDarkMode) "text_viewer_font_color_dark" else "text_viewer_font_color_light"
-        val currentFontFamily = sharedPrefs.getString("text_viewer_font_family", "monospace") ?: "monospace"
-        val disableFormatting = sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
-
-        seekBarFontSize.progress = currentFontSize - 10
-        "${currentFontSize}sp".also { tvFontSizeValue.text = it }
-
-        val colorOptions = if (currentDarkMode) {
-            arrayOf(
-                getString(R.string.text_viewer_color_light_gray),
-                getString(R.string.text_viewer_color_white),
-                getString(R.string.text_viewer_color_light_blue),
-                getString(R.string.text_viewer_color_light_green)
+        webView.evaluateJavascript(darkModeCSS) { result ->
+            val cleanResult = result?.trim('"') ?: "null"
+            L.d(
+                "MoodleFragment",
+                "Dark mode injection attempt $darkModeInjectionAttempts result: $cleanResult"
             )
-        } else {
-            arrayOf(
-                getString(R.string.text_viewer_color_black),
-                getString(R.string.text_viewer_color_dark_gray),
-                getString(R.string.text_viewer_color_dark_blue),
-                getString(R.string.text_viewer_color_dark_green)
-            )
-        }
 
-        val colorAdapter =
-            ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, colorOptions)
-        colorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerFontColor.adapter = colorAdapter
+            if ((cleanResult.contains("error") == true || cleanResult == "null") &&
+                darkModeInjectionAttempts < MAX_DARK_MODE_RETRIES
+            ) {
 
-        val fontFamilies = arrayOf("Monospace", "Serif", "Sans-serif")
-        val fontAdapter =
-            ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontFamilies)
-        fontAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerFontFamily.adapter = fontAdapter
-        spinnerFontFamily.setSelection(when (currentFontFamily) {
-            "serif" -> 1
-            "sans-serif" -> 2
-            else -> 0
-        })
-
-        checkBoxDisableFormatting.isChecked = disableFormatting
-
-        val updatePreview = {
-            val previewFontSize = seekBarFontSize.progress + 10
-            tvPreviewText.textSize = previewFontSize.toFloat()
-
-            val selectedColor = when (spinnerFontColor.selectedItemPosition) {
-                0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
-                1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
-                2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
-                3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
-                else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
-            }
-            tvPreviewText.setTextColor(selectedColor)
-
-            tvPreviewText.typeface = when (spinnerFontFamily.selectedItemPosition) {
-                1 -> Typeface.SERIF
-                2 -> Typeface.SANS_SERIF
-                else -> Typeface.MONOSPACE
-            }
-        }
-
-        seekBarFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val size = progress + 10
-                "${size}sp".also { tvFontSizeValue.text = it }
-                updatePreview()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        spinnerFontColor.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                updatePreview()
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-
-        spinnerFontFamily.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                updatePreview()
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-
-        updatePreview()
-
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.text_viewer_preferences))
-            .setView(dialogView)
-            .setPositiveButton(getString(R.string.moodle_save)) { _, _ ->
-                val newFontSize = seekBarFontSize.progress + 10
-                val newFontFamily = when (spinnerFontFamily.selectedItemPosition) {
-                    1 -> "serif"
-                    2 -> "sans-serif"
-                    else -> "monospace"
+                val retryDelay = when (darkModeInjectionAttempts) {
+                    1 -> 50L
+                    2 -> 100L
+                    3 -> 200L
+                    4 -> 300L
+                    else -> 500L
                 }
 
-                val newColor = when (spinnerFontColor.selectedItemPosition) {
-                    0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
-                    1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
-                    2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
-                    3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
-                    else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                L.d(
+                    "MoodleFragment",
+                    "Dark mode injection failed, retrying in ${retryDelay}ms (attempt ${darkModeInjectionAttempts + 1}/$MAX_DARK_MODE_RETRIES)"
+                )
+
+                darkModeRetryRunnable = Runnable {
+                    if (isFragmentActive && isAdded) {
+                        injectDarkTheme()
+                    }
                 }
 
-                sharedPrefs.edit {
-                    putInt("text_viewer_font_size", newFontSize)
-                    putInt(colorKey, newColor)
-                    putString("text_viewer_font_family", newFontFamily)
-                    putBoolean("text_viewer_disable_formatting", checkBoxDisableFormatting.isChecked)
-                }
-
-                applyTextViewerPreferences()
-                val displayWidth = textContentScrollView.width
-                val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
-                textViewerContent.text = formattedText
-                generateLineNumbers()
+                darkModeRetryHandler = Handler(Looper.getMainLooper())
+                darkModeRetryHandler?.postDelayed(darkModeRetryRunnable!!, retryDelay)
+            } else if (cleanResult == "already_present" || cleanResult == "success") {
+                L.d("MoodleFragment", "Dark mode CSS successfully injected")
+                darkModeRetryHandler?.removeCallbacks(darkModeRetryRunnable ?: Runnable {})
             }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .create()
-
-        dialog.show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        }
     }
+
+    private fun verifyAndFixDarkMode() {
+        val verifyAndFixCSS = """
+        (function() {
+            try {
+                const styleElement = document.getElementById('darkreader-moodle-override');
+                if (styleElement && styleElement.textContent && styleElement.textContent.length > 100) {
+                    console.log('Dark mode CSS verified - present in DOM with content');
+                    return 'verified';
+                }
+
+                if (window.moodleDarkModeInjected === true) {
+                    console.log('Dark mode injected flag is set');
+                    return 'flag_set';
+                }
+
+                console.log('Dark mode CSS NOT found - need to reinject');
+                return 'missing';
+            } catch(e) {
+                console.error('Error verifying dark mode: ' + e.message);
+                return 'error';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(verifyAndFixCSS) { result ->
+            val cleanResult = result?.trim('"') ?: "null"
+            L.d("MoodleFragment", "Dark mode verification result: $cleanResult")
+
+            when (cleanResult) {
+                "verified", "flag_set" -> {
+                    activity?.runOnUiThread {
+                        webView.visibility = View.VISIBLE
+                        hideLoadingBar()
+                    }
+                }
+                "missing" -> {
+                    L.w("MoodleFragment", "Dark mode CSS missing on page finish - attempting emergency injection")
+
+                    darkModeInjectionAttempts = 0
+                    injectDarkTheme()
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        activity?.runOnUiThread {
+                            webView.visibility = View.VISIBLE
+                            hideLoadingBar()
+                        }
+                    }, 150)
+                }
+                else -> {
+                    activity?.runOnUiThread {
+                        webView.visibility = View.VISIBLE
+                        hideLoadingBar()
+                    }
+                }
+            }
+        }
+    }
+
+    //endregion
 }
