@@ -1626,8 +1626,6 @@
     <string name="moodle_image_options">Bild-Optionen</string>
     <string name="moodle_download_image">Bild herunterladen</string>
     <string name="moodle_image_download_started">Lade %s herunter</string>
-    <string name="moodle_image_page_detected">Bildseite erkannt</string>
-    <string name="moodle_image_page_message">Dies ist eine Moodle-Bildseite, die Sitzungsprobleme verursachen kann, wenn sie in der App geöffnet wird. Möchtest du sie stattdessen in deinem externen Browser öffnen?</string>
     <string name="moodle_confirm_navigation">Navigation bestätigen</string>
     <string name="moodle_leave_page">Seite verlassen</string>
     <string name="moodle_stay_page">Auf dieser Seite bleiben</string>
@@ -1659,6 +1657,10 @@
     <string name="moodle_discard_confirm_title">Nachricht verwerfen?</string>
     <string name="moodle_discard_confirm_message">Wenn du diesen Dialog schließt, geht deine Nachricht verloren. Möchtest du sie verwerfen?</string>
     <string name="moodle_do_not_show_dialog_until_refresh">Diesen Dialog bis zum Seitenrefresh nicht mehr anzeigen</string>
+    <string name="moodle_image_page">Bildseite</string>
+    <string name="moodle_audio_page">Audioseite</string>
+    <string name="moodle_loading">Moodle lädt…</string>
+    <string name="moodle_downloading">Moodle lädt herunter…</string>
     <!-- text viewer -->
     <string name="text_viewer_switch_to_text">Text-Viewer</string>
     <string name="text_viewer_switch_to_pdf">PDF-Viewer</string>

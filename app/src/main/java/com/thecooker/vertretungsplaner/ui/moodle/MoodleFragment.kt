@@ -126,6 +126,7 @@ class MoodleFragment : Fragment() {
 
     private var isPageFullyLoaded = false
     private var isWebViewInitialized = false
+    private var isAppClosing = false
 
     private val moodleBaseUrl = "https://moodle.kleyer.eu"
     private val loginUrl = "$moodleBaseUrl/login/index.php"
@@ -640,27 +641,12 @@ class MoodleFragment : Fragment() {
                 if (url.contains("/login/logout.php?sesskey=")) {
                     L.d("MoodleFragment", "Intercepted instant logout - redirecting to confirmation page")
                     webView.loadUrl("https://moodle.kleyer.eu/login/logout.php")
-                    return true // begone issues!
+                    return true
                 }
 
-                if (url.contains("/mod/resource/view.php")) {
-                    L.d("MoodleFragment", "Intercepted resource view URL: $url")
-                    val cookies = CookieManager.getInstance().getCookie(url)
-                    L.d("MoodleFragment", "Cookie preview: ${cookies?.take(50)}...")
-
-                    verifyFileLink(url) { isFileLink ->
-                        L.d("MoodleFragment", "verifyFileLink returned: $isFileLink")
-
-                        if (isFileLink) {
-                            L.d("MoodleFragment", "Treating as file download, resolving URL")
-                            resolveDownloadUrl(url, cookies)
-                        } else {
-                            L.d("MoodleFragment", "Detected image page - NOT opening to avoid session loss")
-                            activity?.runOnUiThread {
-                                showImagePageDialog(url)
-                            }
-                        }
-                    }
+                if (url.contains("/mod/")) {
+                    L.d("MoodleFragment", "Detected /mod/ URL, analyzing link element: $url")
+                    analyzeLinkElementAndHandle(url)
                     return true
                 }
 
@@ -689,6 +675,11 @@ class MoodleFragment : Fragment() {
                 activity?.runOnUiThread {
                     updateUIState()
                     updateDashboardButtonIcon()
+
+                    if (url?.contains("/message/index.php") == true) {
+                        isAtTop = false
+                        hideExtendedHeaderWithAnimation()
+                    }
 
                     if (isTabViewVisible && currentTabIndex in tabs.indices) {
                         val currentTab = tabs[currentTabIndex]
@@ -1970,14 +1961,19 @@ class MoodleFragment : Fragment() {
         }
 
         saveCurrentTabState()
-        savePinnedTabs()
-        resetDefaultTab()
 
-        L.d("MoodleFragment", "onPause - saved tabs and reset default tab")
+        savePinnedTabs()
+
+        if (isAppClosing) {
+            resetDefaultTab()
+        }
+
+        L.d("MoodleFragment", "onPause - saved all tabs" + if (isAppClosing) " and reset default tab" else "")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        isAppClosing = true
 
         stopDialogButtonMonitoring()
         stopMessageInputMonitoring()
@@ -2011,6 +2007,21 @@ class MoodleFragment : Fragment() {
         pdfScaleDetector = null
         zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
         zoomHandler = null
+
+        L.d("MoodleFragment", "onDestroy - app is closing")
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+
+        pdfScrollContainer.setOnScrollChangeListener(null)
+        pdfScrollContainer.viewTreeObserver.removeOnScrollChangedListener(fun() {
+            // throwing some warnings i dont understand
+        })
+
+        scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
+        scrollStopHandler = null
+        scrollStopRunnable = null
     }
 
     private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
@@ -2398,119 +2409,6 @@ class MoodleFragment : Fragment() {
                 dismissSessionTerminationDialog()
             } else {
                 L.d("MoodleFragment", "Dialog successfully dismissed and verified")
-            }
-        }
-    }
-
-    private fun verifyFileLink(url: String, callback: (Boolean) -> Unit) {
-        val idMatch = "id=(\\d+)".toRegex().find(url)
-        val resourceId = idMatch?.groupValues?.get(1)
-
-        L.d("MoodleFragment", "=== verifyFileLink Debug ===")
-        L.d("MoodleFragment", "URL: $url")
-        L.d("MoodleFragment", "Resource ID: $resourceId")
-        L.d("MoodleFragment", "Current WebView URL: ${webView.url}")
-
-        if (resourceId == null) {
-            L.e("MoodleFragment", "No resource ID found in URL")
-            callback(false)
-            return
-        }
-
-        val jsCode = """
-    (function() {
-        try {
-            console.log('=== Starting File Verification ===');
-            console.log('Checking resource ID: $resourceId');
-            console.log('Document URL: ' + document.location.href);
-            console.log('Document ready state: ' + document.readyState);
-            
-            var links = document.querySelectorAll('a[href*="id=$resourceId"]');
-            console.log('Found ' + links.length + ' links with this ID');
-            
-            for (var i = 0; i < links.length; i++) {
-                var link = links[i];
-                console.log('Link ' + i + ' href: ' + link.href);
-                console.log('Link ' + i + ' HTML: ' + link.outerHTML.substring(0, 200));
-
-                var accessHideSpan = link.querySelector('span.accesshide');
-                if (accessHideSpan) {
-                    var text = accessHideSpan.textContent.trim().toLowerCase();
-                    console.log('AccessHide text: "' + text + '"');
-                    
-                    if (text.includes('datei') || text.includes('file')) {
-                        var container = link.closest('.activity-item, .activityinstance');
-                        if (container) {
-                            console.log('Found container');
-                            var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
-                            if (activityIcon && activityIcon.src) {
-                                var imgSrc = activityIcon.src.toLowerCase();
-                                console.log('Activity icon src: ' + imgSrc);
-
-                                if (imgSrc.includes('/f/image?')) {
-                                    console.log('*** DETECTED IMAGE PAGE ***');
-                                    return JSON.stringify({isFile: false, isImagePage: true, iconSrc: imgSrc});
-                                }
-
-                                if (imgSrc.includes('/f/pdf') || 
-                                    imgSrc.includes('/f/document') || 
-                                    imgSrc.includes('/f/archive') ||
-                                    imgSrc.includes('resource')) {
-                                    console.log('*** DETECTED DOWNLOADABLE FILE ***');
-                                    return JSON.stringify({isFile: true, isImagePage: false, iconSrc: imgSrc});
-                                }
-                            } else {
-                                console.log('No activity icon found in container');
-                            }
-                        } else {
-                            console.log('No container found for link');
-                        }
-                        console.log('Has file/datei tag but no definitive icon match');
-                        return JSON.stringify({isFile: true, isImagePage: false, iconSrc: 'none'});
-                    } else {
-                        console.log('AccessHide text does not contain file/datei keywords');
-                    }
-                } else {
-                    console.log('Link ' + i + ' has no accesshide span');
-                }
-            }
-            
-            console.log('*** NO FILE INDICATORS FOUND - DEFAULTING TO IMAGE PAGE ***');
-            return JSON.stringify({isFile: false, isImagePage: false, iconSrc: 'none'});
-        } catch(e) {
-            console.error('Error in verifyFileLink: ' + e.message);
-            console.error('Stack: ' + e.stack);
-            return JSON.stringify({isFile: false, error: e.message, stack: e.stack});
-        }
-    })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            try {
-                val cleanResult = result.replace("\\\"", "\"").trim('"')
-                L.d("MoodleFragment", "Raw JS result: $cleanResult")
-
-                val jsonResult = JSONObject(cleanResult)
-
-                val isFile = jsonResult.optBoolean("isFile", false)
-                val isImagePage = jsonResult.optBoolean("isImagePage", false)
-                val iconSrc = jsonResult.optString("iconSrc", "unknown")
-                val error = jsonResult.optString("error", "")
-
-                L.d("MoodleFragment", "Verification result - isFile: $isFile, isImagePage: $isImagePage, iconSrc: $iconSrc")
-                if (error.isNotEmpty()) {
-                    L.e("MoodleFragment", "JS Error: $error")
-                    val stack = jsonResult.optString("stack", "")
-                    if (stack.isNotEmpty()) {
-                        L.e("MoodleFragment", "JS Stack: $stack")
-                    }
-                }
-
-                callback(isFile)
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error parsing verification result", e)
-                L.e("MoodleFragment", "Raw result was: $result")
-                callback(false)
             }
         }
     }
@@ -2967,17 +2865,21 @@ class MoodleFragment : Fragment() {
         if (tabs.isNotEmpty() && tabs[0].isDefault) {
             val defaultTab = tabs[0]
 
-            tabs[0] = defaultTab.copy(
-                webViewState = null,
-                thumbnail = null
-            )
+            if (defaultTab.webViewState == null && defaultTab.url == loginUrl) {
+                L.d("MoodleFragment", "Initializing clean default tab")
 
-            if (currentTabIndex == 0) {
-                webView.clearHistory()
-                webView.clearCache(false)
+                tabs[0] = defaultTab.copy(
+                    webViewState = null,
+                    thumbnail = null
+                )
+
+                if (currentTabIndex == 0) {
+                    webView.clearHistory()
+                    webView.clearCache(false)
+                }
+            } else {
+                L.d("MoodleFragment", "Default tab has state, preserving it")
             }
-
-            L.d("MoodleFragment", "Cleaned default tab state")
         }
     }
 
@@ -3145,15 +3047,22 @@ class MoodleFragment : Fragment() {
                 val bundle = Bundle()
                 webView.saveState(bundle)
 
+                val currentUrl = webView.url ?: currentTab.url
+                val currentTitle = webView.title ?: currentTab.title
+
+                L.d("MoodleFragment", "Saving tab state - URL: $currentUrl, Title: $currentTitle")
+
                 tabs[currentTabIndex] = currentTab.copy(
-                    url = webView.url ?: currentTab.url,
-                    title = webView.title ?: currentTab.title,
+                    url = currentUrl,
+                    title = currentTitle,
                     thumbnail = captureWebViewThumbnail(),
                     webViewState = bundle
                 )
             }
 
-            savePinnedTabs()
+            if (currentTab.isPinned) {
+                savePinnedTabs()
+            }
         }
     }
 
@@ -3209,27 +3118,23 @@ class MoodleFragment : Fragment() {
 
                 webView.post {
                     if (tab.webViewState != null) {
-                        webView.clearHistory()
-                        webView.setInitialScale(0)
+                        webView.restoreState(tab.webViewState)
+
+                        L.d("MoodleFragment", "Tab state restored for URL: ${tab.url}")
 
                         Handler(Looper.getMainLooper()).postDelayed({
-                            webView.restoreState(tab.webViewState)
-
-                            L.d("MoodleFragment", "Tab state restored, checking for session dialog...")
-
                             checkForSessionDialogAfterTabSwitch()
+                        }, 100)
 
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                L.d("MoodleFragment", "Second check after 300ms...")
-                                checkForSessionDialogAfterTabSwitch()
-                            }, 300)
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            checkForSessionDialogAfterTabSwitch()
+                        }, 300)
 
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                L.d("MoodleFragment", "Final check after 800ms...")
-                                checkForSessionDialogAfterTabSwitch()
-                            }, 800)
-                        }, 50)
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            checkForSessionDialogAfterTabSwitch()
+                        }, 800)
                     } else {
+                        L.d("MoodleFragment", "No saved state, loading URL: ${tab.url}")
                         webView.loadUrl(tab.url)
                     }
                 }
@@ -3774,9 +3679,12 @@ class MoodleFragment : Fragment() {
             logoutConfirmPageUrl = ""
         }
 
-        resetDefaultTabToLogin()
+        if (isAppClosing) {
+            resetDefaultTabToLogin()
+        }
+
         savePinnedTabs()
-        L.d("MoodleFragment", "onStop - reset default tab and saved pinned tabs")
+        L.d("MoodleFragment", "onStop" + if (isAppClosing) " - app closing, reset default tab" else " - activity switch")
     }
 
     private fun setupTabOverlayControls(overlayView: View) {
@@ -4998,6 +4906,92 @@ class MoodleFragment : Fragment() {
         popup.show()
     }
 
+    fun onBackPressed(): Boolean {
+        val currentTime = System.currentTimeMillis()
+
+        if (currentTime - backPressTime < 500) {
+            backPressCount++
+        } else {
+            backPressCount = 1
+        }
+
+        backPressTime = currentTime
+
+        if (webView.canGoBack() && backPressCount == 1) {
+            webView.goBack()
+            return true
+        }
+
+        return false
+    }
+
+    private fun updateCounters() {
+        if (!isPageFullyLoaded) return
+
+        val currentUrl = webView.url ?: ""
+        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+        if (isOnLoginPage) {
+            tvNotificationCount.visibility = View.GONE
+            tvMessageCount.visibility = View.GONE
+            return
+        }
+
+        val notificationCountJs = """
+        (function() {
+            try {
+                var notificationElement = document.evaluate('/html/body/div[1]/nav/div/div/div[2]/div[1]/div', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (notificationElement && notificationElement.textContent) {
+                    var count = notificationElement.textContent.trim().match(/\d+/);
+                    return count ? count[0] : '0';
+                }
+                return '0';
+            } catch(e) {
+                return '0';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(notificationCountJs) { result ->
+            val count = result.replace("\"", "").toIntOrNull() ?: 0
+            activity?.runOnUiThread {
+                if (count > 0) {
+                    tvNotificationCount.text = if (count > 99) "99+" else count.toString()
+                    tvNotificationCount.visibility = View.VISIBLE
+                } else {
+                    tvNotificationCount.visibility = View.GONE
+                }
+            }
+        }
+
+        val messageCountJs = """
+        (function() {
+            try {
+                var messageElement = document.evaluate('/html/body/div[1]/nav/div/div/div[3]/a/div/span[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (messageElement && messageElement.textContent) {
+                    var count = messageElement.textContent.trim().match(/\d+/);
+                    return count ? count[0] : '0';
+                }
+                return '0';
+            } catch(e) {
+                return '0';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(messageCountJs) { result ->
+            val count = result.replace("\"", "").toIntOrNull() ?: 0
+            activity?.runOnUiThread {
+                if (count > 0) {
+                    tvMessageCount.text = if (count > 99) "99+" else count.toString()
+                    tvMessageCount.visibility = View.VISIBLE
+                } else {
+                    tvMessageCount.visibility = View.GONE
+                }
+            }
+        }
+    }
+
     //endregion
 
     //region **NAVIGATION**
@@ -5049,6 +5043,1378 @@ class MoodleFragment : Fragment() {
 
         showLoadingBar()
         webView.loadUrl(url)
+    }
+
+    //endregion
+
+    //region **WEBVIEW**
+
+    private fun parseDocxToText(inputStream: InputStream): String? {
+        try {
+            val zipInputStream = ZipInputStream(inputStream)
+            var entry: ZipEntry?
+            val textBuilder = StringBuilder()
+
+            while (zipInputStream.nextEntry.also { entry = it } != null) {
+                if (entry?.name == "word/document.xml") {
+                    val xmlContent = zipInputStream.bufferedReader().readText()
+
+                    val textPattern = "<w:t[^>]*>([^<]+)</w:t>".toRegex()
+                    val matches = textPattern.findAll(xmlContent)
+
+                    matches.forEach { match ->
+                        textBuilder.append(match.groupValues[1])
+                    }
+
+                    val paragraphPattern = "</w:p>".toRegex()
+                    val paragraphs = xmlContent.split(paragraphPattern)
+
+                    textBuilder.clear()
+                    paragraphs.forEach { paragraph ->
+                        val textMatches = textPattern.findAll(paragraph)
+                        val paragraphText = textMatches.joinToString("") { it.groupValues[1] }
+                        if (paragraphText.isNotEmpty()) {
+                            textBuilder.append(paragraphText).append("\n")
+                        }
+                    }
+
+                    break
+                }
+            }
+
+            zipInputStream.close()
+            return textBuilder.toString()
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error parsing DOCX", e)
+            return null
+        }
+    }
+
+    private fun showLinkContextMenu(url: String) {
+        if (isPullToRefreshActive) {
+            return
+        }
+
+        val startTime = System.currentTimeMillis()
+
+        analyzeLinkCapabilities(url) { linkInfo ->
+            val elapsed = System.currentTimeMillis() - startTime
+            val delay = if (elapsed < 150) 150 - elapsed else 0
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                activity?.runOnUiThread {
+                    if (!isPullToRefreshActive) {
+                        showLinkOptionsDialog(url, linkInfo)
+                    }
+                }
+            }, delay)
+        }
+    }
+
+    private fun analyzeLinkElementAndHandle(url: String) {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Analyzing Link Element ===');
+                console.log('URL: $url');
+
+                var links = document.querySelectorAll('a[href="$url"]');
+                if (links.length === 0) {
+                    console.log('No link element found');
+                    return JSON.stringify({ shouldHandle: false, reason: 'no_link' });
+                }
+                
+                var link = links[0];
+                console.log('Found link element');
+
+                var firstSpan = link.querySelector('span.instancename');
+                if (!firstSpan) {
+                    console.log('No instancename span found');
+                    return JSON.stringify({ shouldHandle: false, reason: 'no_instancename' });
+                }
+                
+                var accessHideSpan = firstSpan.querySelector('span.accesshide');
+                if (!accessHideSpan) {
+                    console.log('No accesshide span found');
+                    return JSON.stringify({ shouldHandle: false, reason: 'no_accesshide' });
+                }
+                
+                var spanText = accessHideSpan.textContent.trim().toLowerCase();
+                console.log('AccessHide span text: "' + spanText + '"');
+
+                if (!spanText.includes('datei') && !spanText.includes('file')) {
+                    console.log('Does not contain datei/file - open normally');
+                    return JSON.stringify({ shouldHandle: false, reason: 'not_file' });
+                }
+                
+                console.log('Contains datei/file - analyzing icon');
+
+                var currentElement = link;
+                for (var i = 0; i < 4; i++) {
+                    currentElement = currentElement.parentElement;
+                    if (!currentElement || currentElement.tagName !== 'DIV') {
+                        console.log('Failed to navigate up ' + (i + 1) + ' divs');
+                        return JSON.stringify({ shouldHandle: false, reason: 'navigation_failed' });
+                    }
+                }
+                
+                console.log('Navigated up 4 divs successfully');
+
+                var iconContainer = null;
+                for (var i = 0; i < currentElement.children.length; i++) {
+                    var child = currentElement.children[i];
+                    if (child.tagName === 'DIV') {
+                        iconContainer = child;
+                        break;
+                    }
+                }
+                
+                if (!iconContainer) {
+                    console.log('Icon container not found');
+                    return JSON.stringify({ shouldHandle: false, reason: 'no_icon_container' });
+                }
+                
+                var iconImg = iconContainer.querySelector('img.activityicon, img[data-region="activity-icon"]');
+                if (!iconImg) {
+                    console.log('Icon img not found');
+                    return JSON.stringify({ shouldHandle: false, reason: 'no_icon_img' });
+                }
+                
+                var iconSrc = iconImg.src;
+                console.log('Icon src: ' + iconSrc);
+                
+                var fileType = 'unknown';
+                if (iconSrc.includes('/f/pdf')) {
+                    fileType = 'pdf';
+                } else if (iconSrc.includes('/f/document')) {
+                    fileType = 'document';
+                } else if (iconSrc.includes('/f/image')) {
+                    fileType = 'image';
+                } else if (iconSrc.includes('/f/audio')) {
+                    fileType = 'audio';
+                } else {
+                    fileType = 'other';
+                }
+                
+                console.log('Detected file type: ' + fileType);
+                
+                return JSON.stringify({
+                    shouldHandle: true,
+                    fileType: fileType,
+                    iconSrc: iconSrc
+                });
+                
+            } catch(e) {
+                console.error('Error analyzing link: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return JSON.stringify({
+                    shouldHandle: false,
+                    reason: 'exception',
+                    error: e.message
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Link analysis result: $cleanResult")
+
+                val jsonResult = JSONObject(cleanResult)
+                val shouldHandle = jsonResult.optBoolean("shouldHandle", false)
+
+                if (!shouldHandle) {
+                    val reason = jsonResult.optString("reason", "unknown")
+                    L.d("MoodleFragment", "Not handling link, reason: $reason")
+                    webView.loadUrl(url)
+                    return@evaluateJavascript
+                }
+
+                val fileType = jsonResult.optString("fileType", "unknown")
+                L.d("MoodleFragment", "File type detected: $fileType")
+
+                val cookies = CookieManager.getInstance().getCookie(url)
+
+                when (fileType) {
+                    "pdf" -> {
+                        L.d("MoodleFragment", "Handling as PDF")
+                        if (url.contains("/mod/resource/view.php")) {
+                            resolveDownloadUrl(url, cookies, forceDownload = false)
+                        } else {
+                            handlePdfForViewerWithCookies(url, cookies)
+                        }
+                    }
+                    "document" -> {
+                        L.d("MoodleFragment", "Handling as DOCX")
+                        if (url.contains("/mod/resource/view.php")) {
+                            resolveDownloadUrl(url, cookies, forceDownload = false)
+                        } else {
+                            handleDocxFile(url, cookies, forceDownload = false)
+                        }
+                    }
+                    "image", "audio" -> {
+                        L.d("MoodleFragment", "Handling as image/audio page - opening normally")
+                        webView.loadUrl(url)
+                    }
+                    "other" -> {
+                        L.d("MoodleFragment", "Unknown file type - resolving redirect")
+                        resolveDownloadUrl(url, cookies, forceDownload = false)
+                    }
+                    else -> {
+                        L.d("MoodleFragment", "Fallback - opening normally")
+                        webView.loadUrl(url)
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing link analysis result", e)
+                webView.loadUrl(url)
+            }
+        }
+    }
+
+    private data class LinkInfo(
+        val isDownloadable: Boolean,
+        val isCopyable: Boolean,
+        val fileType: String? = null,
+        val isImage: Boolean = false,
+        val isAudio: Boolean = false,
+        val directDownloadUrl: String? = null
+    )
+
+    private fun analyzeLinkCapabilities(url: String, callback: (LinkInfo) -> Unit) {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Analyzing Link Capabilities ===');
+                console.log('URL: $url');
+                
+                var linkInfo = {
+                    isDownloadable: false,
+                    isCopyable: false,
+                    fileType: null,
+                    isImage: false,
+                    isAudio: false,
+                    directDownloadUrl: null
+                };
+
+                var links = document.querySelectorAll('a[href="$url"]');
+                if (links.length === 0) {
+                    console.log('No link found for capabilities analysis');
+                    return JSON.stringify(linkInfo);
+                }
+                
+                var link = links[0];
+
+                var firstSpan = link.querySelector('span.instancename');
+                if (!firstSpan) {
+                    console.log('No instancename span');
+                    return JSON.stringify(linkInfo);
+                }
+                
+                var accessHideSpan = firstSpan.querySelector('span.accesshide');
+                if (!accessHideSpan) {
+                    console.log('No accesshide span');
+                    return JSON.stringify(linkInfo);
+                }
+                
+                var spanText = accessHideSpan.textContent.trim().toLowerCase();
+                console.log('Span text: "' + spanText + '"');
+
+                if (!spanText.includes('datei') && !spanText.includes('file')) {
+                    console.log('Not a file link');
+                    return JSON.stringify(linkInfo);
+                }
+
+                var currentElement = link;
+                for (var i = 0; i < 4; i++) {
+                    currentElement = currentElement.parentElement;
+                    if (!currentElement || currentElement.tagName !== 'DIV') {
+                        console.log('Navigation failed');
+                        return JSON.stringify(linkInfo);
+                    }
+                }
+
+                var iconContainer = null;
+                for (var i = 0; i < currentElement.children.length; i++) {
+                    var child = currentElement.children[i];
+                    if (child.tagName === 'DIV') {
+                        iconContainer = child;
+                        break;
+                    }
+                }
+                
+                if (!iconContainer) {
+                    return JSON.stringify(linkInfo);
+                }
+                
+                var iconImg = iconContainer.querySelector('img.activityicon, img[data-region="activity-icon"]');
+                if (!iconImg) {
+                    return JSON.stringify(linkInfo);
+                }
+                
+                var iconSrc = iconImg.src.toLowerCase();
+                console.log('Icon src: ' + iconSrc);
+
+                if (iconSrc.includes('/f/pdf')) {
+                    linkInfo.isDownloadable = true;
+                    linkInfo.isCopyable = true;
+                    linkInfo.fileType = 'pdf';
+                } else if (iconSrc.includes('/f/document')) {
+                    linkInfo.isDownloadable = true;
+                    linkInfo.isCopyable = true;
+                    linkInfo.fileType = 'docx';
+                } else if (iconSrc.includes('/f/image')) {
+                    linkInfo.isImage = true;
+                } else if (iconSrc.includes('/f/audio')) {
+                    linkInfo.isAudio = true;
+                } else {
+                    linkInfo.isDownloadable = true;
+                    linkInfo.isCopyable = false;
+                }
+                
+                console.log('Link info: ' + JSON.stringify(linkInfo));
+                return JSON.stringify(linkInfo);
+                
+            } catch(e) {
+                console.error('Error: ' + e.message);
+                return JSON.stringify({
+                    isDownloadable: false,
+                    isCopyable: false,
+                    fileType: null,
+                    isImage: false,
+                    isAudio: false,
+                    directDownloadUrl: null,
+                    error: e.message
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                val jsonObject = JSONObject(cleanResult)
+
+                val linkInfo = LinkInfo(
+                    isDownloadable = jsonObject.optBoolean("isDownloadable", false),
+                    isCopyable = jsonObject.optBoolean("isCopyable", false),
+                    fileType = jsonObject.optString("fileType").takeIf { it.isNotEmpty() },
+                    isImage = jsonObject.optBoolean("isImage", false),
+                    isAudio = jsonObject.optBoolean("isAudio", false)
+                )
+
+                L.d("MoodleFragment", "Link capabilities - Download: ${linkInfo.isDownloadable}, Copy: ${linkInfo.isCopyable}, Type: ${linkInfo.fileType}, Image: ${linkInfo.isImage}, Audio: ${linkInfo.isAudio}")
+                callback(linkInfo)
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error parsing link capabilities", e)
+                callback(LinkInfo(
+                    isDownloadable = isDownloadableFile(url),
+                    isCopyable = url.endsWith(".pdf", ignoreCase = true) || url.endsWith(".docx", ignoreCase = true),
+                    isImage = false,
+                    isAudio = false
+                ))
+            }
+        }
+    }
+
+    private fun showLinkOptionsDialog(url: String, linkInfo: LinkInfo) {
+        val options = mutableListOf<Pair<String, Int>>()
+        val actions = mutableListOf<() -> Unit>()
+
+        val cookies = CookieManager.getInstance().getCookie(url)
+        val isMoodleUrl = url.startsWith("https://moodle.kleyer.eu/")
+
+        // open in new tab (only for moodle urls and non-downloadable files)
+        if (isMoodleUrl && (!linkInfo.isDownloadable || linkInfo.isImage || linkInfo.isAudio)) {
+            options.add(Pair(getString(R.string.moodle_open_in_new_tab), R.drawable.ic_tab_background))
+            actions.add {
+                createNewTab(url)
+                Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // download to user device
+        if (linkInfo.isDownloadable) {
+            options.add(Pair(getString(R.string.moodle_download), R.drawable.ic_download))
+            actions.add {
+                if (url.contains("/mod/resource/view.php")) {
+                    resolveDownloadUrl(url, cookies, forceDownload = true)
+                } else {
+                    if (url.endsWith(".docx", ignoreCase = true)) {
+                        handleDocxFile(url, cookies, forceDownload = true)
+                    } else {
+                        downloadToDeviceWithCookies(url, cookies)
+                    }
+                }
+            }
+        }
+
+        // download audio
+        if (linkInfo.isAudio) {
+            options.add(Pair(getString(R.string.moodle_download), R.drawable.ic_download))
+            actions.add {
+                downloadAudioFile(url, cookies)
+            }
+        }
+
+        // download images
+        if (linkInfo.isImage) {
+            options.add(Pair(getString(R.string.moodle_download), R.drawable.ic_download))
+            actions.add {
+                downloadImageFile(url, cookies)
+            }
+        }
+
+        // copy text (pdf/docx only)
+        if (linkInfo.isCopyable && linkInfo.fileType != null) {
+            options.add(Pair(getString(R.string.moodle_copy_text_format, linkInfo.fileType.uppercase()), R.drawable.ic_copy_text))
+            actions.add {
+                val progressDialog = AlertDialog.Builder(requireContext())
+                    .setMessage(getString(R.string.moodle_parsing_document))
+                    .setCancelable(false)
+                    .show()
+
+                if (url.contains("/mod/resource/view.php")) {
+                    resolveAndParseDocument(url, cookies, progressDialog)
+                } else {
+                    downloadAndParseDocumentWithCookies(url, cookies) { text ->
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            if (text != null) {
+                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(requireContext(), getString(R.string.moodle_parse_failed), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // open in browser
+        options.add(Pair(getString(R.string.moodle_open_browser), R.drawable.ic_globe))
+        actions.add { openInExternalBrowser(url) }
+
+        // copy url
+        options.add(Pair(getString(R.string.moodle_copy_url), R.drawable.ic_copy_url))
+        actions.add {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText(getString(R.string.moodle_url), url)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
+        }
+
+        val adapter = object : ArrayAdapter<Pair<String, Int>>(
+            requireContext(),
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val (text, iconRes) = getItem(position)!!
+                view.text = text
+                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = (16 * resources.displayMetrics.density).toInt()
+                view.setPadding(
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (12 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (12 * resources.displayMetrics.density).toInt()
+                )
+                return view
+            }
+        }
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_link_options))
+            .setAdapter(adapter) { _, which ->
+                if (which in actions.indices) {
+                    actions[which].invoke()
+                }
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun resetWebViewState() {
+        activity?.runOnUiThread {
+            try {
+                webView.setInitialScale(0)
+                webView.settings.apply {
+                    loadWithOverviewMode = true
+                    useWideViewPort = true
+                    setSupportZoom(true)
+                    builtInZoomControls = true
+                    displayZoomControls = false
+                }
+
+                webView.layoutParams = webView.layoutParams
+                webView.requestLayout()
+
+                isDarkModeReady = false
+                pendingDarkModeUrl = null
+                webView.visibility = View.VISIBLE
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error resetting WebView state", e)
+            }
+        }
+    }
+
+    private fun handleInterceptedDownload(
+        url: String,
+        cookies: String?,
+        contentDisposition: String = "",
+        mimetype: String? = null
+    ) {
+        L.d("MoodleFragment", "Handling intercepted download")
+
+        val fileName = when {
+            contentDisposition.contains("filename=") -> {
+                val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
+                match?.groupValues?.get(1) ?: ""
+            }
+            else -> {
+                try {
+                    URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
+                } catch (_: Exception) {
+                    ""
+                }
+            }
+        }
+
+        val isPdf = mimetype == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)
+        val isDocx = mimetype?.contains("wordprocessingml") == true ||
+                fileName.endsWith(".docx", ignoreCase = true)
+
+        when {
+            isPdf && tabs.size < MAX_TABS -> handlePdfForViewerWithCookies(url, cookies)
+            isDocx && tabs.size < MAX_TABS -> handleDocxFile(url, cookies, forceDownload = false)
+            else -> downloadToDeviceWithCookies(url, cookies, contentDisposition)
+        }
+    }
+
+    private fun downloadToDeviceWithCookies(url: String, cookies: String?, contentDisposition: String = "") {
+        try {
+            val request = DownloadManager.Request(url.toUri())
+
+            var fileName = URLUtil.guessFileName(url, contentDisposition, null)
+            if (fileName.isBlank()) {
+                fileName = try {
+                    val decodedUrl = URLDecoder.decode(url, "UTF-8")
+                    val extractedName = decodedUrl.substringAfterLast("/").substringBefore("?")
+                    extractedName.ifBlank { "moodle_file_${System.currentTimeMillis()}" }
+                } catch (_: Exception) {
+                    "moodle_file_${System.currentTimeMillis()}"
+                }
+            }
+
+            request.setTitle(fileName)
+            request.setDescription(getString(R.string.moodle_downloading))
+
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+
+            request.setAllowedNetworkTypes(
+                DownloadManager.Request.NETWORK_WIFI or
+                        DownloadManager.Request.NETWORK_MOBILE
+            )
+            request.setAllowedOverMetered(true)
+            request.setAllowedOverRoaming(true)
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                request.setRequiresDeviceIdle(false)
+                request.setRequiresCharging(false)
+            }
+
+            val mimeType = when {
+                fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+                fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
+                fileName.endsWith(".pptx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                fileName.endsWith(".ppt", ignoreCase = true) -> "application/vnd.ms-powerpoint"
+                fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
+                fileName.endsWith(".jpg", ignoreCase = true) || fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+                fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+                fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
+                fileName.endsWith(".svg", ignoreCase = true) -> "image/svg+xml"
+                fileName.endsWith(".wav", ignoreCase = true) -> "audio/wav"
+                fileName.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg"
+                fileName.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+                fileName.endsWith(".zip", ignoreCase = true) -> "application/zip"
+                else -> null
+            }
+            if (mimeType != null) {
+                request.setMimeType(mimeType)
+            }
+
+            if (!cookies.isNullOrBlank()) {
+                request.addRequestHeader("Cookie", cookies)
+                L.d("MoodleFragment", "Added cookies to download: ${cookies.take(50)}...")
+            } else {
+                L.w("MoodleFragment", "WARNING: No cookies available for download!")
+            }
+
+            request.addRequestHeader("User-Agent", userAgent)
+            request.addRequestHeader("Referer", moodleBaseUrl)
+            request.addRequestHeader("Accept", "*/*")
+            request.addRequestHeader("Accept-Encoding", "identity")
+            request.addRequestHeader("Connection", "keep-alive")
+            request.addRequestHeader("Cache-Control", "no-cache")
+
+            val downloadManager = requireContext().getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val downloadId = downloadManager.enqueue(request)
+
+            L.d("MoodleFragment", "Download enqueued with ID: $downloadId, file: $fileName")
+
+            backgroundExecutor.execute {
+                var previousBytes = 0L
+                var stuckCount = 0
+
+                for (i in 1..10) {
+                    Thread.sleep(1000)
+
+                    val query = DownloadManager.Query().setFilterById(downloadId)
+                    val cursor = downloadManager.query(query)
+
+                    if (cursor.moveToFirst()) {
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+
+                        val status = cursor.getInt(statusIndex)
+                        val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                        val totalBytes = cursor.getLong(totalBytesIndex)
+
+                        L.d("MoodleFragment", "Download progress: $bytesDownloaded / $totalBytes bytes (${i}s)")
+
+                        when (status) {
+                            DownloadManager.STATUS_FAILED -> {
+                                val reason = cursor.getInt(reasonIndex)
+                                L.e("MoodleFragment", "Download failed with reason: $reason")
+                                cursor.close()
+
+                                activity?.runOnUiThread {
+                                    val reasonText = when (reason) {
+                                        DownloadManager.ERROR_CANNOT_RESUME -> "Cannot resume download"
+                                        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "No external storage"
+                                        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "File already exists"
+                                        DownloadManager.ERROR_FILE_ERROR -> "Storage error"
+                                        DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP data error"
+                                        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Insufficient space"
+                                        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "Too many redirects"
+                                        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "HTTP error"
+                                        else -> "Unknown error ($reason)"
+                                    }
+                                    Toast.makeText(
+                                        requireContext(),
+                                        getString(R.string.moodle_download_failed, reasonText),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                                return@execute
+                            }
+                            DownloadManager.STATUS_SUCCESSFUL -> {
+                                L.d("MoodleFragment", "Download completed successfully in ${i}s")
+                                cursor.close()
+                                return@execute
+                            }
+                            DownloadManager.STATUS_RUNNING -> {
+                                if (bytesDownloaded == previousBytes && bytesDownloaded > 0) {
+                                    stuckCount++
+                                    L.w("MoodleFragment", "Download appears stuck (count: $stuckCount)")
+
+                                    if (stuckCount >= 5) {
+                                        L.e("MoodleFragment", "Download stuck for 5 seconds, may have stalled")
+                                        cursor.close()
+                                        return@execute
+                                    }
+                                } else {
+                                    stuckCount = 0
+                                    previousBytes = bytesDownloaded
+                                }
+                            }
+                            DownloadManager.STATUS_PAUSED -> {
+                                val reason = cursor.getInt(reasonIndex)
+                                L.w("MoodleFragment", "Download paused with reason: $reason")
+                            }
+                            DownloadManager.STATUS_PENDING -> {
+                                L.d("MoodleFragment", "Download pending...")
+                            }
+                        }
+                    }
+                    cursor.close()
+                }
+            }
+
+            Toast.makeText(requireContext(), getString(R.string.moodle_download_started, fileName), Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Download failed", e)
+            Toast.makeText(requireContext(), getString(R.string.moodle_download_failed, e.message), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun downloadAudioFile(viewUrl: String, cookies: String?) {
+        L.d("MoodleFragment", "=== Downloading Audio File ===")
+        L.d("MoodleFragment", "View URL: $viewUrl")
+
+        val progressDialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(R.string.moodle_loading))
+            .setCancelable(false)
+            .show()
+
+        backgroundExecutor.execute {
+            try {
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                if (cookiesToUse == null) {
+                    L.e("MoodleFragment", "No cookies for audio download")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(), "No session cookies available", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+
+                L.d("MoodleFragment", "Fetching audio page: $viewUrl")
+
+                val conn = URL(viewUrl).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("Cookie", cookiesToUse)
+                conn.setRequestProperty("User-Agent", userAgent)
+                conn.setRequestProperty("Referer", moodleBaseUrl)
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+
+                val responseCode = conn.responseCode
+                L.d("MoodleFragment", "Audio page response: $responseCode")
+
+                if (responseCode == 200) {
+                    val html = conn.inputStream.bufferedReader().readText()
+                    conn.disconnect()
+
+                    val audioSourcePattern = "<source\\s+src=\"([^\"]+)\"[^>]*type=\"audio/[^\"]+\"".toRegex()
+                    val match = audioSourcePattern.find(html)
+
+                    if (match != null) {
+                        val audioUrl = match.groupValues[1]
+                        L.d("MoodleFragment", "Found audio URL: $audioUrl")
+
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            downloadToDeviceWithCookies(audioUrl, cookiesToUse)
+                        }
+                    } else {
+                        L.e("MoodleFragment", "Audio source not found in HTML")
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            Toast.makeText(requireContext(), "Could not find audio file", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "Failed to load audio page: $responseCode")
+                    conn.disconnect()
+
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(), "Failed to load audio page", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error downloading audio", e)
+                activity?.runOnUiThread {
+                    progressDialog.dismiss()
+                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun downloadImageFile(viewUrl: String, cookies: String?) {
+        L.d("MoodleFragment", "=== Downloading Image File ===")
+        L.d("MoodleFragment", "View URL: $viewUrl")
+
+        val progressDialog = AlertDialog.Builder(requireContext())
+            .setMessage(getString(R.string.moodle_loading))
+            .setCancelable(false)
+            .show()
+
+        backgroundExecutor.execute {
+            try {
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                if (cookiesToUse == null) {
+                    L.e("MoodleFragment", "No cookies for image download")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(), "No session cookies available", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+
+                L.d("MoodleFragment", "Fetching image page: $viewUrl")
+
+                val conn = URL(viewUrl).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("Cookie", cookiesToUse)
+                conn.setRequestProperty("User-Agent", userAgent)
+                conn.setRequestProperty("Referer", moodleBaseUrl)
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+
+                val responseCode = conn.responseCode
+                L.d("MoodleFragment", "Image page response: $responseCode")
+
+                if (responseCode == 200) {
+                    val html = conn.inputStream.bufferedReader().readText()
+                    conn.disconnect()
+
+                    val imagePattern = "<img[^>]+class=\"resourceimage\"[^>]+src=\"([^\"]+)\"".toRegex()
+                    val match = imagePattern.find(html)
+
+                    if (match != null) {
+                        val imageUrl = match.groupValues[1]
+                        L.d("MoodleFragment", "Found image URL: $imageUrl")
+
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            downloadToDeviceWithCookies(imageUrl, cookiesToUse)
+                        }
+                    } else {
+                        L.e("MoodleFragment", "Image src not found in HTML")
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            Toast.makeText(requireContext(), "Could not find image file", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "Failed to load image page: $responseCode")
+                    conn.disconnect()
+
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(requireContext(), "Failed to load image page", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error downloading image", e)
+                activity?.runOnUiThread {
+                    progressDialog.dismiss()
+                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
+        if (pdfFileUrl == null) {
+            pdfFileUrl = viewUrl
+        }
+
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
+                L.d("MoodleFragment", "Initial URL: $viewUrl")
+                L.d("MoodleFragment", "Force download to device: $forceDownload")
+
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                L.d("MoodleFragment", "Fresh cookies from CookieManager: ${freshCookies != null}")
+                if (cookiesToUse != null) {
+                    L.d("MoodleFragment", "Cookie preview: ${cookiesToUse.take(100)}...")
+                } else {
+                    L.e("MoodleFragment", "ERROR: No cookies available!")
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available. Please reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@execute
+                }
+
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+                var contentType: String? = null
+                var contentDisposition: String? = null
+
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "--- Redirect attempt $redirectCount ---")
+                    L.d("MoodleFragment", "Current URL: $currentUrl")
+
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page - session may have expired")
+
+                        activity?.runOnUiThread {
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveDownloadUrl(viewUrl, newCookies, forceDownload)
+                                }, 1000)
+                            }
+                        }
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Response code: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            L.d("MoodleFragment", "Got redirect to: $location")
+
+                            val setCookie = conn.getHeaderField("Set-Cookie")
+                            if (setCookie != null) {
+                                L.d("MoodleFragment", "Server set new cookie: ${setCookie.take(100)}...")
+                            }
+
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "ERROR: Redirect without Location header")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            contentType = conn.getHeaderField("Content-Type")
+                            contentDisposition = conn.getHeaderField("Content-Disposition")
+                            L.d("MoodleFragment", "SUCCESS: Found final file")
+                            L.d("MoodleFragment", "Final URL: $finalUrl")
+                            L.d("MoodleFragment", "Content-Type: $contentType")
+                            L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
+                            conn.disconnect()
+                            break
+                        }
+                        401, 403 -> {
+                            L.e("MoodleFragment", "ERROR: Authentication failed (code $responseCode)")
+                            conn.disconnect()
+
+                            activity?.runOnUiThread {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Session expired. Please reload the page.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            return@execute
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "ERROR: Unexpected response code: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                }
+
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
+                    pdfFileUrl = finalUrl
+
+                    activity?.runOnUiThread {
+                        if (forceDownload) {
+                            downloadToDeviceWithCookies(finalUrl, cookiesToUse, contentDisposition ?: "")
+                        } else {
+                            handleInterceptedDownload(finalUrl, cookiesToUse, contentDisposition ?: "", contentType)
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "FAILED: Could not resolve after $redirectCount attempts")
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve download URL. Try again or reload the page.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "EXCEPTION in resolveDownloadUrl", e)
+                activity?.runOnUiThread {
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun resolveAndParseDocument(viewUrl: String, cookies: String?, progressDialog: AlertDialog) {
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Resolving document for parsing ===")
+                L.d("MoodleFragment", "View URL: $viewUrl")
+
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                val cookiesToUse = freshCookies ?: cookies
+
+                if (cookiesToUse == null) {
+                    L.e("MoodleFragment", "No cookies available for parsing")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(
+                            requireContext(),
+                            "No session cookies available",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    return@execute
+                }
+
+                var currentUrl = viewUrl
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "Parse redirect attempt $redirectCount: $currentUrl")
+
+                    if (currentUrl.contains("/login/index.php")) {
+                        L.w("MoodleFragment", "Hit login page during parsing")
+
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            dismissSessionConfirmDialog {
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val newProgressDialog = AlertDialog.Builder(requireContext())
+                                        .setMessage(getString(R.string.moodle_parsing_document))
+                                        .setCancelable(false)
+                                        .show()
+
+                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+                                    resolveAndParseDocument(viewUrl, newCookies, newProgressDialog)
+                                }, 1000)
+                            }
+                        }
+                        return@execute
+                    }
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+
+                    conn.setRequestProperty("Cookie", cookiesToUse)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.setRequestProperty("Accept", "*/*")
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Parse redirect response: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "Redirect without location")
+                                break
+                            }
+
+                            currentUrl = if (location.startsWith("http")) {
+                                location
+                            } else if (location.startsWith("/")) {
+                                "$moodleBaseUrl$location"
+                            } else {
+                                val baseUrl = currentUrl.substringBeforeLast("/")
+                                "$baseUrl/$location"
+                            }
+
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            L.d("MoodleFragment", "Found final document URL: $finalUrl")
+                            conn.disconnect()
+                            break
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unexpected response: $responseCode")
+                            conn.disconnect()
+                            break
+                        }
+                    }
+                }
+
+                if (finalUrl != null) {
+                    L.d("MoodleFragment", "Downloading and parsing: $finalUrl")
+                    downloadAndParseDocumentWithCookies(finalUrl, cookiesToUse) { text ->
+                        activity?.runOnUiThread {
+                            progressDialog.dismiss()
+                            if (text != null) {
+                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    L.e("MoodleFragment", "Failed to resolve document URL")
+                    activity?.runOnUiThread {
+                        progressDialog.dismiss()
+                        Toast.makeText(
+                            requireContext(),
+                            "Could not resolve file URL for parsing",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error resolving document", e)
+                activity?.runOnUiThread {
+                    progressDialog.dismiss()
+                    Toast.makeText(
+                        requireContext(),
+                        "Error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun downloadAndParseDocumentWithCookies(url: String, cookies: String?, callback: (String?) -> Unit) {
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Downloading document for parsing ===")
+                L.d("MoodleFragment", "URL: $url")
+
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (!cookies.isNullOrBlank()) {
+                    connection.setRequestProperty("Cookie", cookies)
+                }
+
+                connection.setRequestProperty("User-Agent", userAgent)
+                connection.setRequestProperty("Referer", moodleBaseUrl)
+                connection.setRequestProperty("Accept", "*/*")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.instanceFollowRedirects = false
+
+                val responseCode = connection.responseCode
+                L.d("MoodleFragment", "Download response code: $responseCode")
+
+                if (responseCode == 200) {
+                    val contentType = connection.getHeaderField("Content-Type")
+                    L.d("MoodleFragment", "Content-Type: $contentType")
+
+                    val inputStream = connection.inputStream
+                    val text = when {
+                        url.endsWith(".pdf", ignoreCase = true) -> {
+                            L.d("MoodleFragment", "Parsing as PDF")
+                            try {
+                                val pdfReader = PdfReader(inputStream)
+                                val textBuilder = StringBuilder()
+
+                                for (page in 1..pdfReader.numberOfPages) {
+                                    val strategy = LocationTextExtractionStrategy()
+                                    val pageText = PdfTextExtractor.getTextFromPage(
+                                        pdfReader,
+                                        page,
+                                        strategy
+                                    )
+                                    textBuilder.append(pageText)
+                                    if (page < pdfReader.numberOfPages) {
+                                        textBuilder.append("\n\n--- Page ${page + 1} ---\n\n")
+                                    }
+                                }
+
+                                pdfReader.close()
+                                val result = textBuilder.toString()
+                                L.d("MoodleFragment", "PDF parsed successfully, ${result.length} chars")
+                                result
+                            } catch (e: Exception) {
+                                L.e("MoodleFragment", "Error parsing PDF", e)
+                                null
+                            }
+                        }
+                        url.endsWith(".docx", ignoreCase = true) -> {
+                            L.d("MoodleFragment", "Parsing as DOCX")
+                            val result = parseDocxToText(inputStream)
+                            if (result != null) {
+                                L.d("MoodleFragment", "DOCX parsed successfully, ${result.length} chars")
+                            } else {
+                                L.e("MoodleFragment", "DOCX parsing returned null")
+                            }
+                            result
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unknown file type for URL: $url")
+                            null
+                        }
+                    }
+
+                    inputStream.close()
+                    connection.disconnect()
+                    callback(text)
+                } else {
+                    L.e("MoodleFragment", "Document download failed with code: $responseCode")
+                    connection.disconnect()
+                    callback(null)
+                }
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Exception downloading document", e)
+                callback(null)
+            }
+        }
+    }
+
+    private fun showLoadingBar() {
+        if (loadingBarContainer.isVisible) return
+
+        val animationsEnabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            loadingBarContainer.visibility = View.VISIBLE
+            loadingBarContainer.measure(
+                View.MeasureSpec.makeMeasureSpec((loadingBarContainer.parent as View).width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            val targetHeight = loadingBarContainer.measuredHeight
+
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = 0
+            loadingBarContainer.layoutParams = layoutParams
+
+            ValueAnimator.ofInt(0, targetHeight).apply {
+                duration = 200
+                interpolator = DecelerateInterpolator()
+
+                addUpdateListener { animator ->
+                    val animatedHeight = animator.animatedValue as Int
+                    layoutParams.height = animatedHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                doOnEnd {
+                    layoutParams.height = targetHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                start()
+            }
+        } else {
+            loadingBarContainer.visibility = View.VISIBLE
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            loadingBarContainer.layoutParams = layoutParams
+        }
+    }
+
+    private fun hideLoadingBar() {
+        if (loadingBarContainer.visibility != View.VISIBLE) return
+
+        val animationsEnabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
+
+        if (animationsEnabled) {
+            val currentHeight = loadingBarContainer.height
+            val layoutParams = loadingBarContainer.layoutParams
+
+            ValueAnimator.ofInt(currentHeight, 0).apply {
+                duration = 200
+                interpolator = AccelerateInterpolator()
+
+                addUpdateListener { animator ->
+                    val animatedHeight = animator.animatedValue as Int
+                    layoutParams.height = animatedHeight
+                    loadingBarContainer.layoutParams = layoutParams
+                }
+
+                doOnEnd {
+                    loadingBarContainer.visibility = View.GONE
+                    layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    loadingBarContainer.layoutParams = layoutParams
+                    horizontalProgressBar.progress = 0
+                }
+
+                start()
+            }
+        } else {
+            loadingBarContainer.visibility = View.GONE
+            val layoutParams = loadingBarContainer.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            loadingBarContainer.layoutParams = layoutParams
+            horizontalProgressBar.progress = 0
+        }
+    }
+
+    private fun isDownloadableFile(url: String): Boolean {
+        val fileExtensions = listOf(
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+            ".zip", ".rar", ".7z", ".txt", ".jpg", ".jpeg", ".png",
+            ".gif", ".mp4", ".mp3", ".avi", ".mov"
+        )
+        return fileExtensions.any { url.lowercase().contains(it) }
+    }
+
+    private fun openInExternalBrowser(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, url.toUri())
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_browser_open_failed), Toast.LENGTH_SHORT).show()
+        }
     }
 
     //endregion
@@ -5220,110 +6586,6 @@ class MoodleFragment : Fragment() {
     }
 
     //endregion
-
-    private fun isDownloadableFile(url: String): Boolean {
-        val fileExtensions = listOf(
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-            ".zip", ".rar", ".7z", ".txt", ".jpg", ".jpeg", ".png",
-            ".gif", ".mp4", ".mp3", ".avi", ".mov"
-        )
-        return fileExtensions.any { url.lowercase().contains(it) }
-    }
-
-    private fun openInExternalBrowser(url: String) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, url.toUri())
-            startActivity(intent)
-        } catch (_: Exception) {
-            Toast.makeText(requireContext(), getString(R.string.moodle_browser_open_failed), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun updateCounters() {
-        if (!isPageFullyLoaded) return
-
-        val currentUrl = webView.url ?: ""
-        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
-
-        if (isOnLoginPage) {
-            tvNotificationCount.visibility = View.GONE
-            tvMessageCount.visibility = View.GONE
-            return
-        }
-
-        val notificationCountJs = """
-        (function() {
-            try {
-                var notificationElement = document.evaluate('/html/body/div[1]/nav/div/div/div[2]/div[1]/div', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (notificationElement && notificationElement.textContent) {
-                    var count = notificationElement.textContent.trim().match(/\d+/);
-                    return count ? count[0] : '0';
-                }
-                return '0';
-            } catch(e) {
-                return '0';
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(notificationCountJs) { result ->
-            val count = result.replace("\"", "").toIntOrNull() ?: 0
-            activity?.runOnUiThread {
-                if (count > 0) {
-                    tvNotificationCount.text = if (count > 99) "99+" else count.toString()
-                    tvNotificationCount.visibility = View.VISIBLE
-                } else {
-                    tvNotificationCount.visibility = View.GONE
-                }
-            }
-        }
-
-        val messageCountJs = """
-        (function() {
-            try {
-                var messageElement = document.evaluate('/html/body/div[1]/nav/div/div/div[3]/a/div/span[1]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (messageElement && messageElement.textContent) {
-                    var count = messageElement.textContent.trim().match(/\d+/);
-                    return count ? count[0] : '0';
-                }
-                return '0';
-            } catch(e) {
-                return '0';
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(messageCountJs) { result ->
-            val count = result.replace("\"", "").toIntOrNull() ?: 0
-            activity?.runOnUiThread {
-                if (count > 0) {
-                    tvMessageCount.text = if (count > 99) "99+" else count.toString()
-                    tvMessageCount.visibility = View.VISIBLE
-                } else {
-                    tvMessageCount.visibility = View.GONE
-                }
-            }
-        }
-    }
-
-    fun onBackPressed(): Boolean {
-        val currentTime = System.currentTimeMillis()
-
-        if (currentTime - backPressTime < 500) {
-            backPressCount++
-        } else {
-            backPressCount = 1
-        }
-
-        backPressTime = currentTime
-
-        if (webView.canGoBack() && backPressCount == 1) {
-            webView.goBack()
-            return true
-        }
-
-        return false
-    }
 
     //region **CALENDAR**
 
@@ -5649,7 +6911,8 @@ class MoodleFragment : Fragment() {
                 if (isFragmentActive && isAdded) {
                     activity?.runOnUiThread {
                         context?.let {
-                            Toast.makeText(it, getString(R.string.moodle_calendar_refresh_success, events.size), Toast.LENGTH_SHORT).show()
+                            //Toast.makeText(it, getString(R.string.moodle_calendar_refresh_success, events.size), Toast.LENGTH_SHORT).show()
+                            L.d("MoodleFragment", "TOAST - Calendar data refresh successfully")
                         }
                     }
                 }
@@ -6705,881 +7968,6 @@ class MoodleFragment : Fragment() {
 
     //endregion
 
-    //region **WEBVIEW**
-
-    private fun parseDocxToText(inputStream: InputStream): String? {
-        try {
-            val zipInputStream = ZipInputStream(inputStream)
-            var entry: ZipEntry?
-            val textBuilder = StringBuilder()
-
-            while (zipInputStream.nextEntry.also { entry = it } != null) {
-                if (entry?.name == "word/document.xml") {
-                    val xmlContent = zipInputStream.bufferedReader().readText()
-
-                    val textPattern = "<w:t[^>]*>([^<]+)</w:t>".toRegex()
-                    val matches = textPattern.findAll(xmlContent)
-
-                    matches.forEach { match ->
-                        textBuilder.append(match.groupValues[1])
-                    }
-
-                    val paragraphPattern = "</w:p>".toRegex()
-                    val paragraphs = xmlContent.split(paragraphPattern)
-
-                    textBuilder.clear()
-                    paragraphs.forEach { paragraph ->
-                        val textMatches = textPattern.findAll(paragraph)
-                        val paragraphText = textMatches.joinToString("") { it.groupValues[1] }
-                        if (paragraphText.isNotEmpty()) {
-                            textBuilder.append(paragraphText).append("\n")
-                        }
-                    }
-
-                    break
-                }
-            }
-
-            zipInputStream.close()
-            return textBuilder.toString()
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Error parsing DOCX", e)
-            return null
-        }
-    }
-
-    private fun showLinkContextMenu(url: String) {
-        if (isPullToRefreshActive) {
-            return
-        }
-
-        val startTime = System.currentTimeMillis()
-
-        analyzeLinkCapabilities(url) { linkInfo ->
-            val elapsed = System.currentTimeMillis() - startTime
-            val delay = if (elapsed < 150) 150 - elapsed else 0
-
-            Handler(Looper.getMainLooper()).postDelayed({
-                activity?.runOnUiThread {
-                    if (!isPullToRefreshActive) {
-                        showLinkOptionsDialog(url, linkInfo)
-                    }
-                }
-            }, delay)
-        }
-    }
-
-    private data class LinkInfo(
-        val isDownloadable: Boolean,
-        val isCopyable: Boolean,
-        val fileType: String? = null,
-        val isImage: Boolean = false,
-        val directDownloadUrl: String? = null
-    )
-
-    private fun analyzeLinkCapabilities(url: String, callback: (LinkInfo) -> Unit) {
-        val jsCode = """
-        (function() {
-            try {
-                var links = document.querySelectorAll('a[href="$url"]');
-                var linkInfo = {
-                    isDownloadable: false,
-                    isCopyable: false,
-                    fileType: null,
-                    isImage: false,
-                    directDownloadUrl: null
-                };
-                
-                for (var i = 0; i < links.length; i++) {
-                    var link = links[i];
-
-                    var accessHideSpan = link.querySelector('span.accesshide');
-                    if (accessHideSpan) {
-                        var text = accessHideSpan.textContent.trim().toLowerCase();
-                        if (text.includes('datei') || text.includes('file')) {
-                            var container = link.closest('.activity-item, .activityinstance');
-                            if (container) {
-                                var activityIcon = container.querySelector('img.activityicon, img[data-region="activity-icon"]');
-                                if (activityIcon && activityIcon.src) {
-                                    var imgSrc = activityIcon.src.toLowerCase();
-
-                                    if (imgSrc.includes('/f/image?')) {
-                                        linkInfo.isImage = true;
-                                        linkInfo.isDownloadable = false;
-                                        linkInfo.isCopyable = false;
-                                        break;
-                                    }
-                                    else if (imgSrc.includes('/f/pdf')) {
-                                        linkInfo.isDownloadable = true;
-                                        linkInfo.isCopyable = true;
-                                        linkInfo.fileType = 'pdf';
-                                    }
-                                    else if (imgSrc.includes('/f/document') || imgSrc.includes('/f/docx')) {
-                                        linkInfo.isDownloadable = true;
-                                        linkInfo.isCopyable = true;
-                                        linkInfo.fileType = 'docx';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (linkInfo.isDownloadable || linkInfo.isCopyable || linkInfo.isImage) {
-                        break;
-                    }
-                }
-                
-                return JSON.stringify(linkInfo);
-            } catch(e) {
-                return JSON.stringify({
-                    isDownloadable: false,
-                    isCopyable: false,
-                    fileType: null,
-                    isImage: false,
-                    directDownloadUrl: null,
-                    error: e.message
-                });
-            }
-        })();
-    """.trimIndent()
-
-        webView.evaluateJavascript(jsCode) { result ->
-            try {
-                val cleanResult = result.replace("\\\"", "\"").trim('"')
-                val jsonObject = JSONObject(cleanResult)
-
-                val linkInfo = LinkInfo(
-                    isDownloadable = jsonObject.optBoolean("isDownloadable", false),
-                    isCopyable = jsonObject.optBoolean("isCopyable", false),
-                    fileType = jsonObject.optString("fileType").takeIf { it.isNotEmpty() },
-                    isImage = jsonObject.optBoolean("isImage", false)
-                )
-
-                L.d("MoodleFragment", "Link analysis - Download: ${linkInfo.isDownloadable}, Copy: ${linkInfo.isCopyable}, Type: ${linkInfo.fileType}, Image: ${linkInfo.isImage}")
-                callback(linkInfo)
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error parsing link info", e)
-                callback(LinkInfo(
-                    isDownloadable = isDownloadableFile(url),
-                    isCopyable = url.endsWith(".pdf", ignoreCase = true) || url.endsWith(".docx", ignoreCase = true),
-                    isImage = false
-                ))
-            }
-        }
-    }
-
-    private fun showLinkOptionsDialog(url: String, linkInfo: LinkInfo) {
-        val options = mutableListOf<Pair<String, Int>>()
-        val actions = mutableListOf<() -> Unit>()
-
-        val cookies = CookieManager.getInstance().getCookie(url)
-
-        val isMoodleUrl = url.startsWith("https://moodle.kleyer.eu/")
-
-        // open in new tab (only for moodle URLs and when not downloadable file)
-        if (isMoodleUrl && (!linkInfo.isDownloadable || linkInfo.isImage)) {
-            options.add(Pair(getString(R.string.moodle_open_in_new_tab), R.drawable.ic_tab_background))
-            actions.add {
-                createNewTab(url)
-                Toast.makeText(requireContext(), getString(R.string.moodle_tab_opened_in_new_tab), Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // download to user device
-        if (linkInfo.isDownloadable && !linkInfo.isImage) {
-            options.add(Pair(getString(R.string.moodle_download), R.drawable.ic_download))
-            actions.add {
-                if (url.contains("/mod/resource/view.php")) {
-                    resolveDownloadUrl(url, cookies, forceDownload = true)
-                } else {
-                    if (url.endsWith(".docx", ignoreCase = true)) {
-                        handleDocxFile(url, cookies, forceDownload = true)
-                    } else {
-                        downloadToDeviceWithCookies(url, cookies)
-                    }
-                }
-            }
-        }
-
-        // open in user browser
-        options.add(Pair(getString(R.string.moodle_open_browser), R.drawable.ic_globe))
-        actions.add { openInExternalBrowser(url) }
-
-        // copy text (pdf/docx)
-        if (linkInfo.isCopyable && linkInfo.fileType != null) {
-            options.add(Pair(getString(R.string.moodle_copy_text_format, linkInfo.fileType.uppercase()), R.drawable.ic_copy_text))
-            actions.add {
-                val progressDialog = AlertDialog.Builder(requireContext())
-                    .setMessage(getString(R.string.moodle_parsing_document))
-                    .setCancelable(false)
-                    .show()
-
-                if (url.contains("/mod/resource/view.php")) {
-                    resolveAndParseDocument(url, cookies, progressDialog)
-                } else {
-                    downloadAndParseDocumentWithCookies(url, cookies) { text ->
-                        activity?.runOnUiThread {
-                            progressDialog.dismiss()
-                            if (text != null) {
-                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(requireContext(), getString(R.string.moodle_parse_failed), Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // copy url
-        options.add(Pair(getString(R.string.moodle_copy_url), R.drawable.ic_copy_url))
-        actions.add {
-            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText(getString(R.string.moodle_url), url)
-            clipboard.setPrimaryClip(clip)
-            Toast.makeText(requireContext(), getString(R.string.moodle_url_copied), Toast.LENGTH_SHORT).show()
-        }
-
-        val adapter = object : ArrayAdapter<Pair<String, Int>>(
-            requireContext(),
-            android.R.layout.simple_list_item_1,
-            options
-        ) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getView(position, convertView, parent) as TextView
-                val (text, iconRes) = getItem(position)!!
-                view.text = text
-                view.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0)
-                view.compoundDrawablePadding = (16 * resources.displayMetrics.density).toInt()
-                view.setPadding(
-                    (16 * resources.displayMetrics.density).toInt(),
-                    (12 * resources.displayMetrics.density).toInt(),
-                    (16 * resources.displayMetrics.density).toInt(),
-                    (12 * resources.displayMetrics.density).toInt()
-                )
-                return view
-            }
-        }
-
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_link_options))
-            .setAdapter(adapter) { _, which ->
-                if (which in actions.indices) {
-                    actions[which].invoke()
-                }
-            }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-    }
-
-    private fun resetWebViewState() {
-        activity?.runOnUiThread {
-            try {
-                webView.stopLoading()
-
-                webView.clearView()
-                webView.clearHistory()
-                webView.clearCache(true)
-                webView.clearFormData()
-
-                webView.setInitialScale(0)
-                webView.settings.apply {
-                    loadWithOverviewMode = true
-                    useWideViewPort = true
-                    setSupportZoom(true)
-                    builtInZoomControls = true
-                    displayZoomControls = false
-                }
-
-                webView.layoutParams = webView.layoutParams
-                webView.requestLayout()
-
-                isDarkModeReady = false
-                pendingDarkModeUrl = null
-                webView.visibility = View.VISIBLE
-
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error resetting WebView state", e)
-            }
-        }
-    }
-
-    private fun handleInterceptedDownload(
-        url: String,
-        cookies: String?,
-        contentDisposition: String = "",
-        mimetype: String? = null
-    ) {
-        L.d("MoodleFragment", "Handling intercepted download")
-
-        val fileName = when {
-            contentDisposition.contains("filename=") -> {
-                val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
-                match?.groupValues?.get(1) ?: ""
-            }
-            else -> {
-                try {
-                    URLDecoder.decode(url.substringAfterLast("/").substringBefore("?"), "UTF-8")
-                } catch (_: Exception) {
-                    ""
-                }
-            }
-        }
-
-        val isPdf = mimetype == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)
-        val isDocx = mimetype?.contains("wordprocessingml") == true ||
-                fileName.endsWith(".docx", ignoreCase = true)
-
-        when {
-            isPdf && tabs.size < MAX_TABS -> handlePdfForViewerWithCookies(url, cookies)
-            isDocx && tabs.size < MAX_TABS -> handleDocxFile(url, cookies, forceDownload = false)
-            else -> downloadToDeviceWithCookies(url, cookies, contentDisposition)
-        }
-    }
-
-    private fun downloadToDeviceWithCookies(url: String, cookies: String?, contentDisposition: String = "") {
-        try {
-            val request = DownloadManager.Request(url.toUri())
-
-            var fileName = URLUtil.guessFileName(url, contentDisposition, null)
-            if (fileName.isBlank()) {
-                fileName = try {
-                    val decodedUrl = URLDecoder.decode(url, "UTF-8")
-                    decodedUrl.substringAfterLast("/").substringBefore("?")
-                } catch (_: Exception) {
-                    "moodle_file_${System.currentTimeMillis()}"
-                }
-            }
-
-            request.setTitle(fileName)
-            request.setDescription("Moodle Download")
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            request.setAllowedOverMetered(true)
-            request.setAllowedOverRoaming(true)
-
-            if (!cookies.isNullOrBlank()) {
-                request.addRequestHeader("Cookie", cookies)
-                L.d("MoodleFragment", "Added cookies to download: ${cookies.take(50)}...")
-            } else {
-                L.w("MoodleFragment", "WARNING: No cookies available for download!")
-            }
-
-            request.addRequestHeader("User-Agent", userAgent)
-            request.addRequestHeader("Referer", moodleBaseUrl)
-            request.addRequestHeader("Accept", "*/*")
-
-            val downloadManager = requireContext().getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            val downloadId = downloadManager.enqueue(request)
-
-            L.d("MoodleFragment", "Download enqueued with ID: $downloadId")
-            Toast.makeText(requireContext(), getString(R.string.moodle_download_started, fileName), Toast.LENGTH_SHORT).show()
-
-        } catch (e: Exception) {
-            L.e("MoodleFragment", "Download failed", e)
-            Toast.makeText(requireContext(), getString(R.string.moodle_download_failed, e.message), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun resolveDownloadUrl(viewUrl: String, cookies: String?, forceDownload: Boolean = false) {
-        if (pdfFileUrl == null) {
-            pdfFileUrl = viewUrl
-        }
-
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Starting Download URL Resolution ===")
-                L.d("MoodleFragment", "Initial URL: $viewUrl")
-                L.d("MoodleFragment", "Force download to device: $forceDownload")
-
-                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                val cookiesToUse = freshCookies ?: cookies
-
-                L.d("MoodleFragment", "Fresh cookies from CookieManager: ${freshCookies != null}")
-                if (cookiesToUse != null) {
-                    L.d("MoodleFragment", "Cookie preview: ${cookiesToUse.take(100)}...")
-                } else {
-                    L.e("MoodleFragment", "ERROR: No cookies available!")
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "No session cookies available. Please reload the page.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    return@execute
-                }
-
-                var currentUrl = viewUrl
-                var redirectCount = 0
-                val maxRedirects = 10
-                var finalUrl: String? = null
-                var contentType: String? = null
-                var contentDisposition: String? = null
-
-                while (redirectCount < maxRedirects) {
-                    L.d("MoodleFragment", "--- Redirect attempt $redirectCount ---")
-                    L.d("MoodleFragment", "Current URL: $currentUrl")
-
-                    if (currentUrl.contains("/login/index.php")) {
-                        L.w("MoodleFragment", "Hit login page - session may have expired")
-
-                        activity?.runOnUiThread {
-                            dismissSessionConfirmDialog {
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                                    resolveDownloadUrl(viewUrl, newCookies, forceDownload)
-                                }, 1000)
-                            }
-                        }
-                        return@execute
-                    }
-
-                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.instanceFollowRedirects = false
-
-                    conn.setRequestProperty("Cookie", cookiesToUse)
-                    conn.setRequestProperty("User-Agent", userAgent)
-                    conn.setRequestProperty("Referer", moodleBaseUrl)
-                    conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-
-                    val responseCode = conn.responseCode
-                    L.d("MoodleFragment", "Response code: $responseCode")
-
-                    when (responseCode) {
-                        in 300..399 -> {
-                            val location = conn.getHeaderField("Location")
-                            L.d("MoodleFragment", "Got redirect to: $location")
-
-                            val setCookie = conn.getHeaderField("Set-Cookie")
-                            if (setCookie != null) {
-                                L.d("MoodleFragment", "Server set new cookie: ${setCookie.take(100)}...")
-                            }
-
-                            conn.disconnect()
-
-                            if (location.isNullOrBlank()) {
-                                L.e("MoodleFragment", "ERROR: Redirect without Location header")
-                                break
-                            }
-
-                            currentUrl = if (location.startsWith("http")) {
-                                location
-                            } else if (location.startsWith("/")) {
-                                "$moodleBaseUrl$location"
-                            } else {
-                                val baseUrl = currentUrl.substringBeforeLast("/")
-                                "$baseUrl/$location"
-                            }
-
-                            redirectCount++
-                        }
-                        200 -> {
-                            finalUrl = currentUrl
-                            contentType = conn.getHeaderField("Content-Type")
-                            contentDisposition = conn.getHeaderField("Content-Disposition")
-                            L.d("MoodleFragment", "SUCCESS: Found final file")
-                            L.d("MoodleFragment", "Final URL: $finalUrl")
-                            L.d("MoodleFragment", "Content-Type: $contentType")
-                            L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
-                            conn.disconnect()
-                            break
-                        }
-                        401, 403 -> {
-                            L.e("MoodleFragment", "ERROR: Authentication failed (code $responseCode)")
-                            conn.disconnect()
-
-                            activity?.runOnUiThread {
-                                Toast.makeText(
-                                    requireContext(),
-                                    "Session expired. Please reload the page.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                            return@execute
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "ERROR: Unexpected response code: $responseCode")
-                            conn.disconnect()
-                            break
-                        }
-                    }
-                }
-
-                if (finalUrl != null) {
-                    L.d("MoodleFragment", "SUCCESS: Will handle download for: $finalUrl")
-                    pdfFileUrl = finalUrl
-
-                    activity?.runOnUiThread {
-                        if (forceDownload) {
-                            downloadToDeviceWithCookies(finalUrl, cookiesToUse, contentDisposition ?: "")
-                        } else {
-                            handleInterceptedDownload(finalUrl, cookiesToUse, contentDisposition ?: "", contentType)
-                        }
-                    }
-                } else {
-                    L.e("MoodleFragment", "FAILED: Could not resolve after $redirectCount attempts")
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "Could not resolve download URL. Try again or reload the page.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "EXCEPTION in resolveDownloadUrl", e)
-                activity?.runOnUiThread {
-                    Toast.makeText(
-                        requireContext(),
-                        "Error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
-    private fun resolveAndParseDocument(viewUrl: String, cookies: String?, progressDialog: AlertDialog) {
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Resolving document for parsing ===")
-                L.d("MoodleFragment", "View URL: $viewUrl")
-
-                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                val cookiesToUse = freshCookies ?: cookies
-
-                if (cookiesToUse == null) {
-                    L.e("MoodleFragment", "No cookies available for parsing")
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        Toast.makeText(
-                            requireContext(),
-                            "No session cookies available",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    return@execute
-                }
-
-                var currentUrl = viewUrl
-                var redirectCount = 0
-                val maxRedirects = 10
-                var finalUrl: String? = null
-
-                while (redirectCount < maxRedirects) {
-                    L.d("MoodleFragment", "Parse redirect attempt $redirectCount: $currentUrl")
-
-                    if (currentUrl.contains("/login/index.php")) {
-                        L.w("MoodleFragment", "Hit login page during parsing")
-
-                        activity?.runOnUiThread {
-                            progressDialog.dismiss()
-                            dismissSessionConfirmDialog {
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    val newProgressDialog = AlertDialog.Builder(requireContext())
-                                        .setMessage(getString(R.string.moodle_parsing_document))
-                                        .setCancelable(false)
-                                        .show()
-
-                                    val newCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
-                                    resolveAndParseDocument(viewUrl, newCookies, newProgressDialog)
-                                }, 1000)
-                            }
-                        }
-                        return@execute
-                    }
-
-                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.instanceFollowRedirects = false
-
-                    conn.setRequestProperty("Cookie", cookiesToUse)
-                    conn.setRequestProperty("User-Agent", userAgent)
-                    conn.setRequestProperty("Referer", moodleBaseUrl)
-                    conn.setRequestProperty("Accept", "*/*")
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-
-                    val responseCode = conn.responseCode
-                    L.d("MoodleFragment", "Parse redirect response: $responseCode")
-
-                    when (responseCode) {
-                        in 300..399 -> {
-                            val location = conn.getHeaderField("Location")
-                            conn.disconnect()
-
-                            if (location.isNullOrBlank()) {
-                                L.e("MoodleFragment", "Redirect without location")
-                                break
-                            }
-
-                            currentUrl = if (location.startsWith("http")) {
-                                location
-                            } else if (location.startsWith("/")) {
-                                "$moodleBaseUrl$location"
-                            } else {
-                                val baseUrl = currentUrl.substringBeforeLast("/")
-                                "$baseUrl/$location"
-                            }
-
-                            redirectCount++
-                        }
-                        200 -> {
-                            finalUrl = currentUrl
-                            L.d("MoodleFragment", "Found final document URL: $finalUrl")
-                            conn.disconnect()
-                            break
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "Unexpected response: $responseCode")
-                            conn.disconnect()
-                            break
-                        }
-                    }
-                }
-
-                if (finalUrl != null) {
-                    L.d("MoodleFragment", "Downloading and parsing: $finalUrl")
-                    downloadAndParseDocumentWithCookies(finalUrl, cookiesToUse) { text ->
-                        activity?.runOnUiThread {
-                            progressDialog.dismiss()
-                            if (text != null) {
-                                val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText(getString(R.string.moodle_document_text), text)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                } else {
-                    L.e("MoodleFragment", "Failed to resolve document URL")
-                    activity?.runOnUiThread {
-                        progressDialog.dismiss()
-                        Toast.makeText(
-                            requireContext(),
-                            "Could not resolve file URL for parsing",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Error resolving document", e)
-                activity?.runOnUiThread {
-                    progressDialog.dismiss()
-                    Toast.makeText(
-                        requireContext(),
-                        "Error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
-    private fun downloadAndParseDocumentWithCookies(url: String, cookies: String?, callback: (String?) -> Unit) {
-        backgroundExecutor.execute {
-            try {
-                L.d("MoodleFragment", "=== Downloading document for parsing ===")
-                L.d("MoodleFragment", "URL: $url")
-
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-
-                if (!cookies.isNullOrBlank()) {
-                    connection.setRequestProperty("Cookie", cookies)
-                }
-
-                connection.setRequestProperty("User-Agent", userAgent)
-                connection.setRequestProperty("Referer", moodleBaseUrl)
-                connection.setRequestProperty("Accept", "*/*")
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.instanceFollowRedirects = false
-
-                val responseCode = connection.responseCode
-                L.d("MoodleFragment", "Download response code: $responseCode")
-
-                if (responseCode == 200) {
-                    val contentType = connection.getHeaderField("Content-Type")
-                    L.d("MoodleFragment", "Content-Type: $contentType")
-
-                    val inputStream = connection.inputStream
-                    val text = when {
-                        url.endsWith(".pdf", ignoreCase = true) -> {
-                            L.d("MoodleFragment", "Parsing as PDF")
-                            try {
-                                val pdfReader = PdfReader(inputStream)
-                                val textBuilder = StringBuilder()
-
-                                for (page in 1..pdfReader.numberOfPages) {
-                                    val strategy = LocationTextExtractionStrategy()
-                                    val pageText = PdfTextExtractor.getTextFromPage(
-                                        pdfReader,
-                                        page,
-                                        strategy
-                                    )
-                                    textBuilder.append(pageText)
-                                    if (page < pdfReader.numberOfPages) {
-                                        textBuilder.append("\n\n--- Page ${page + 1} ---\n\n")
-                                    }
-                                }
-
-                                pdfReader.close()
-                                val result = textBuilder.toString()
-                                L.d("MoodleFragment", "PDF parsed successfully, ${result.length} chars")
-                                result
-                            } catch (e: Exception) {
-                                L.e("MoodleFragment", "Error parsing PDF", e)
-                                null
-                            }
-                        }
-                        url.endsWith(".docx", ignoreCase = true) -> {
-                            L.d("MoodleFragment", "Parsing as DOCX")
-                            val result = parseDocxToText(inputStream)
-                            if (result != null) {
-                                L.d("MoodleFragment", "DOCX parsed successfully, ${result.length} chars")
-                            } else {
-                                L.e("MoodleFragment", "DOCX parsing returned null")
-                            }
-                            result
-                        }
-                        else -> {
-                            L.e("MoodleFragment", "Unknown file type for URL: $url")
-                            null
-                        }
-                    }
-
-                    inputStream.close()
-                    connection.disconnect()
-                    callback(text)
-                } else {
-                    L.e("MoodleFragment", "Document download failed with code: $responseCode")
-                    connection.disconnect()
-                    callback(null)
-                }
-            } catch (e: Exception) {
-                L.e("MoodleFragment", "Exception downloading document", e)
-                callback(null)
-            }
-        }
-    }
-
-    private fun showLoadingBar() {
-        if (loadingBarContainer.isVisible) return
-
-        val animationsEnabled = Settings.Global.getFloat(
-            requireContext().contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
-        ) != 0.0f
-
-        if (animationsEnabled) {
-            loadingBarContainer.visibility = View.VISIBLE
-            loadingBarContainer.measure(
-                View.MeasureSpec.makeMeasureSpec((loadingBarContainer.parent as View).width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-            )
-            val targetHeight = loadingBarContainer.measuredHeight
-
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = 0
-            loadingBarContainer.layoutParams = layoutParams
-
-            ValueAnimator.ofInt(0, targetHeight).apply {
-                duration = 200
-                interpolator = DecelerateInterpolator()
-
-                addUpdateListener { animator ->
-                    val animatedHeight = animator.animatedValue as Int
-                    layoutParams.height = animatedHeight
-                    loadingBarContainer.layoutParams = layoutParams
-                }
-
-                doOnEnd {
-                    layoutParams.height = targetHeight
-                    loadingBarContainer.layoutParams = layoutParams
-                }
-
-                start()
-            }
-        } else {
-            loadingBarContainer.visibility = View.VISIBLE
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            loadingBarContainer.layoutParams = layoutParams
-        }
-    }
-
-    private fun hideLoadingBar() {
-        if (loadingBarContainer.visibility != View.VISIBLE) return
-
-        val animationsEnabled = Settings.Global.getFloat(
-            requireContext().contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
-        ) != 0.0f
-
-        if (animationsEnabled) {
-            val currentHeight = loadingBarContainer.height
-            val layoutParams = loadingBarContainer.layoutParams
-
-            ValueAnimator.ofInt(currentHeight, 0).apply {
-                duration = 200
-                interpolator = AccelerateInterpolator()
-
-                addUpdateListener { animator ->
-                    val animatedHeight = animator.animatedValue as Int
-                    layoutParams.height = animatedHeight
-                    loadingBarContainer.layoutParams = layoutParams
-                }
-
-                doOnEnd {
-                    loadingBarContainer.visibility = View.GONE
-                    layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                    loadingBarContainer.layoutParams = layoutParams
-                    horizontalProgressBar.progress = 0
-                }
-
-                start()
-            }
-        } else {
-            loadingBarContainer.visibility = View.GONE
-            val layoutParams = loadingBarContainer.layoutParams
-            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            loadingBarContainer.layoutParams = layoutParams
-            horizontalProgressBar.progress = 0
-        }
-    }
-
-    private fun showImagePageDialog(url: String) { // may be temporary, as i cant figure out how to preserve session cookies on moodle image pages
-        AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_image_page_detected))
-            .setMessage(getString(R.string.moodle_image_page_message))
-            .setPositiveButton(getString(R.string.moodle_open_browser)) { _, _ ->
-                openInExternalBrowser(url)
-            }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .show()
-            .apply {
-                val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-                getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-                getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
-            }
-    }
-
-    //endregion
-
     //region **PDF_VIEWER**
 
     private fun setupPdfControls() {
@@ -7696,13 +8084,23 @@ class MoodleFragment : Fragment() {
     }
 
     private fun updatePdfControlsForScrollMode() {
+        if (!isAdded || context == null) {
+            return
+        }
+
         pdfScrollContainer.viewTreeObserver.addOnScrollChangedListener {
-            updateCurrentPageFromScroll()
+            if (isAdded && context != null) {
+                updateCurrentPageFromScroll()
+            }
         }
         updatePdfControls()
     }
 
     private fun updateCurrentPageFromScroll() {
+        if (!isAdded || context == null) {
+            return
+        }
+
         val scrollY = pdfScrollContainer.scrollY
         var currentPageIndex = 0
         var accumulatedHeight = 0
@@ -7731,7 +8129,7 @@ class MoodleFragment : Fragment() {
         }
 
         pdfScrollContainer.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
-            if (ignoreScrollUpdates) {
+            if (!isAdded || context == null || ignoreScrollUpdates) {
                 return@setOnScrollChangeListener
             }
 
@@ -7761,6 +8159,9 @@ class MoodleFragment : Fragment() {
             }
 
             scrollStopRunnable = Runnable {
+                if (!isAdded || context == null) {
+                    return@Runnable
+                }
                 isScrolling = false
                 if (!isNavigating && !ignoreScrollUpdates) {
                     unloadDistantPages()
@@ -7772,83 +8173,218 @@ class MoodleFragment : Fragment() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupSwipeGestures() {
-        setupPdfZoom()
-
+        // zoom state tracking
         var startX = 0f
         var startY = 0f
         var hasMoved = false
         var initialPointerCount = 0
+        var lastTapTime = 0L
+        var tapCount = 0
+
+        // zoom specific state
+        var zoomStartDistance = 0f
+        var zoomStartScale = 1f
+        var isMultiTouchZoom = false
+        var lastZoomDistance = 0f
+
+        // swipe state
+        var isPanning = false
+        var lastPanX = 0f
+        var lastPanY = 0f
+
+        val swipeThreshold = 100f
+        val tapMovementThreshold = 30f
+        val doubleTapTimeout = 300L
+        val zoomThreshold = 5f // minimum distance change to register zoom
 
         pdfSinglePageView.setOnTouchListener { view, event ->
-            val scaleHandled = pdfScaleDetector?.onTouchEvent(event) ?: false
-
+            // handle multitouch (zoom) vs singletouch (swipe/pan)
             when (event.action and MotionEvent.ACTION_MASK) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.x
                     startY = event.y
                     pdfSwipeStartX = event.x
                     isPdfSwiping = false
+                    isPanning = false
                     hasMoved = false
-                    initialPointerCount = event.pointerCount
-
-                    zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
+                    initialPointerCount = 1
+                    lastPanX = event.rawX
+                    lastPanY = event.rawY
+                    isCurrentlyZooming = false
+                    isMultiTouchZoom = false
                     true
                 }
+
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    hidePdfSwipeIndicator()
-                    isPdfSwiping = false
+                    if (event.pointerCount == 2) {
+                        isMultiTouchZoom = true
+                        isCurrentlyZooming = true
+                        initialPointerCount = 2
+
+                        pdfSinglePageView.animate().cancel()
+
+                        val x0 = event.getX(0)
+                        val y0 = event.getY(0)
+                        val x1 = event.getX(1)
+                        val y1 = event.getY(1)
+
+                        zoomStartDistance = sqrt((x1 - x0).pow(2) + (y1 - y0).pow(2))
+                        zoomStartScale = pdfScaleFactor
+                        lastZoomDistance = zoomStartDistance
+
+                        isPdfSwiping = false
+                        hasMoved = false
+                    }
                     true
                 }
+
                 MotionEvent.ACTION_MOVE -> {
-                    if (event.pointerCount > 1 || isCurrentlyZooming) {
-                        hidePdfSwipeIndicator()
+                    // multitouch zoom
+                    if (isMultiTouchZoom && event.pointerCount >= 2) {
+                        val x0 = event.getX(0)
+                        val y0 = event.getY(0)
+                        val x1 = event.getX(1)
+                        val y1 = event.getY(1)
+
+                        val currentDistance = sqrt((x1 - x0).pow(2) + (y1 - y0).pow(2))
+                        val distanceDelta = currentDistance - zoomStartDistance
+
+                        if (abs(distanceDelta) > zoomThreshold) {
+                            val ratio = currentDistance / lastZoomDistance
+                            val newScale = (pdfScaleFactor * ratio).coerceIn(MIN_ZOOM, MAX_ZOOM)
+
+                            pdfScaleFactor = newScale
+                            pdfSinglePageView.scaleX = pdfScaleFactor
+                            pdfSinglePageView.scaleY = pdfScaleFactor
+
+                            lastZoomDistance = currentDistance
+
+                            val centerX = (x0 + x1) / 2f
+                            val centerY = (y0 + y1) / 2f
+
+                            if (pdfScaleFactor > 1.2f) {
+                                val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
+                                val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
+
+                                val panX = (centerX - containerWidth / 2f) * 0.3f
+                                val panY = (centerY - containerHeight / 2f) * 0.3f
+
+                                pdfSinglePageView.translationX = panX
+                                pdfSinglePageView.translationY = panY
+
+                                constrainTranslation()
+                            }
+                        }
                         return@setOnTouchListener true
                     }
 
-                    if (pdfScaleFactor > 1.05f) {
-                        return@setOnTouchListener true
-                    }
+                    if (!isMultiTouchZoom && event.pointerCount == 1 && !isCurrentlyZooming) {
+                        val deltaX = event.x - startX
+                        val deltaY = event.y - startY
+                        val totalMovement = sqrt(deltaX * deltaX + deltaY * deltaY)
 
-                    val deltaX = event.x - pdfSwipeStartX
-                    val deltaY = event.y - startY
+                        if (totalMovement > tapMovementThreshold) {
+                            tapCount = 0
+                        }
 
-                    if (abs(deltaX) > 30 && abs(deltaX) > abs(deltaY) * 0.5f) {
-                        hasMoved = true
-                        isPdfSwiping = true
-                        val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
-                        val pageCount = pdfViewerManager?.getPageCount() ?: 0
+                        if (pdfScaleFactor > 1.05f) {
+                            if (!isPanning) {
+                                isPanning = true
+                            }
 
-                        val progress = kotlin.math.min(abs(deltaX) / 200f, 1f)
-                        pdfSwipeProgress = progress
+                            val panDeltaX = event.rawX - lastPanX
+                            val panDeltaY = event.rawY - lastPanY
 
-                        if (deltaX > 0 && currentPage > 0) {
-                            showPdfSwipeIndicator(currentPage - 1, true, progress)
-                        } else if (deltaX < 0 && currentPage < pageCount - 1) {
-                            showPdfSwipeIndicator(currentPage + 1, false, progress)
+                            lastPanX = event.rawX
+                            lastPanY = event.rawY
+
+                            pdfSinglePageView.translationX += panDeltaX
+                            pdfSinglePageView.translationY += panDeltaY
+
+                            constrainTranslation()
+
+                            hasMoved = true
+                            return@setOnTouchListener true
+                        }
+
+                        // swiping (next/previous page)
+                        if (!isPanning && pdfScaleFactor <= 1.05f && abs(deltaX) > swipeThreshold && abs(deltaX) > abs(deltaY) * 1.5f) {
+                            hasMoved = true
+                            isPdfSwiping = true
+                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                            val pageCount = pdfViewerManager?.getPageCount() ?: 0
+
+                            val progress = kotlin.math.min(abs(deltaX) / 250f, 1f)
+                            pdfSwipeProgress = progress
+
+                            if (deltaX > 0 && currentPage > 0) {
+                                showPdfSwipeIndicator(currentPage - 1, true, progress)
+                            } else if (deltaX < 0 && currentPage < pageCount - 1) {
+                                showPdfSwipeIndicator(currentPage + 1, false, progress)
+                            }
                         }
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (initialPointerCount == 1 && !isCurrentlyZooming && pdfScaleFactor <= 1.05f && hasMoved) {
-                        val deltaX = event.x - startX
 
-                        if (isPdfSwiping && abs(deltaX) > 100) {
-                            if (deltaX > 0) {
-                                val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
-                                if (currentPage > 0) {
-                                    pdfViewerManager?.setCurrentPage(currentPage - 1)
-                                    renderSinglePdfPage(currentPage - 1)
-                                    updatePdfControls()
+                MotionEvent.ACTION_POINTER_UP -> {
+                    if (event.pointerCount == 2) {
+                        isMultiTouchZoom = false
+                        isCurrentlyZooming = false
+
+                        if (pdfScaleFactor in 0.95f..1.05f) {
+                            animateToScale(1f)
+                        } else {
+                            constrainTranslation()
+                        }
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val upTime = System.currentTimeMillis()
+                    val deltaX = event.x - startX
+                    val deltaY = event.y - startY
+                    val totalMovement = sqrt(deltaX * deltaX + deltaY * deltaY)
+
+                    if (!hasMoved && totalMovement < tapMovementThreshold && initialPointerCount == 1 && !isCurrentlyZooming && !isMultiTouchZoom) {
+                        if (upTime - lastTapTime < doubleTapTimeout) {
+                            tapCount++
+                            if (tapCount >= 2) {
+                                if (pdfScaleFactor > 1.05f) {
+                                    animateZoomOut()
                                 }
-                            } else {
-                                val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
-                                val pageCount = pdfViewerManager?.getPageCount() ?: 0
-                                if (currentPage < pageCount - 1) {
-                                    pdfViewerManager?.setCurrentPage(currentPage + 1)
-                                    renderSinglePdfPage(currentPage + 1)
-                                    updatePdfControls()
-                                }
+                                tapCount = 0
+                                lastTapTime = 0
+                                hidePdfSwipeIndicator()
+                                isPdfSwiping = false
+                                isPanning = false
+                                return@setOnTouchListener true
+                            }
+                        } else {
+                            tapCount = 1
+                        }
+                        lastTapTime = upTime
+                    }
+
+                    if (isPanning) {
+                        constrainTranslation()
+                        isPanning = false
+                    } else if (!isCurrentlyZooming && !isMultiTouchZoom && pdfScaleFactor <= 1.05f && hasMoved && isPdfSwiping && abs(deltaX) > swipeThreshold) {
+                        if (deltaX > 0) {
+                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                            if (currentPage > 0) {
+                                pdfViewerManager?.setCurrentPage(currentPage - 1)
+                                renderSinglePdfPage(currentPage - 1)
+                                updatePdfControls()
+                            }
+                        } else {
+                            val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
+                            val pageCount = pdfViewerManager?.getPageCount() ?: 0
+                            if (currentPage < pageCount - 1) {
+                                pdfViewerManager?.setCurrentPage(currentPage + 1)
+                                renderSinglePdfPage(currentPage + 1)
+                                updatePdfControls()
                             }
                         }
                     }
@@ -7858,9 +8394,12 @@ class MoodleFragment : Fragment() {
                     pdfSwipeProgress = 0f
                     hasMoved = false
                     initialPointerCount = 0
+                    isMultiTouchZoom = false
+                    isCurrentlyZooming = false
                     true
                 }
-                else -> scaleHandled
+
+                else -> false
             }
         }
     }
@@ -8027,7 +8566,6 @@ class MoodleFragment : Fragment() {
                             try {
                                 imageView.setImageBitmap(bitmap)
                                 imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-
                                 imageView.minimumHeight = 0
                                 val layoutParams = imageView.layoutParams
                                 layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -8078,7 +8616,19 @@ class MoodleFragment : Fragment() {
 
             val currentHeight = imageView.height
 
+            val drawable = imageView.drawable as? android.graphics.drawable.BitmapDrawable
+            val bitmap = drawable?.bitmap
+
             imageView.setImageDrawable(null)
+
+            if (bitmap != null && !bitmap.isRecycled) {
+                try {
+                    bitmap.recycle()
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Error recycling bitmap", e)
+                }
+            }
+
             imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
 
             if (currentHeight > 0) {
@@ -8099,13 +8649,20 @@ class MoodleFragment : Fragment() {
         pdfScaleFactor = 1f
         lastAppliedScale = 1f
         isCurrentlyZooming = false
+
         pdfSinglePageView.scaleX = 1f
         pdfSinglePageView.scaleY = 1f
+        pdfSinglePageView.translationX = 0f
+        pdfSinglePageView.translationY = 0f
 
         zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
     }
 
     private fun updatePdfControls() {
+        if (!isAdded || context == null) {
+            return
+        }
+
         val currentPage = (pdfViewerManager?.getCurrentPage() ?: 0) + 1
         val totalPages = pdfViewerManager?.getPageCount() ?: 0
         pdfPageCounter.text = getString(R.string.moodle_pdf_page_indicator, currentPage, totalPages)
@@ -9033,73 +9590,57 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun setupPdfZoom() {
-        zoomHandler = Handler(Looper.getMainLooper())
+    private fun constrainTranslation() {
+        val imageWidth = pdfSinglePageView.width * pdfScaleFactor
+        val imageHeight = pdfSinglePageView.height * pdfScaleFactor
+        val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
+        val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
 
-        pdfScaleDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-                isCurrentlyZooming = true
-                lastAppliedScale = pdfScaleFactor
+        val maxTransX = kotlin.math.max(0f, (imageWidth - containerWidth) / 2f)
+        val maxTransY = kotlin.math.max(0f, (imageHeight - containerHeight) / 2f)
 
-                zoomStabilizeRunnable?.let { zoomHandler?.removeCallbacks(it) }
+        pdfSinglePageView.translationX = pdfSinglePageView.translationX.coerceIn(-maxTransX, maxTransX)
+        pdfSinglePageView.translationY = pdfSinglePageView.translationY.coerceIn(-maxTransY, maxTransY)
+    }
 
-                return true
-            }
+    private fun animateToScale(targetScale: Float) {
+        val startScale = pdfScaleFactor
+        val startTransX = pdfSinglePageView.translationX
+        val startTransY = pdfSinglePageView.translationY
 
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val scaleDelta = detector.scaleFactor
-                val newScale = pdfScaleFactor * scaleDelta
+        val animator = ValueAnimator.ofFloat(0f, 1f)
+        animator.duration = 200
+        animator.interpolator = DecelerateInterpolator()
 
-                val clampedScale = newScale.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        animator.addUpdateListener { animation ->
+            val progress = animation.animatedValue as Float
+            val currentScale = startScale + (targetScale - startScale) * progress
 
-                if (abs(clampedScale - lastAppliedScale) > 0.01f) {
-                    pdfScaleFactor = clampedScale
-                    lastAppliedScale = clampedScale
+            pdfScaleFactor = currentScale
+            pdfSinglePageView.scaleX = currentScale
+            pdfSinglePageView.scaleY = currentScale
 
-                    pdfSinglePageView.scaleX = pdfScaleFactor
-                    pdfSinglePageView.scaleY = pdfScaleFactor
-                }
+            pdfSinglePageView.translationX = startTransX * (1f - progress)
+            pdfSinglePageView.translationY = startTransY * (1f - progress)
+        }
 
-                return true
-            }
-
-            override fun onScaleEnd(detector: ScaleGestureDetector) {
-                zoomStabilizeRunnable = Runnable {
-                    if (abs(pdfScaleFactor - 1f) < 0.08f) {
-                        pdfScaleFactor = 1f
-                        lastAppliedScale = 1f
-                        pdfSinglePageView.animate()
-                            .scaleX(1f)
-                            .scaleY(1f)
-                            .setDuration(150)
-                            .withEndAction {
-                                isCurrentlyZooming = false
-                            }
-                            .start()
-                    } else {
-                        val finalScale = pdfScaleFactor.coerceIn(MIN_ZOOM, MAX_ZOOM)
-                        if (abs(finalScale - pdfScaleFactor) > 0.01f) {
-                            pdfScaleFactor = finalScale
-                            lastAppliedScale = finalScale
-                            pdfSinglePageView.animate()
-                                .scaleX(finalScale)
-                                .scaleY(finalScale)
-                                .setDuration(150)
-                                .withEndAction {
-                                    isCurrentlyZooming = false
-                                }
-                                .start()
-                        } else {
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                isCurrentlyZooming = false
-                            }, 50)
-                        }
-                    }
-                }
-
-                zoomHandler?.postDelayed(zoomStabilizeRunnable!!, 150)
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                pdfScaleFactor = targetScale
+                lastAppliedScale = targetScale
+                pdfSinglePageView.scaleX = targetScale
+                pdfSinglePageView.scaleY = targetScale
+                pdfSinglePageView.translationX = 0f
+                pdfSinglePageView.translationY = 0f
+                isCurrentlyZooming = false
             }
         })
+
+        animator.start()
+    }
+
+    private fun animateZoomOut() {
+        animateToScale(1f)
     }
 
     //endregion
@@ -11113,36 +11654,35 @@ class MoodleFragment : Fragment() {
     }
 
     private fun clickMessageDrawerToggle() {
-        val jsCode = """
-        (function() {
-            try {
-                var messageToggle = document.evaluate(
-                    '/html/body/div[1]/nav/div/div/div[3]/a',
-                    document,
-                    null,
-                    XPathResult.FIRST_ORDERED_NODE_TYPE,
-                    null
-                ).singleNodeValue;
-                
-                if (messageToggle) {
-                    messageToggle.click();
-                    console.log('Clicked message drawer toggle');
-                    return true;
-                }
-                return false;
-            } catch(e) {
-                console.error('Error clicking message toggle: ' + e.message);
-                return false;
-            }
-        })();
-    """.trimIndent()
+        if (isPdfTab(currentTabIndex)) {
+            return
+        }
 
-        webView.evaluateJavascript(jsCode) { result ->
-            if (result == "true") {
-                L.d("MoodleFragment", "Message drawer toggle clicked")
-            } else {
-                L.w("MoodleFragment", "Failed to click message drawer toggle")
+        val jsCode = """
+    (function() {
+        try {
+            var drawerToggle = document.querySelector('[data-toggle="drawer-toggle"]');
+            if (drawerToggle) {
+                drawerToggle.click();
+                return true;
             }
+            return false;
+        } catch(e) {
+            return false;
+        }
+    })();
+""".trimIndent()
+
+        webView.evaluateJavascript(jsCode) { _ ->
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isFragmentActive && isAdded) {
+                    val currentUrl = webView.url ?: ""
+                    if (currentUrl.contains("/message/index.php")) {
+                        isAtTop = false
+                        hideExtendedHeaderWithAnimation()
+                    }
+                }
+            }, 500)
         }
     }
 
@@ -12103,642 +12643,742 @@ class MoodleFragment : Fragment() {
         darkModeInjectionAttempts++
 
         val darkModeCSS = """
-        (function() {
-            // Return immediately if already injected
-            if (document.getElementById('darkreader-moodle-override')) {
-                return 'already_present';
-            }
+    (function() {
+        // Return immediately if already injected
+        if (document.getElementById('darkreader-moodle-override')) {
+            return 'already_present';
+        }
+        
+        try {
+            const css = `
+                :root {
+                    --dark-bg-primary: #181818;
+                    --dark-bg-secondary: #1e1e1e;
+                    --dark-surface: #242424;
+                    --dark-surface-elevated: #2d2d2d;
+                    --dark-surface-hover: #333333;
+                    --dark-text-primary: #e8e6e3;
+                    --dark-text-secondary: #b3b1ad;
+                    --dark-text-tertiary: #8b8883;
+                    --dark-border: #3a3a3a;
+                    --dark-border-light: #2d2d2d;
+                    --dark-primary: #5094ff;
+                    --dark-primary-hover: #6ba4ff;
+                    --dark-link: #5094ff;
+                    --dark-link-hover: #6ba4ff;
+                }
+                
+                /* === PREVENT LIGHT THEME FLASH - CRITICAL === */
+                * {
+                    background-color: transparent !important;
+                }
+                
+                html {
+                    background-color: var(--dark-bg-primary) !important;
+                    color-scheme: dark !important;
+                }
+                
+                body {
+                    background-color: var(--dark-bg-primary) !important;
+                    color: var(--dark-text-primary) !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+                
+                #page, #page-wrapper, #page-content,
+                .container, .container-fluid,
+                #region-main-box, #region-main,
+                .region-main, .region-main-content,
+                [role="main"] {
+                    background-color: var(--dark-bg-primary) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === User initials and avatars - CRITICAL FIX === */
+                .userinitials {
+                    color: inherit !important;
+                    background-color: inherit !important;
+                    filter: none !important;
+                }
+                
+                .avatar .userinitials {
+                    /* Preserve the original background color of user initials */
+                    background-color: inherit !important;
+                }
+                
+                /* Dim profile picture avatars but leave initials untouched */
+                .avatar img:not(.userinitials) {
+                    filter: brightness(0.8) contrast(1.05) !important;
+                }
+                
+                /* === Collapse/Expand buttons === */
+                .icons-collapse-expand,
+                .btn-icon[data-bs-toggle="collapse"],
+                a.btn.btn-icon[data-for="sectiontoggler"] {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .icons-collapse-expand:hover,
+                .btn-icon[data-bs-toggle="collapse"]:hover {
+                    background-color: var(--dark-surface-hover) !important;
+                }
+                
+                .icons-collapse-expand i,
+                .btn-icon[data-bs-toggle="collapse"] i {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === Activity header and dates === */
+                .activity-header,
+                [data-for="page-activity-header"] {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-information,
+                [data-region="activity-information"] {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-dates,
+                [data-region="activity-dates"] {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-dates > div {
+                    background-color: transparent !important;
+                    color: var(--dark-text-secondary) !important;
+                }
+                
+                .activity-dates strong {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-description {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-description .box,
+                .activity-description .generalbox {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === Message popover toggle background === */
+                .popover-region[data-region="popover-region-messages"] {
+                    background-color: transparent !important;
+                }
+                
+                #message-drawer-toggle-68e669b44148568e669b43e32a23,
+                a[id*="message-drawer-toggle"] {
+                    background-color: transparent !important;
+                }
+                
+                .popover-region-messages .nav-link {
+                    background-color: transparent !important;
+                }
+                
+                /* Ensure message icon has correct colors */
+                .popover-region[data-region="popover-region-messages"] i.fa-message {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* Message count badge */
+                .popover-region .count-container,
+                .popover-region[data-region="popover-region-messages"] .count-container {
+                    background-color: var(--dark-primary) !important;
+                    color: #ffffff !important;
+                }
+                
+                /* === LOGIN PAGE SPECIFIC BACKGROUND === */
+                .pagelayout-login #page {
+                    background-color: var(--dark-bg-primary) !important;
+                    background-image: linear-gradient(to right, var(--dark-bg-primary) 0%, var(--dark-bg-secondary) 100%) !important;
+                }
+                
+                /* === LOGIN PAGE SPECIFIC === */
+                .login-wrapper, .login-container,
+                .loginform, .login-form {
+                    background-color: var(--dark-bg-primary) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .login-heading {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .login-instructions, .login-divider {
+                    background-color: transparent !important;
+                    color: var(--dark-text-secondary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === CARDS & BLOCKS - FIXED === */
+                .card {
+                    /* Make card background transparent so body-bg shows through */
+                    background-color: transparent !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                    /* Preserve rounded corners - using !important on the property itself */
+                    border-radius: 0.375rem !important;
+                    overflow: hidden !important;
+                    /* Override Bootstrap variable */
+                    --bs-card-bg: transparent !important;
+                }
+                
+                .card-body {
+                    /* Gray background for card bodies */
+                    background-color: var(--dark-surface) !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* Card body padding fix for mobile */
+                @media (max-width: 767.98px) {
+                    #page-header .card .card-body {
+                        padding: 0.5rem !important;
+                    }
+                }
+                
+                .card-header, .card-footer {
+                    background-color: var(--dark-surface) !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .card-header {
+                    background-color: var(--dark-surface-elevated) !important;
+                }
+                
+                /* Block sections - keep gray background */
+                [class*="block_"], [id*="block-"],
+                .block, .block-region {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                    border-radius: 0.375rem !important;
+                    overflow: hidden !important;
+                }
+                
+                /* Specific block sections that are cards */
+                section.block.card,
+                section[class*="block_"].card {
+                    background-color: transparent !important;
+                    border-radius: 0.375rem !important;
+                    overflow: hidden !important;
+                    --bs-card-bg: transparent !important;
+                }
+                
+                /* Block card bodies should have gray background */
+                section.block.card .card-body,
+                section[class*="block_"].card .card-body {
+                    background-color: var(--dark-surface) !important;
+                }
+                
+                /* Blocks column */
+                [data-region="blocks-column"] {
+                    background-color: transparent !important;
+                }
+                
+                /* === NAVIGATION & HEADER === */
+                .navbar, nav, .fixed-top {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .navbar-nav, .nav-link, .nav-item {
+                    color: var(--dark-text-primary) !important;
+                }
+
+                nav.navbar-nav.d-md-none {
+                    background-color: var(--dark-surface) !important;
+                }
+                
+                #page-header, .page-header-headings {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+
+                .page-context-header, .page-header-headings,
+                .d-flex.align-items-center {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === BREADCRUMB - FIXED === */
+                .breadcrumb {
+                    background-color: transparent !important;
+                }
+                
+                /* Breadcrumb links should use the link color */
+                .breadcrumb-item a {
+                    color: var(--dark-link) !important;
+                }
+                
+                .breadcrumb-item a:hover {
+                    color: var(--dark-link-hover) !important;
+                }
+                
+                /* Non-link breadcrumb items */
+                .breadcrumb-item {
+                    color: var(--dark-text-secondary) !important;
+                }
+                
+                .breadcrumb-item + .breadcrumb-item::before {
+                    color: var(--dark-text-tertiary) !important;
+                }
+
+                nav[aria-label="Navigationsleiste"] {
+                    background-color: transparent !important;
+                }
+                
+                /* === COURSE CONTENT === */
+                .course-content {
+                    background-color: var(--dark-bg-primary) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === FORMS & INPUTS === */
+                input, textarea, select {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .form-control, .form-control-lg {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .form-control:focus, input:focus, textarea:focus {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-primary) !important;
+                    box-shadow: 0 0 0 0.2rem rgba(80, 148, 255, 0.25) !important;
+                }
+                
+                input::placeholder, textarea::placeholder {
+                    color: var(--dark-text-tertiary) !important;
+                    opacity: 0.7 !important;
+                }
+                
+                .input-group-text {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-secondary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === BUTTONS === */
+                .btn {
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .btn-secondary {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .btn-secondary:hover {
+                    background-color: var(--dark-surface-hover) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .btn-primary {
+                    background-color: var(--dark-primary) !important;
+                    border-color: var(--dark-primary) !important;
+                    color: #ffffff !important;
+                }
+                
+                .btn-primary:hover {
+                    background-color: var(--dark-primary-hover) !important;
+                    border-color: var(--dark-primary-hover) !important;
+                }
+                
+                .btn-link {
+                    color: var(--dark-link) !important;
+                    background-color: transparent !important;
+                }
+                
+                .btn-link:hover {
+                    color: var(--dark-link-hover) !important;
+                    background-color: transparent !important;
+                }
+
+                .btn-submit.search-icon {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .btn-submit.search-icon:hover {
+                    background-color: var(--dark-surface-hover) !important;
+                }
+                
+                button, [role="button"] {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === LINKS === */
+                a {
+                    color: var(--dark-link) !important;
+                }
+                
+                a:hover {
+                    color: var(--dark-link-hover) !important;
+                }
+                
+                /* === DROPDOWNS & MENUS === */
+                .dropdown-menu {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .dropdown-item {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .dropdown-item:hover, .dropdown-item:focus {
+                    background-color: var(--dark-surface-hover) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .dropdown-divider {
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === LISTS - FIXED === */
+                .list-group {
+                    background-color: transparent !important;
+                    /* Fix border color variable */
+                    --bs-list-group-border-color: var(--dark-border) !important;
+                }
+                
+                .list-group-item {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                    /* Override Bootstrap's --bs-border-color */
+                    --bs-border-color: var(--dark-border) !important;
+                }
+                
+                .list-group-item:hover {
+                    background-color: var(--dark-surface-elevated) !important;
+                }
+                
+                /* === TABLES === */
+                table, .table {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                thead, tbody, tfoot, tr, td, th {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border-light) !important;
+                }
+                
+                .table-striped tbody tr:nth-of-type(odd) {
+                    background-color: var(--dark-surface-elevated) !important;
+                }
+                
+                /* === MODALS & POPOVERS === */
+                .modal-content {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .modal-header, .modal-footer {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .popover {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .popover-body, .popover-header {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .tooltip-inner {
+                    background-color: var(--dark-surface-elevated) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === POPOVER REGIONS === */
+                .popover-region-container {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .popover-region-header-container {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-bottom: 1px solid var(--dark-border) !important;
+                }
+                
+                .popover-region-content-container {
+                    background-color: var(--dark-surface) !important;
+                }
+                
+                .popover-region-footer-container {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-top: 1px solid var(--dark-border) !important;
+                }
+
+                .popover-region-toggle,
+                #message-drawer-toggle-68e6603dcdd8368e6603dc094318,
+                a[id*="message-drawer-toggle"] {
+                    background-color: transparent !important;
+                }
+                
+                [data-region="popover-region-messages"] .popover-region-toggle {
+                    background-color: transparent !important;
+                }
+                
+                /* === ALERTS & NOTIFICATIONS === */
+                .alert {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                [data-region*="notification"], [data-region*="message"] {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === PAGINATION === */
+                .pagination {
+                    /* Preserve pagination rounded corners */
+                    --bs-pagination-border-radius: 0.375rem !important;
+                }
+                
+                /* Paging control container - rounded corners */
+                [data-region="paging-control-container"] {
+                    border-radius: 0.375rem !important;
+                    overflow: hidden !important;
+                }
+                
+                [data-region="paging-control-container"] .pagination {
+                    border-radius: 0.375rem !important;
+                }
+                
+                .page-item .page-link {
+                    background-color: var(--dark-surface) !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* First and last pagination items get rounded corners */
+                .page-item:first-child .page-link {
+                    border-top-left-radius: 0.375rem !important;
+                    border-bottom-left-radius: 0.375rem !important;
+                }
+                
+                .page-item:last-child .page-link {
+                    border-top-right-radius: 0.375rem !important;
+                    border-bottom-right-radius: 0.375rem !important;
+                }
+                
+                .page-item.disabled .page-link {
+                    background-color: var(--dark-surface-elevated) !important;
+                    border-color: var(--dark-border-light) !important;
+                    color: var(--dark-text-tertiary) !important;
+                }
+                
+                .page-item:not(.disabled) .page-link:hover {
+                    background-color: var(--dark-surface-hover) !important;
+                    border-color: var(--dark-border) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === MOODLE SPECIFIC ELEMENTS === */
+                .activity, .section, .course-content,
+                .activityinstance, .contentwithoutlink {
+                    background-color: transparent !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .activity-item, .section-item {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .course-info-container {
+                    background-color: var(--dark-surface) !important;
+                }
+
+                .activitybadge.badge {
+                    background-color: transparent !important;
+                    border: none !important;
+                }
+
+                .expanded-icon, .collapsed-icon {
+                    background-color: transparent !important;
+                }
+                
+                .expanded-icon i, .collapsed-icon i {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === CALENDAR === */
+                .calendar-month, .calendarmonth, .day {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === BADGES === */
+                .badge {
+                    color: var(--dark-text-primary) !important;
+                    border: 1px solid var(--dark-border) !important;
+                }
+                
+                .badge-primary, .bg-primary {
+                    background-color: var(--dark-primary) !important;
+                    color: #ffffff !important;
+                }
+                
+                /* === TEXT UTILITIES === */
+                .text-muted {
+                    color: var(--dark-text-secondary) !important;
+                }
+                
+                .text-secondary {
+                    color: var(--dark-text-secondary) !important;
+                }
+                
+                h1, h2, h3, h4, h5, h6,
+                .h1, .h2, .h3, .h4, .h5, .h6 {
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                p, span, div, label, legend {
+                    color: inherit !important;
+                }
+                
+                /* === BORDERS & DIVIDERS === */
+                hr, .border, .border-top, .border-bottom,
+                .border-left, .border-right {
+                    border-color: var(--dark-border) !important;
+                }
+                
+                .divider {
+                    background-color: var(--dark-border) !important;
+                    border-color: var(--dark-border) !important;
+                }
+                
+                /* === FOOTER === */
+                footer, #page-footer {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .footer-dark, .footer-dark-inner {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                .footer-dark.bg-dark {
+                    background-color: var(--dark-surface) !important;
+                }
+                
+                /* === ICONS === */
+                img.icon, img.iconsmall, img.iconlarge,
+                img[class*="icon"], 
+                .icon, i[class*="fa-"],
+                [data-region="activity-icon"] {
+                    filter: none !important;
+                    opacity: 1 !important;
+                }
+                
+                img.activityicon:not([src*=".svg"]) {
+                    filter: invert(0.9) hue-rotate(180deg) !important;
+                }
+                
+                img[src*=".svg"], svg {
+                    filter: none !important;
+                }
+                
+                /* === IMAGES === */
+                img:not(.icon):not([class*="icon"]):not([data-region="activity-icon"]):not(.userinitials) {
+                    filter: brightness(0.8) contrast(1.05) !important;
+                }
+                
+                /* === LOADING PLACEHOLDERS === */
+                [class*="bg-pulse-grey"] {
+                    background-color: var(--dark-surface-elevated) !important;
+                }
+                
+                .bg-light, .bg-white {
+                    background-color: var(--dark-surface) !important;
+                    color: var(--dark-text-primary) !important;
+                }
+                
+                /* === SCROLLBARS === */
+                ::-webkit-scrollbar {
+                    width: 12px;
+                    height: 12px;
+                    background-color: var(--dark-bg-primary);
+                }
+                
+                ::-webkit-scrollbar-track {
+                    background-color: var(--dark-bg-secondary);
+                }
+                
+                ::-webkit-scrollbar-thumb {
+                    background-color: var(--dark-surface-elevated);
+                    border-radius: 6px;
+                    border: 2px solid var(--dark-bg-secondary);
+                }
+                
+                ::-webkit-scrollbar-thumb:hover {
+                    background-color: var(--dark-surface-hover);
+                }
+                
+                /* === SELECTION === */
+                ::selection {
+                    background-color: var(--dark-primary) !important;
+                    color: #ffffff !important;
+                }
+                
+                ::-moz-selection {
+                    background-color: var(--dark-primary) !important;
+                    color: #ffffff !important;
+                }
+            `;
             
-            try {
-                const css = `
-                    :root {
-                        --dark-bg-primary: #181818;
-                        --dark-bg-secondary: #1e1e1e;
-                        --dark-surface: #242424;
-                        --dark-surface-elevated: #2d2d2d;
-                        --dark-surface-hover: #333333;
-                        --dark-text-primary: #e8e6e3;
-                        --dark-text-secondary: #b3b1ad;
-                        --dark-text-tertiary: #8b8883;
-                        --dark-border: #3a3a3a;
-                        --dark-border-light: #2d2d2d;
-                        --dark-primary: #5094ff;
-                        --dark-primary-hover: #6ba4ff;
-                        --dark-link: #5094ff;
-                        --dark-link-hover: #6ba4ff;
-                    }
-                    
-                    /* === PREVENT LIGHT THEME FLASH - CRITICAL === */
-                    * {
-                        background-color: transparent !important;
-                    }
-                    
-                    html {
-                        background-color: var(--dark-bg-primary) !important;
-                        color-scheme: dark !important;
-                    }
-                    
-                    body {
-                        background-color: var(--dark-bg-primary) !important;
-                        color: var(--dark-text-primary) !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                    }
-                    
-                    #page, #page-wrapper, #page-content,
-                    .container, .container-fluid,
-                    #region-main-box, #region-main,
-                    .region-main, .region-main-content,
-                    [role="main"] {
-                        background-color: var(--dark-bg-primary) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === User initials should NOT be overridden === */
-                    .userinitials {
-                        color: inherit !important;
-                        background-color: inherit !important;
-                        filter: none !important;
-                    }
-                    
-                    /* === Collapse/Expand buttons === */
-                    .icons-collapse-expand,
-                    .btn-icon[data-bs-toggle="collapse"],
-                    a.btn.btn-icon[data-for="sectiontoggler"] {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .icons-collapse-expand:hover,
-                    .btn-icon[data-bs-toggle="collapse"]:hover {
-                        background-color: var(--dark-surface-hover) !important;
-                    }
-                    
-                    .icons-collapse-expand i,
-                    .btn-icon[data-bs-toggle="collapse"] i {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === Activity header and dates === */
-                    .activity-header,
-                    [data-for="page-activity-header"] {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-information,
-                    [data-region="activity-information"] {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-dates,
-                    [data-region="activity-dates"] {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-dates > div {
-                        background-color: transparent !important;
-                        color: var(--dark-text-secondary) !important;
-                    }
-                    
-                    .activity-dates strong {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-description {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-description .box,
-                    .activity-description .generalbox {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === Message popover toggle background === */
-                    .popover-region[data-region="popover-region-messages"] {
-                        background-color: transparent !important;
-                    }
-                    
-                    #message-drawer-toggle-68e669b44148568e669b43e32a23,
-                    a[id*="message-drawer-toggle"] {
-                        background-color: transparent !important;
-                    }
-                    
-                    .popover-region-messages .nav-link {
-                        background-color: transparent !important;
-                    }
-                    
-                    /* Ensure message icon has correct colors */
-                    .popover-region[data-region="popover-region-messages"] i.fa-message {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* Message count badge */
-                    .popover-region .count-container,
-                    .popover-region[data-region="popover-region-messages"] .count-container {
-                        background-color: var(--dark-primary) !important;
-                        color: #ffffff !important;
-                    }
-                    
-                    /* === LOGIN PAGE SPECIFIC BACKGROUND === */
-                    .pagelayout-login #page {
-                        background-color: var(--dark-bg-primary) !important;
-                        background-image: linear-gradient(to right, var(--dark-bg-primary) 0%, var(--dark-bg-secondary) 100%) !important;
-                    }
-                    
-                    /* === LOGIN PAGE SPECIFIC === */
-                    .login-wrapper, .login-container,
-                    .loginform, .login-form {
-                        background-color: var(--dark-bg-primary) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .login-heading {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .login-instructions, .login-divider {
-                        background-color: transparent !important;
-                        color: var(--dark-text-secondary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === CARDS & BLOCKS === */
-                    .card {
-                        background-color: var(--dark-surface) !important;
-                        border-color: var(--dark-border) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .card-body, .card-header, .card-footer {
-                        background-color: var(--dark-surface) !important;
-                        border-color: var(--dark-border) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .card-header {
-                        background-color: var(--dark-surface-elevated) !important;
-                    }
-                    
-                    [class*="block_"], [id*="block-"],
-                    .block, .block-region {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === NAVIGATION & HEADER === */
-                    .navbar, nav, .fixed-top {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .navbar-nav, .nav-link, .nav-item {
-                        color: var(--dark-text-primary) !important;
-                    }
+            const style = document.createElement('style');
+            style.id = 'darkreader-moodle-override';
+            style.textContent = css;
+            document.head.appendChild(style);
 
-                    nav.navbar-nav.d-md-none {
-                        background-color: var(--dark-surface) !important;
-                    }
-                    
-                    #page-header, .page-header-headings {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-
-                    .page-context-header, .page-header-headings,
-                    .d-flex.align-items-center {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .breadcrumb {
-                        background-color: transparent !important;
-                    }
-                    
-                    .breadcrumb-item, .breadcrumb-item a {
-                        color: var(--dark-text-secondary) !important;
-                    }
-                    
-                    .breadcrumb-item + .breadcrumb-item::before {
-                        color: var(--dark-text-tertiary) !important;
-                    }
-
-                    nav[aria-label="Navigationsleiste"] {
-                        background-color: transparent !important;
-                    }
-                    
-                    /* === FORMS & INPUTS === */
-                    input, textarea, select {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .form-control, .form-control-lg {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .form-control:focus, input:focus, textarea:focus {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-primary) !important;
-                        box-shadow: 0 0 0 0.2rem rgba(80, 148, 255, 0.25) !important;
-                    }
-                    
-                    input::placeholder, textarea::placeholder {
-                        color: var(--dark-text-tertiary) !important;
-                        opacity: 0.7 !important;
-                    }
-                    
-                    .input-group-text {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-secondary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === BUTTONS === */
-                    .btn {
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .btn-secondary {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .btn-secondary:hover {
-                        background-color: var(--dark-surface-hover) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .btn-primary {
-                        background-color: var(--dark-primary) !important;
-                        border-color: var(--dark-primary) !important;
-                        color: #ffffff !important;
-                    }
-                    
-                    .btn-primary:hover {
-                        background-color: var(--dark-primary-hover) !important;
-                        border-color: var(--dark-primary-hover) !important;
-                    }
-                    
-                    .btn-link {
-                        color: var(--dark-link) !important;
-                        background-color: transparent !important;
-                    }
-                    
-                    .btn-link:hover {
-                        color: var(--dark-link-hover) !important;
-                        background-color: transparent !important;
-                    }
-
-                    .btn-submit.search-icon {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .btn-submit.search-icon:hover {
-                        background-color: var(--dark-surface-hover) !important;
-                    }
-                    
-                    button, [role="button"] {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === LINKS === */
-                    a {
-                        color: var(--dark-link) !important;
-                    }
-                    
-                    a:hover {
-                        color: var(--dark-link-hover) !important;
-                    }
-                    
-                    /* === DROPDOWNS & MENUS === */
-                    .dropdown-menu {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .dropdown-item {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .dropdown-item:hover, .dropdown-item:focus {
-                        background-color: var(--dark-surface-hover) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .dropdown-divider {
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === LISTS === */
-                    .list-group {
-                        background-color: transparent !important;
-                    }
-                    
-                    .list-group-item {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border-light) !important;
-                    }
-                    
-                    .list-group-item:hover {
-                        background-color: var(--dark-surface-elevated) !important;
-                    }
-                    
-                    /* === TABLES === */
-                    table, .table {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    thead, tbody, tfoot, tr, td, th {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border-light) !important;
-                    }
-                    
-                    .table-striped tbody tr:nth-of-type(odd) {
-                        background-color: var(--dark-surface-elevated) !important;
-                    }
-                    
-                    /* === MODALS & POPOVERS === */
-                    .modal-content {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .modal-header, .modal-footer {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .popover {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .popover-body, .popover-header {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .tooltip-inner {
-                        background-color: var(--dark-surface-elevated) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === POPOVER REGIONS === */
-                    .popover-region-container {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .popover-region-header-container {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-bottom: 1px solid var(--dark-border) !important;
-                    }
-                    
-                    .popover-region-content-container {
-                        background-color: var(--dark-surface) !important;
-                    }
-                    
-                    .popover-region-footer-container {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-top: 1px solid var(--dark-border) !important;
-                    }
-
-                    .popover-region-toggle,
-                    #message-drawer-toggle-68e6603dcdd8368e6603dc094318,
-                    a[id*="message-drawer-toggle"] {
-                        background-color: transparent !important;
-                    }
-                    
-                    [data-region="popover-region-messages"] .popover-region-toggle {
-                        background-color: transparent !important;
-                    }
-                    
-                    /* === ALERTS & NOTIFICATIONS === */
-                    .alert {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    [data-region*="notification"], [data-region*="message"] {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === PAGINATION === */
-                    .page-item .page-link {
-                        background-color: var(--dark-surface) !important;
-                        border-color: var(--dark-border) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .page-item.disabled .page-link {
-                        background-color: var(--dark-surface-elevated) !important;
-                        border-color: var(--dark-border-light) !important;
-                        color: var(--dark-text-tertiary) !important;
-                    }
-                    
-                    .page-item:not(.disabled) .page-link:hover {
-                        background-color: var(--dark-surface-hover) !important;
-                        border-color: var(--dark-border) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === MOODLE SPECIFIC ELEMENTS === */
-                    .activity, .section, .course-content,
-                    .activityinstance, .contentwithoutlink {
-                        background-color: transparent !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .activity-item, .section-item {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .course-info-container {
-                        background-color: var(--dark-surface) !important;
-                    }
-
-                    .activitybadge.badge {
-                        background-color: transparent !important;
-                        border: none !important;
-                    }
-
-                    .expanded-icon, .collapsed-icon {
-                        background-color: transparent !important;
-                    }
-                    
-                    .expanded-icon i, .collapsed-icon i {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === CALENDAR === */
-                    .calendar-month, .calendarmonth, .day {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === BADGES === */
-                    .badge {
-                        color: var(--dark-text-primary) !important;
-                        border: 1px solid var(--dark-border) !important;
-                    }
-                    
-                    .badge-primary, .bg-primary {
-                        background-color: var(--dark-primary) !important;
-                        color: #ffffff !important;
-                    }
-                    
-                    /* === TEXT UTILITIES === */
-                    .text-muted {
-                        color: var(--dark-text-secondary) !important;
-                    }
-                    
-                    .text-secondary {
-                        color: var(--dark-text-secondary) !important;
-                    }
-                    
-                    h1, h2, h3, h4, h5, h6,
-                    .h1, .h2, .h3, .h4, .h5, .h6 {
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    p, span, div, label, legend {
-                        color: inherit !important;
-                    }
-                    
-                    /* === BORDERS & DIVIDERS === */
-                    hr, .border, .border-top, .border-bottom,
-                    .border-left, .border-right {
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    .divider {
-                        background-color: var(--dark-border) !important;
-                        border-color: var(--dark-border) !important;
-                    }
-                    
-                    /* === FOOTER === */
-                    footer, #page-footer {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .footer-dark, .footer-dark-inner {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    .footer-dark.bg-dark {
-                        background-color: var(--dark-surface) !important;
-                    }
-                    
-                    /* === ICONS === */
-                    img.icon, img.iconsmall, img.iconlarge,
-                    img[class*="icon"], 
-                    .icon, i[class*="fa-"],
-                    [data-region="activity-icon"] {
-                        filter: none !important;
-                        opacity: 1 !important;
-                    }
-                    
-                    img.activityicon:not([src*=".svg"]) {
-                        filter: invert(0.9) hue-rotate(180deg) !important;
-                    }
-                    
-                    img[src*=".svg"], svg {
-                        filter: none !important;
-                    }
-                    
-                    /* === IMAGES === */
-                    img:not(.icon):not([class*="icon"]):not([data-region="activity-icon"]) {
-                        filter: brightness(0.8) contrast(1.05) !important;
-                    }
-                    
-                    /* === LOADING PLACEHOLDERS === */
-                    [class*="bg-pulse-grey"] {
-                        background-color: var(--dark-surface-elevated) !important;
-                    }
-                    
-                    .bg-light, .bg-white {
-                        background-color: var(--dark-surface) !important;
-                        color: var(--dark-text-primary) !important;
-                    }
-                    
-                    /* === SCROLLBARS === */
-                    ::-webkit-scrollbar {
-                        width: 12px;
-                        height: 12px;
-                        background-color: var(--dark-bg-primary);
-                    }
-                    
-                    ::-webkit-scrollbar-track {
-                        background-color: var(--dark-bg-secondary);
-                    }
-                    
-                    ::-webkit-scrollbar-thumb {
-                        background-color: var(--dark-surface-elevated);
-                        border-radius: 6px;
-                        border: 2px solid var(--dark-bg-secondary);
-                    }
-                    
-                    ::-webkit-scrollbar-thumb:hover {
-                        background-color: var(--dark-surface-hover);
-                    }
-                    
-                    /* === SELECTION === */
-                    ::selection {
-                        background-color: var(--dark-primary) !important;
-                        color: #ffffff !important;
-                    }
-                    
-                    ::-moz-selection {
-                        background-color: var(--dark-primary) !important;
-                        color: #ffffff !important;
-                    }
-                `;
-                
-                const style = document.createElement('style');
-                style.id = 'darkreader-moodle-override';
-                style.textContent = css;
-                document.head.appendChild(style);
-
-                document.documentElement.style.backgroundColor = '#181818';
-                document.body.style.backgroundColor = '#181818';
-                document.body.style.color = '#e8e6e3';
-                
-                window.moodleDarkModeInjected = true;
-                console.log('Moodle dark mode CSS injected');
-                return 'success';
-            } catch(e) {
-                console.error('Error injecting dark mode: ' + e.message);
-                return 'error: ' + e.message;
-            }
-        })();
-    """.trimIndent()
+            document.documentElement.style.backgroundColor = '#181818';
+            document.body.style.backgroundColor = '#181818';
+            document.body.style.color = '#e8e6e3';
+            
+            window.moodleDarkModeInjected = true;
+            console.log('Moodle dark mode CSS injected');
+            return 'success';
+        } catch(e) {
+            console.error('Error injecting dark mode: ' + e.message);
+            return 'error: ' + e.message;
+        }
+    })();
+""".trimIndent()
 
         webView.evaluateJavascript(darkModeCSS) { result ->
             val cleanResult = result?.trim('"') ?: "null"
@@ -12747,8 +13387,7 @@ class MoodleFragment : Fragment() {
                 "Dark mode injection attempt $darkModeInjectionAttempts result: $cleanResult"
             )
 
-            if ((cleanResult.contains("error") == true || cleanResult == "null") &&
-                darkModeInjectionAttempts < MAX_DARK_MODE_RETRIES
+            if ((cleanResult.contains("error") || cleanResult == "null") && darkModeInjectionAttempts < MAX_DARK_MODE_RETRIES
             ) {
 
                 val retryDelay = when (darkModeInjectionAttempts) {
