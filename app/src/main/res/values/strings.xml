@@ -1661,6 +1661,22 @@
     <string name="moodle_audio_page">Audioseite</string>
     <string name="moodle_loading">Moodle lädt…</string>
     <string name="moodle_downloading">Moodle lädt herunter…</string>
+    <string name="moodle_no_session_cookies">Keine Sitzungs-Cookies verfügbar</string>
+    <string name="moodle_couldnt_find_audio_file">Audiodatei konnte nicht gefunden werden</string>
+    <string name="moodle_failed_to_load_audio_page">Audioseite konnte nicht geladen werden</string>
+    <string name="moodle_couldnt_find_image_file">Bilddatei konnte nicht gefunden werden</string>
+    <string name="moodle_failed_to_load_image_page">Bildseite konnte nicht geladen werden</string>
+    <string name="moodle_no_session_cookies_reload">Keine Sitzungs-Cookies verfügbar. Bitte lade die Seite neu.</string>
+    <string name="moodle_session_expired_reload">Sitzung abgelaufen. Bitte lade die Seite neu.</string>
+    <string name="moodle_failed_to_parse_document">Dokument konnte nicht verarbeitet werden</string>
+    <string name="moodle_couldnt_resolve_url_for_parsing">Datei-URL konnte nicht zum Verarbeiten aufgelöst werden</string>
+    <string name="moodle_failed_to_get_recipient_info">Empfängerinformationen konnten nicht abgerufen werden</string>
+    <string name="moodle_failed_to_insert_message">Nachricht konnte nicht eingefügt werden</string>
+    <string name="moodle_failed_to_get_recipient_data">Empfängerinformationen konnten nicht abgerufen werden</string>
+    <string name="moodle_failed_to_send_message">Nachricht konnte nicht gesendet werden</string>
+    <string name="moodle_activated_dark_mode">Moodle Dark Mode aktiviert</string>
+    <string name="moodle_deactivated_dark_mode">Moodle Dark Mode deaktiviert</string>
+
     <!-- text viewer -->
     <string name="text_viewer_switch_to_text">Text-Viewer</string>
     <string name="text_viewer_switch_to_pdf">PDF-Viewer</string>
@@ -1697,5 +1713,26 @@
     <string name="text_viewer_bg_white">Weiß</string>
     <string name="text_viewer_bg_light_gray">Hellgrau</string>
     <string name="text_viewer_bg_beige">Beige</string>
+    <string name="text_viewer_preview_title">TITELTEXT</string>
+    <string name="text_viewer_preview_normal">Normaler Text mit</string>
+    <string name="text_viewer_preview_bold">fett</string>
+    <string name="text_viewer_preview_italic">kursiv</string>
+    <string name="text_viewer_preview_underline">unterstrichen</string>
+    <string name="text_viewer_preview_strike">Durchgestrichener Text</string>
+    <!-- course_entry_download -->
+    <string name="moodle_select_entries_to_download">Einträge zum Herunterladen auswählen</string>
+    <string name="moodle_select_all">Alle auswählen</string>
+    <string name="moodle_downloading_entries">Lade %1$d Einträge herunter…</string>
+    <string name="moodle_no_entries_selected">Keine Einträge ausgewählt</string>
+    <string name="moodle_failed_to_parse_course">Kurseinträge konnten nicht verarbeitet werden</string>
+    <string name="moodle_error_parsing_entries">Fehler beim Verarbeiten der Einträge</string>
+    <string name="moodle_entry_icon">Eintragssymbol</string>
+    <string name="moodle_select_entries_info">Wähle die Einträge aus, die du von diesem Kurs herunterladen möchtest</string>
+    <string name="moodle_no_downloadable_entries">Keine herunterladbaren Einträge in diesem Kurs gefunden</string>
+    <string name="moodle_search_entries">Einträge durchsuchen…</string>
+    <string name="moodle_deselect_all">Alle abwählen</string>
+    <string name="moodle_expand_icon">Bereich erweitern</string>
+    <string name="moodle_items"> x</string> <!-- should not be longer than 2 characters -->
+    <string name="moodle_nested">Verschachtelt</string>
 
 </resources>

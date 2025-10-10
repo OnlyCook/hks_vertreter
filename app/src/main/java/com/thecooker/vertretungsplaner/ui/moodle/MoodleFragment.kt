@@ -26,26 +26,38 @@ import androidx.core.content.edit
 import com.thecooker.vertretungsplaner.L
 import java.io.File
 import android.app.DownloadManager
+import android.app.UiModeManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.pdf.PdfRenderer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.RelativeSizeSpan
+import android.text.style.StrikethroughSpan
+import android.text.style.UnderlineSpan
 import android.util.Base64
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.ScaleGestureDetector
+import android.view.ViewTreeObserver
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.Animation
 import android.view.animation.DecelerateInterpolator
@@ -55,6 +67,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.annotation.AttrRes
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import java.net.URLDecoder
 import androidx.core.net.toUri
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
@@ -75,12 +88,28 @@ import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.gms.maps.model.StyleSpan
+import com.itextpdf.text.BaseColor
+import com.itextpdf.text.Chunk
+import com.itextpdf.text.Document
+import com.itextpdf.text.Element
+import com.itextpdf.text.Font
+import com.itextpdf.text.FontFactory
+import com.itextpdf.text.Image
+import com.itextpdf.text.PageSize
+import com.itextpdf.text.Paragraph
+import com.itextpdf.text.Phrase
+import com.itextpdf.text.pdf.BaseFont
+import com.itextpdf.text.pdf.PdfPCell
+import com.itextpdf.text.pdf.PdfPTable
+import com.itextpdf.text.pdf.PdfPageEventHelper
 import com.itextpdf.text.pdf.PdfReader
+import com.itextpdf.text.pdf.PdfWriter
 import com.itextpdf.text.pdf.parser.LocationTextExtractionStrategy
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
 import com.thecooker.vertretungsplaner.FetchType
 import com.thecooker.vertretungsplaner.SettingsActivity
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -92,6 +121,8 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -339,6 +370,26 @@ class MoodleFragment : Fragment() {
     private val MAX_DARK_MODE_RETRIES = 5
     private var darkModeRetryHandler: Handler? = null
     private var darkModeRetryRunnable: Runnable? = null
+
+    // course entry downloads
+    data class CourseEntry(
+        val url: String,
+        val iconUrl: String,
+        val linkType: String,
+        val name: String,
+        val sectionName: String
+    )
+
+    data class CourseSection(
+        val sectionName: String,
+        val entries: List<CourseEntry>,
+        var isExpanded: Boolean = false,
+        var isSelected: Boolean = false
+    )
+
+    private var downloadButtonMonitorHandler: Handler? = null
+    private var downloadButtonMonitorRunnable: Runnable? = null
+    private var isMonitoringDownloadButton = false
 
     //region **SETUP**
 
@@ -663,7 +714,7 @@ class MoodleFragment : Fragment() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
 
-                if (moodleDarkModeEnabled && url != null && !url.contains("calendar/export.php")) {
+                if (moodleDarkModeEnabled && url != null) {
                     verifyAndFixDarkMode()
                 } else {
                     activity?.runOnUiThread {
@@ -753,6 +804,12 @@ class MoodleFragment : Fragment() {
                     return
                 }
 
+                if (url?.startsWith("https://moodle.kleyer.eu/course/") == true) {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        injectCourseDownloadButton()
+                    }, 500)
+                }
+
                 if (isNowOnLoginPage) {
                     if (!wasOnLoginPage) {
                         wasOnLoginPage = true
@@ -828,7 +885,7 @@ class MoodleFragment : Fragment() {
 
                 darkModeInjectionAttempts = 0
 
-                if (moodleDarkModeEnabled && url != null && !url.contains("calendar/export.php")) {
+                if (moodleDarkModeEnabled && url != null) {
                     L.d("MoodleFragment", "Page started - injecting dark mode CSS immediately")
                     webView.visibility = View.INVISIBLE
                     injectDarkTheme()
@@ -1440,10 +1497,10 @@ class MoodleFragment : Fragment() {
         btnTogglePassword.setOnClickListener {
             isPasswordVisible = !isPasswordVisible
             if (isPasswordVisible) {
-                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                etPassword.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 btnTogglePassword.setImageResource(R.drawable.ic_eye_open)
             } else {
-                etPassword.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                etPassword.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 btnTogglePassword.setImageResource(R.drawable.ic_eye_closed)
             }
             etPassword.typeface = monoFont
@@ -1573,6 +1630,11 @@ class MoodleFragment : Fragment() {
     private fun fillLoginForm(username: String, password: String) {
         if (isLoginInProgress) {
             L.d("MoodleFragment", "Login already in progress, ignoring duplicate call")
+            return
+        }
+
+        if (isLoginDialogShown) {
+            L.d("MoodleFragment", "Login dialog already shown, preventing duplicate")
             return
         }
 
@@ -1842,7 +1904,11 @@ class MoodleFragment : Fragment() {
                         }
 
                         Handler(Looper.getMainLooper()).postDelayed({
-                            if (!isLoginDialogShown) {
+                            if (isFragmentActive && isAdded && !isLoginDialogShown) {
+                                val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                                if (!dontShowDialog) {
+                                    injectDialogButtonOnLoginPage()
+                                }
                                 showLoginDialog()
                             }
                         }, 500)
@@ -1892,6 +1958,15 @@ class MoodleFragment : Fragment() {
                         consecutiveLoginFailures = MAX_LOGIN_ATTEMPTS
                         hasLoginFailed = true
                         isLoginDialogShown = false
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded) {
+                                val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                                if (!dontShowDialog) {
+                                    injectDialogButtonOnLoginPage()
+                                }
+                            }
+                        }, 500)
                     }
                 } else {
                     L.w("MoodleFragment", "No error message found, login status unclear")
@@ -1899,6 +1974,15 @@ class MoodleFragment : Fragment() {
                     sessionExpiredRetryCount = 0
                     hasLoginFailed = true
                     isLoginDialogShown = false
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isFragmentActive && isAdded) {
+                            val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                            if (!dontShowDialog) {
+                                injectDialogButtonOnLoginPage()
+                            }
+                        }
+                    }, 500)
                 }
             }
         }
@@ -1947,6 +2031,7 @@ class MoodleFragment : Fragment() {
         isFragmentActive = false
         stopDialogButtonMonitoring()
         stopMessageInputMonitoring()
+        stopDownloadButtonMonitoring()
         messageInputDialog?.dismiss()
 
         if (wasOnLogoutConfirmPage) {
@@ -1977,6 +2062,7 @@ class MoodleFragment : Fragment() {
 
         stopDialogButtonMonitoring()
         stopMessageInputMonitoring()
+        stopDownloadButtonMonitoring()
         messageInputDialog?.dismiss()
         wasOnLogoutConfirmPage = false
         logoutConfirmPageUrl = ""
@@ -2040,8 +2126,8 @@ class MoodleFragment : Fragment() {
         val followSystemTheme = sharedPreferences.getBoolean("follow_system_theme", true)
 
         isDarkTheme = if (followSystemTheme) {
-            val nightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            nightMode == Configuration.UI_MODE_NIGHT_YES
         } else {
             sharedPreferences.getBoolean("dark_mode_enabled", false)
         }
@@ -5631,7 +5717,7 @@ class MoodleFragment : Fragment() {
             request.setAllowedOverMetered(true)
             request.setAllowedOverRoaming(true)
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 request.setRequiresDeviceIdle(false)
                 request.setRequiresCharging(false)
             }
@@ -5784,7 +5870,7 @@ class MoodleFragment : Fragment() {
                     L.e("MoodleFragment", "No cookies for audio download")
                     activity?.runOnUiThread {
                         progressDialog.dismiss()
-                        Toast.makeText(requireContext(), "No session cookies available", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.moodle_no_session_cookies), Toast.LENGTH_SHORT).show()
                     }
                     return@execute
                 }
@@ -5822,7 +5908,7 @@ class MoodleFragment : Fragment() {
                         L.e("MoodleFragment", "Audio source not found in HTML")
                         activity?.runOnUiThread {
                             progressDialog.dismiss()
-                            Toast.makeText(requireContext(), "Could not find audio file", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(requireContext(), getString(R.string.moodle_couldnt_find_audio_file), Toast.LENGTH_SHORT).show()
                         }
                     }
                 } else {
@@ -5831,7 +5917,7 @@ class MoodleFragment : Fragment() {
 
                     activity?.runOnUiThread {
                         progressDialog.dismiss()
-                        Toast.makeText(requireContext(), "Failed to load audio page", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_load_audio_page), Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -5839,7 +5925,7 @@ class MoodleFragment : Fragment() {
                 L.e("MoodleFragment", "Error downloading audio", e)
                 activity?.runOnUiThread {
                     progressDialog.dismiss()
-                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.moodle_error_details, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -5863,7 +5949,7 @@ class MoodleFragment : Fragment() {
                     L.e("MoodleFragment", "No cookies for image download")
                     activity?.runOnUiThread {
                         progressDialog.dismiss()
-                        Toast.makeText(requireContext(), "No session cookies available", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.moodle_no_session_cookies), Toast.LENGTH_SHORT).show()
                     }
                     return@execute
                 }
@@ -5901,7 +5987,7 @@ class MoodleFragment : Fragment() {
                         L.e("MoodleFragment", "Image src not found in HTML")
                         activity?.runOnUiThread {
                             progressDialog.dismiss()
-                            Toast.makeText(requireContext(), "Could not find image file", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(requireContext(), getString(R.string.moodle_couldnt_find_image_file), Toast.LENGTH_SHORT).show()
                         }
                     }
                 } else {
@@ -5910,7 +5996,7 @@ class MoodleFragment : Fragment() {
 
                     activity?.runOnUiThread {
                         progressDialog.dismiss()
-                        Toast.makeText(requireContext(), "Failed to load image page", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_load_image_page), Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -5918,7 +6004,7 @@ class MoodleFragment : Fragment() {
                 L.e("MoodleFragment", "Error downloading image", e)
                 activity?.runOnUiThread {
                     progressDialog.dismiss()
-                    Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.moodle_error_details, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -5946,7 +6032,7 @@ class MoodleFragment : Fragment() {
                     activity?.runOnUiThread {
                         Toast.makeText(
                             requireContext(),
-                            "No session cookies available. Please reload the page.",
+                            getString(R.string.moodle_no_session_cookies_reload),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -6038,7 +6124,7 @@ class MoodleFragment : Fragment() {
                             activity?.runOnUiThread {
                                 Toast.makeText(
                                     requireContext(),
-                                    "Session expired. Please reload the page.",
+                                    getString(R.string.moodle_session_expired_reload),
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -6068,7 +6154,7 @@ class MoodleFragment : Fragment() {
                     activity?.runOnUiThread {
                         Toast.makeText(
                             requireContext(),
-                            "Could not resolve download URL. Try again or reload the page.",
+                            getString(R.string.moodle_couldnt_resolve_download_url),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -6079,7 +6165,7 @@ class MoodleFragment : Fragment() {
                 activity?.runOnUiThread {
                     Toast.makeText(
                         requireContext(),
-                        "Error: ${e.message}",
+                        getString(R.string.moodle_error_details, e.message),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -6102,7 +6188,7 @@ class MoodleFragment : Fragment() {
                         progressDialog.dismiss()
                         Toast.makeText(
                             requireContext(),
-                            "No session cookies available",
+                            getString(R.string.moodle_no_session_cookies),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -6197,7 +6283,7 @@ class MoodleFragment : Fragment() {
                                 clipboard.setPrimaryClip(clip)
                                 Toast.makeText(requireContext(), getString(R.string.moodle_text_copied), Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(requireContext(), "Failed to parse document", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_parse_document), Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -6207,7 +6293,7 @@ class MoodleFragment : Fragment() {
                         progressDialog.dismiss()
                         Toast.makeText(
                             requireContext(),
-                            "Could not resolve file URL for parsing",
+                        getString(R.string.moodle_couldnt_resolve_url_for_parsing),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -6218,7 +6304,7 @@ class MoodleFragment : Fragment() {
                     progressDialog.dismiss()
                     Toast.makeText(
                         requireContext(),
-                        "Error: ${e.message}",
+                        getString(R.string.moodle_error_details, e.message),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -8182,10 +8268,13 @@ class MoodleFragment : Fragment() {
         var tapCount = 0
 
         // zoom specific state
-        var zoomStartDistance = 0f
-        var zoomStartScale = 1f
+        var zoomStartDistance: Float
         var isMultiTouchZoom = false
         var lastZoomDistance = 0f
+        var zoomVelocity = 0f
+        var lastZoomTime = 0L
+        val ZOOM_SMOOTHING_FACTOR = 0.15f // lower -> smoother but slower response
+        val MIN_ZOOM_VELOCITY = 0.001f // min velocity to register zoom
 
         // swipe state
         var isPanning = false
@@ -8195,10 +8284,9 @@ class MoodleFragment : Fragment() {
         val swipeThreshold = 100f
         val tapMovementThreshold = 30f
         val doubleTapTimeout = 300L
-        val zoomThreshold = 5f // minimum distance change to register zoom
+        val zoomThreshold = 10f
 
         pdfSinglePageView.setOnTouchListener { view, event ->
-            // handle multitouch (zoom) vs singletouch (swipe/pan)
             when (event.action and MotionEvent.ACTION_MASK) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.x
@@ -8212,6 +8300,7 @@ class MoodleFragment : Fragment() {
                     lastPanY = event.rawY
                     isCurrentlyZooming = false
                     isMultiTouchZoom = false
+                    zoomVelocity = 0f
                     true
                 }
 
@@ -8229,8 +8318,9 @@ class MoodleFragment : Fragment() {
                         val y1 = event.getY(1)
 
                         zoomStartDistance = sqrt((x1 - x0).pow(2) + (y1 - y0).pow(2))
-                        zoomStartScale = pdfScaleFactor
                         lastZoomDistance = zoomStartDistance
+                        lastZoomTime = System.currentTimeMillis()
+                        zoomVelocity = 0f
 
                         isPdfSwiping = false
                         hasMoved = false
@@ -8239,7 +8329,6 @@ class MoodleFragment : Fragment() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    // multitouch zoom
                     if (isMultiTouchZoom && event.pointerCount >= 2) {
                         val x0 = event.getX(0)
                         val y0 = event.getY(0)
@@ -8247,32 +8336,48 @@ class MoodleFragment : Fragment() {
                         val y1 = event.getY(1)
 
                         val currentDistance = sqrt((x1 - x0).pow(2) + (y1 - y0).pow(2))
-                        val distanceDelta = currentDistance - zoomStartDistance
+                        val distanceDelta = currentDistance - lastZoomDistance
 
                         if (abs(distanceDelta) > zoomThreshold) {
-                            val ratio = currentDistance / lastZoomDistance
-                            val newScale = (pdfScaleFactor * ratio).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                            val currentTime = System.currentTimeMillis()
+                            val timeDelta = (currentTime - lastZoomTime).coerceAtLeast(1)
 
-                            pdfScaleFactor = newScale
-                            pdfSinglePageView.scaleX = pdfScaleFactor
-                            pdfSinglePageView.scaleY = pdfScaleFactor
+                            val rawRatio = currentDistance / lastZoomDistance
 
-                            lastZoomDistance = currentDistance
+                            val newVelocity = (rawRatio - 1f) / timeDelta
 
-                            val centerX = (x0 + x1) / 2f
-                            val centerY = (y0 + y1) / 2f
+                            zoomVelocity = if (abs(newVelocity) > MIN_ZOOM_VELOCITY) {
+                                zoomVelocity * (1f - ZOOM_SMOOTHING_FACTOR) + newVelocity * ZOOM_SMOOTHING_FACTOR
+                            } else {
+                                zoomVelocity * 0.8f
+                            }
 
-                            if (pdfScaleFactor > 1.2f) {
-                                val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
-                                val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
+                            val smoothedRatio = 1f + (zoomVelocity * timeDelta).coerceIn(-0.1f, 0.1f)
+                            val newScale = (pdfScaleFactor * smoothedRatio).coerceIn(MIN_ZOOM, MAX_ZOOM)
 
-                                val panX = (centerX - containerWidth / 2f) * 0.3f
-                                val panY = (centerY - containerHeight / 2f) * 0.3f
+                            if (abs(newScale - pdfScaleFactor) > 0.01f) {
+                                pdfScaleFactor = newScale
+                                pdfSinglePageView.scaleX = pdfScaleFactor
+                                pdfSinglePageView.scaleY = pdfScaleFactor
 
-                                pdfSinglePageView.translationX = panX
-                                pdfSinglePageView.translationY = panY
+                                lastZoomDistance = currentDistance
+                                lastZoomTime = currentTime
 
-                                constrainTranslation()
+                                val centerX = (x0 + x1) / 2f
+                                val centerY = (y0 + y1) / 2f
+
+                                if (pdfScaleFactor > 1.2f) {
+                                    val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
+                                    val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
+
+                                    val panX = (centerX - containerWidth / 2f) * 0.3f
+                                    val panY = (centerY - containerHeight / 2f) * 0.3f
+
+                                    pdfSinglePageView.translationX = panX
+                                    pdfSinglePageView.translationY = panY
+
+                                    constrainTranslation()
+                                }
                             }
                         }
                         return@setOnTouchListener true
@@ -8314,7 +8419,7 @@ class MoodleFragment : Fragment() {
                             val currentPage = pdfViewerManager?.getCurrentPage() ?: 0
                             val pageCount = pdfViewerManager?.getPageCount() ?: 0
 
-                            val progress = kotlin.math.min(abs(deltaX) / 250f, 1f)
+                            val progress = min(abs(deltaX) / 250f, 1f)
                             pdfSwipeProgress = progress
 
                             if (deltaX > 0 && currentPage > 0) {
@@ -8331,6 +8436,7 @@ class MoodleFragment : Fragment() {
                     if (event.pointerCount == 2) {
                         isMultiTouchZoom = false
                         isCurrentlyZooming = false
+                        zoomVelocity = 0f
 
                         if (pdfScaleFactor in 0.95f..1.05f) {
                             animateToScale(1f)
@@ -8487,7 +8593,7 @@ class MoodleFragment : Fragment() {
                 adjustViewBounds = true
                 tag = page
 
-                setBackgroundColor(android.graphics.Color.LTGRAY)
+                setBackgroundColor(Color.LTGRAY)
                 minimumHeight = (800 * resources.displayMetrics.density).toInt()
             }
 
@@ -8495,7 +8601,7 @@ class MoodleFragment : Fragment() {
                 val bitmap = pdfViewerManager?.renderPage(page)
                 if (bitmap != null && !bitmap.isRecycled) {
                     imageView.setImageBitmap(bitmap)
-                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    imageView.setBackgroundColor(Color.TRANSPARENT)
                     imageView.minimumHeight = 0
                 }
             }
@@ -8565,7 +8671,7 @@ class MoodleFragment : Fragment() {
                         if (imageView != null && imageView.drawable == null) {
                             try {
                                 imageView.setImageBitmap(bitmap)
-                                imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                imageView.setBackgroundColor(Color.TRANSPARENT)
                                 imageView.minimumHeight = 0
                                 val layoutParams = imageView.layoutParams
                                 layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -8616,7 +8722,7 @@ class MoodleFragment : Fragment() {
 
             val currentHeight = imageView.height
 
-            val drawable = imageView.drawable as? android.graphics.drawable.BitmapDrawable
+            val drawable = imageView.drawable as? BitmapDrawable
             val bitmap = drawable?.bitmap
 
             imageView.setImageDrawable(null)
@@ -8629,7 +8735,7 @@ class MoodleFragment : Fragment() {
                 }
             }
 
-            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+            imageView.setBackgroundColor(Color.LTGRAY)
 
             if (currentHeight > 0) {
                 imageView.minimumHeight = currentHeight
@@ -8882,7 +8988,7 @@ class MoodleFragment : Fragment() {
                         val imageView = child as? ImageView ?: continue
 
                         imageView.setImageDrawable(null)
-                        imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+                        imageView.setBackgroundColor(Color.LTGRAY)
 
                         val layoutParams = imageView.layoutParams
                         layoutParams.height = averageHeight
@@ -8922,7 +9028,7 @@ class MoodleFragment : Fragment() {
                     pdfPagesContainer.requestLayout()
 
                     pdfPagesContainer.viewTreeObserver.addOnGlobalLayoutListener(
-                        object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                        object : ViewTreeObserver.OnGlobalLayoutListener {
                             override fun onGlobalLayout() {
                                 pdfPagesContainer.viewTreeObserver.removeOnGlobalLayoutListener(this)
 
@@ -8985,7 +9091,7 @@ class MoodleFragment : Fragment() {
 
                                 if (!bitmap.isRecycled) {
                                     imageView.setImageBitmap(bitmap)
-                                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                    imageView.setBackgroundColor(Color.TRANSPARENT)
 
                                     val layoutParams = imageView.layoutParams
                                     layoutParams.height = bitmap.height
@@ -9018,7 +9124,7 @@ class MoodleFragment : Fragment() {
                 if (bitmap != null && !bitmap.isRecycled) {
                     try {
                         imageView.setImageBitmap(bitmap)
-                        imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        imageView.setBackgroundColor(Color.TRANSPARENT)
                         imageView.minimumHeight = 0
 
                         val layoutParams = imageView.layoutParams
@@ -9120,7 +9226,7 @@ class MoodleFragment : Fragment() {
             val shareFile = File(cacheDir, fileName)
             pdfFile.copyTo(shareFile, overwrite = true)
 
-            val uri = androidx.core.content.FileProvider.getUriForFile(
+            val uri = FileProvider.getUriForFile(
                 requireContext(),
                 "${requireContext().packageName}.fileprovider",
                 shareFile
@@ -9208,10 +9314,10 @@ class MoodleFragment : Fragment() {
             val child = pdfPagesContainer.getChildAt(i)
             val imageView = child as? ImageView ?: continue
 
-            (imageView.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap?.recycle()
+            (imageView.drawable as? BitmapDrawable)?.bitmap?.recycle()
 
             imageView.setImageDrawable(null)
-            imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+            imageView.setBackgroundColor(Color.LTGRAY)
             imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
         }
     }
@@ -9227,7 +9333,7 @@ class MoodleFragment : Fragment() {
 
                 if (bitmap != null && !bitmap.isRecycled) {
                     imageView.setImageBitmap(bitmap)
-                    imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    imageView.setBackgroundColor(Color.TRANSPARENT)
                     imageView.minimumHeight = 0
                 }
             }
@@ -9273,12 +9379,12 @@ class MoodleFragment : Fragment() {
                 if (bitmap != null && !bitmap.isRecycled) {
                     try {
                         imageView.setImageBitmap(bitmap)
-                        imageView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        imageView.setBackgroundColor(Color.TRANSPARENT)
                         imageView.minimumHeight = 0
                     } catch (e: Exception) {
                         L.e("MoodleFragment", "Bitmap was recycled while setting on ImageView", e)
                         imageView.setImageDrawable(null)
-                        imageView.setBackgroundColor(android.graphics.Color.LTGRAY)
+                        imageView.setBackgroundColor(Color.LTGRAY)
                         imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
                     }
                 }
@@ -9294,7 +9400,7 @@ class MoodleFragment : Fragment() {
             popup.menu.add(0, 2, 0, getString(R.string.text_viewer_search)).setIcon(R.drawable.ic_search)
             popup.menu.add(0, 3, 0, getString(R.string.text_viewer_preferences)).setIcon(R.drawable.ic_gear)
 
-            val darkModeText = if (textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)) {
+            val darkModeText = if (textViewerManager?.getBackgroundColor() == Color.rgb(30, 30, 30)) {
                 getString(R.string.moodle_pdf_disable_dark_mode)
             } else {
                 getString(R.string.moodle_pdf_enable_dark_mode)
@@ -9482,7 +9588,7 @@ class MoodleFragment : Fragment() {
             textSize = 16f
             setTextColor(requireContext().getThemeColor(R.attr.settingsColorPrimary))
             setTypeface(null, Typeface.BOLD)
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             setPadding(32, 16, 32, 16)
             alpha = 0f
             visibility = View.INVISIBLE
@@ -9491,8 +9597,8 @@ class MoodleFragment : Fragment() {
             isFocusable = false
             id = View.generateViewId()
 
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
                 setColor(requireContext().getThemeColor(R.attr.cardBackgroundColor))
                 cornerRadius = 28f
                 setStroke(3, requireContext().getThemeColor(R.attr.settingsColorPrimary))
@@ -9521,8 +9627,8 @@ class MoodleFragment : Fragment() {
                 return
             }
 
-            val scaledProgress = kotlin.math.min(progress, 1f)
-            val targetAlpha = kotlin.math.min(scaledProgress * 1.2f, 0.95f)
+            val scaledProgress = min(progress, 1f)
+            val targetAlpha = min(scaledProgress * 1.2f, 0.95f)
 
             indicator.text = getString(R.string.moodle_pdf_page_indicator, targetPage + 1, pageCount)
             indicator.alpha = targetAlpha
@@ -9596,8 +9702,8 @@ class MoodleFragment : Fragment() {
         val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
         val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
 
-        val maxTransX = kotlin.math.max(0f, (imageWidth - containerWidth) / 2f)
-        val maxTransY = kotlin.math.max(0f, (imageHeight - containerHeight) / 2f)
+        val maxTransX = max(0f, (imageWidth - containerWidth) / 2f)
+        val maxTransY = max(0f, (imageHeight - containerHeight) / 2f)
 
         pdfSinglePageView.translationX = pdfSinglePageView.translationX.coerceIn(-maxTransX, maxTransX)
         pdfSinglePageView.translationY = pdfSinglePageView.translationY.coerceIn(-maxTransY, maxTransY)
@@ -9648,17 +9754,25 @@ class MoodleFragment : Fragment() {
     //region **TEXT_VIEWER**
 
     private fun toggleTextViewerDarkMode() {
-        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
-        textViewerManager?.setDarkMode(!currentDarkMode)
+        val currentDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
+        val newDarkMode = !currentDarkMode
 
-        applyTextViewerPreferences()
-        val displayWidth = textContentScrollView.width
-        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
-        textViewerContent.text = formattedText
-        generateLineNumbers()
+        textViewerManager?.setDarkMode(newDarkMode)
 
-        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
-        textViewerContainer.setBackgroundColor(bgColor)
+        sharedPrefs.edit {
+            putBoolean("text_viewer_dark_mode", newDarkMode)
+        }
+
+        textViewerManager?.let { manager ->
+            applyTextViewerPreferences()
+            val displayWidth = textContentScrollView.width
+            val formattedText = manager.getFormattedText(displayWidth)
+            textViewerContent.text = formattedText
+            generateLineNumbers()
+
+            val bgColor = manager.getBackgroundColor()
+            textViewerContainer.setBackgroundColor(bgColor)
+        }
     }
 
     private fun switchToTextViewer() {
@@ -9678,9 +9792,11 @@ class MoodleFragment : Fragment() {
         backgroundExecutor.execute {
             try {
                 textViewerManager = TextViewerManager(requireContext())
-                val darkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
 
-                if (textViewerManager?.parsePdfToText(pdfFile, darkMode) == true) {
+                val savedDarkMode = sharedPrefs.getBoolean("text_viewer_dark_mode",
+                    pdfViewerManager?.forceDarkMode ?: isDarkTheme)
+
+                if (textViewerManager?.parsePdfToText(pdfFile, savedDarkMode) == true) {
                     activity?.runOnUiThread {
                         loadingDialog.dismiss()
                         saveOriginalBackground()
@@ -9703,7 +9819,7 @@ class MoodleFragment : Fragment() {
     }
 
     private fun saveOriginalBackground() {
-        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? android.graphics.drawable.ColorDrawable)?.color
+        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? ColorDrawable)?.color
             ?: requireContext().getThemeColor(R.attr.homeworkFragmentBackgroundColor)
     }
 
@@ -9712,9 +9828,6 @@ class MoodleFragment : Fragment() {
 
         pdfContainer.visibility = View.GONE
         textViewerContainer.visibility = View.VISIBLE
-
-        val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
-        textViewerContainer.setBackgroundColor(bgColor)
 
         applyTextViewerPreferences()
 
@@ -9743,7 +9856,7 @@ class MoodleFragment : Fragment() {
                 textSize = (fontSize - 2).toFloat()
                 setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
                 alpha = 0.6f
-                gravity = android.view.Gravity.END
+                gravity = Gravity.END
                 setPadding(4, 0, 8, 0)
                 minWidth = (40 * resources.displayMetrics.density).toInt()
                 height = lineHeight
@@ -9754,11 +9867,29 @@ class MoodleFragment : Fragment() {
 
     private fun applyTextViewerPreferences() {
         textViewerManager?.let { manager ->
-            textViewerContent.textSize = manager.getFontSize().toFloat()
-            textViewerContent.setTextColor(manager.getFontColor())
-            textViewerContent.typeface = manager.getFontFamily()
-            textViewerContent.setBackgroundColor(manager.getBackgroundColor())
-            lineNumbersContainer.setBackgroundColor(manager.getBackgroundColor())
+            val fontSize = manager.getFontSize()
+            val fontColor = manager.getFontColor()
+            val bgColor = manager.getBackgroundColor()
+            val fontFamily = manager.getFontFamily()
+
+            textViewerContent.textSize = fontSize.toFloat()
+            textViewerContent.setTextColor(fontColor)
+            textViewerContent.typeface = fontFamily
+            textViewerContent.setBackgroundColor(bgColor)
+
+            lineNumbersContainer.setBackgroundColor(bgColor)
+            for (i in 0 until lineNumbersContainer.childCount) {
+                val lineNumberView = lineNumbersContainer.getChildAt(i) as? TextView
+                lineNumberView?.apply {
+                    textSize = (fontSize - 2).toFloat()
+                    setTextColor(fontColor)
+                    alpha = 0.6f
+                }
+            }
+
+            textViewerContainer.setBackgroundColor(bgColor)
+            textContentScrollView.setBackgroundColor(bgColor)
+            lineNumberScrollView.setBackgroundColor(bgColor)
         }
     }
 
@@ -9766,7 +9897,24 @@ class MoodleFragment : Fragment() {
         isTextViewerMode = false
         textViewerContainer.visibility = View.GONE
         pdfContainer.visibility = View.VISIBLE
+
+        val textViewerDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
+        val pdfDarkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
+
+        sharedPrefs.edit {
+            putBoolean("text_viewer_dark_mode", textViewerDarkMode)
+        }
+
         textViewerManager = null
+
+        if (pdfDarkMode != textViewerDarkMode) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (pdfViewerManager?.forceDarkMode != textViewerDarkMode) {
+                    togglePdfDarkMode()
+                }
+            }, 100)
+        }
+
         updatePdfControls()
     }
 
@@ -9872,11 +10020,14 @@ class MoodleFragment : Fragment() {
         val checkBoxDisableFormatting = dialogView.findViewById<CheckBox>(R.id.checkBoxDisableFormatting)
 
         val currentFontSize = sharedPrefs.getInt("text_viewer_font_size", 14)
-        val currentDarkMode = textViewerManager?.getBackgroundColor() == android.graphics.Color.rgb(30, 30, 30)
+        val currentDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
         val fontColorKey = if (currentDarkMode) "text_viewer_font_color_dark" else "text_viewer_font_color_light"
         val bgColorKey = if (currentDarkMode) "text_viewer_bg_color_dark" else "text_viewer_bg_color_light"
         val currentFontFamily = sharedPrefs.getString("text_viewer_font_family", "monospace") ?: "monospace"
         val disableFormatting = sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
+
+        val currentFontColorIndex = sharedPrefs.getInt("${fontColorKey}_index", 0)
+        val currentBgColorIndex = sharedPrefs.getInt("${bgColorKey}_index", 0)
 
         seekBarFontSize.progress = currentFontSize - 10
         "${currentFontSize}sp".also { tvFontSizeValue.text = it }
@@ -9914,10 +10065,12 @@ class MoodleFragment : Fragment() {
         val fontColorAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontColorOptions)
         fontColorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerFontColor.adapter = fontColorAdapter
+        spinnerFontColor.setSelection(currentFontColorIndex)
 
         val bgColorAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, bgColorOptions)
         bgColorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerBgColor.adapter = bgColorAdapter
+        spinnerBgColor.setSelection(currentBgColorIndex)
 
         val fontFamilies = arrayOf("Monospace", "Serif", "Sans-serif")
         val fontAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fontFamilies)
@@ -9931,41 +10084,83 @@ class MoodleFragment : Fragment() {
 
         checkBoxDisableFormatting.isChecked = disableFormatting
 
-        val previewSpannable = SpannableStringBuilder()
-        previewSpannable.append("TITLE TEXT\n")
-        previewSpannable.setSpan(StyleSpan(Typeface.BOLD), 0, 10, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        previewSpannable.setSpan(RelativeSizeSpan(1.3f), 0, 10, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val createPreview: (Boolean) -> SpannableStringBuilder = { disableFormat ->
+            val previewSpannable = SpannableStringBuilder()
 
-        previewSpannable.append("Normal text with ")
-        val boldStart = previewSpannable.length
-        previewSpannable.append("bold")
-        previewSpannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        previewSpannable.append(" and ")
-        val italicStart = previewSpannable.length
-        previewSpannable.append("italic")
-        previewSpannable.setSpan(StyleSpan(Typeface.ITALIC), italicStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        previewSpannable.append(" text.")
+            val titleText = getString(R.string.text_viewer_preview_title)
+            val normalText = getString(R.string.text_viewer_preview_normal)
+            val boldText = getString(R.string.text_viewer_preview_bold)
+            val italicText = getString(R.string.text_viewer_preview_italic)
+            val underlineText = getString(R.string.text_viewer_preview_underline)
+            val strikeText = getString(R.string.text_viewer_preview_strike)
 
-        tvPreviewText.text = previewSpannable
+            if (!disableFormat) {
+                // title
+                val titleStart = previewSpannable.length
+                previewSpannable.append(titleText).append("\n")
+                previewSpannable.setSpan(StyleSpan(Typeface.BOLD), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                previewSpannable.setSpan(RelativeSizeSpan(1.4f), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+                // normal text
+                previewSpannable.append(normalText).append(" ")
+
+                // bold
+                val boldStart = previewSpannable.length
+                previewSpannable.append(boldText)
+                previewSpannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+                previewSpannable.append(" ")
+
+                // italic
+                val italicStart = previewSpannable.length
+                previewSpannable.append(italicText)
+                previewSpannable.setSpan(StyleSpan(Typeface.ITALIC), italicStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+                previewSpannable.append(" ")
+
+                // underline
+                val underlineStart = previewSpannable.length
+                previewSpannable.append(underlineText)
+                previewSpannable.setSpan(UnderlineSpan(), underlineStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+                previewSpannable.append(".\n\n")
+
+                // strikethrough
+                val strikeStart = previewSpannable.length
+                previewSpannable.append(strikeText)
+                previewSpannable.setSpan(StrikethroughSpan(), strikeStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } else {
+                previewSpannable.append(titleText).append("\n")
+                previewSpannable.append(normalText).append(" ")
+                previewSpannable.append(boldText).append(" ")
+                previewSpannable.append(italicText).append(" ")
+                previewSpannable.append(underlineText).append(".\n\n")
+                previewSpannable.append(strikeText)
+            }
+
+            previewSpannable
+        }
+
+        tvPreviewText.text = createPreview(disableFormatting)
 
         val updatePreview = {
             val previewFontSize = seekBarFontSize.progress + 10
             tvPreviewText.textSize = previewFontSize.toFloat()
 
             val selectedFontColor = when (spinnerFontColor.selectedItemPosition) {
-                0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
-                1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
-                2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
-                3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
-                else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                0 -> if (currentDarkMode) Color.LTGRAY else Color.BLACK
+                1 -> if (currentDarkMode) Color.WHITE else Color.DKGRAY
+                2 -> if (currentDarkMode) Color.rgb(100, 181, 246) else Color.rgb(13, 71, 161)
+                3 -> if (currentDarkMode) Color.rgb(129, 199, 132) else Color.rgb(27, 94, 32)
+                else -> if (currentDarkMode) Color.LTGRAY else Color.BLACK
             }
             tvPreviewText.setTextColor(selectedFontColor)
 
             val selectedBgColor = when (spinnerBgColor.selectedItemPosition) {
-                0 -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
-                1 -> if (currentDarkMode) android.graphics.Color.rgb(20, 20, 20) else android.graphics.Color.rgb(245, 245, 245)
-                2 -> if (currentDarkMode) android.graphics.Color.BLACK else android.graphics.Color.rgb(255, 248, 220)
-                else -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+                0 -> if (currentDarkMode) Color.rgb(30, 30, 30) else Color.WHITE
+                1 -> if (currentDarkMode) Color.rgb(20, 20, 20) else Color.rgb(245, 245, 245)
+                2 -> if (currentDarkMode) Color.BLACK else Color.rgb(255, 248, 220)
+                else -> if (currentDarkMode) Color.rgb(30, 30, 30) else Color.WHITE
             }
             tvPreviewText.setBackgroundColor(selectedBgColor)
 
@@ -9974,6 +10169,8 @@ class MoodleFragment : Fragment() {
                 2 -> Typeface.SANS_SERIF
                 else -> Typeface.MONOSPACE
             }
+
+            tvPreviewText.text = createPreview(checkBoxDisableFormatting.isChecked)
         }
 
         seekBarFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -10007,6 +10204,10 @@ class MoodleFragment : Fragment() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        checkBoxDisableFormatting.setOnCheckedChangeListener { _, _ ->
+            updatePreview()
+        }
+
         updatePreview()
 
         val dialog = AlertDialog.Builder(requireContext())
@@ -10021,18 +10222,18 @@ class MoodleFragment : Fragment() {
                 }
 
                 val newFontColor = when (spinnerFontColor.selectedItemPosition) {
-                    0 -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
-                    1 -> if (currentDarkMode) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
-                    2 -> if (currentDarkMode) android.graphics.Color.rgb(100, 181, 246) else android.graphics.Color.rgb(13, 71, 161)
-                    3 -> if (currentDarkMode) android.graphics.Color.rgb(129, 199, 132) else android.graphics.Color.rgb(27, 94, 32)
-                    else -> if (currentDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.BLACK
+                    0 -> if (currentDarkMode) Color.LTGRAY else Color.BLACK
+                    1 -> if (currentDarkMode) Color.WHITE else Color.DKGRAY
+                    2 -> if (currentDarkMode) Color.rgb(100, 181, 246) else Color.rgb(13, 71, 161)
+                    3 -> if (currentDarkMode) Color.rgb(129, 199, 132) else Color.rgb(27, 94, 32)
+                    else -> if (currentDarkMode) Color.LTGRAY else Color.BLACK
                 }
 
                 val newBgColor = when (spinnerBgColor.selectedItemPosition) {
-                    0 -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
-                    1 -> if (currentDarkMode) android.graphics.Color.rgb(20, 20, 20) else android.graphics.Color.rgb(245, 245, 245)
-                    2 -> if (currentDarkMode) android.graphics.Color.BLACK else android.graphics.Color.rgb(255, 248, 220)
-                    else -> if (currentDarkMode) android.graphics.Color.rgb(30, 30, 30) else android.graphics.Color.WHITE
+                    0 -> if (currentDarkMode) Color.rgb(30, 30, 30) else Color.WHITE
+                    1 -> if (currentDarkMode) Color.rgb(20, 20, 20) else Color.rgb(245, 245, 245)
+                    2 -> if (currentDarkMode) Color.BLACK else Color.rgb(255, 248, 220)
+                    else -> if (currentDarkMode) Color.rgb(30, 30, 30) else Color.WHITE
                 }
 
                 sharedPrefs.edit {
@@ -10041,19 +10242,21 @@ class MoodleFragment : Fragment() {
                     putInt(bgColorKey, newBgColor)
                     putString("text_viewer_font_family", newFontFamily)
                     putBoolean("text_viewer_disable_formatting", checkBoxDisableFormatting.isChecked)
+                    putInt("${fontColorKey}_index", spinnerFontColor.selectedItemPosition)
+                    putInt("${bgColorKey}_index", spinnerBgColor.selectedItemPosition)
+                    apply()
                 }
 
+                textViewerManager?.setDarkMode(currentDarkMode)
                 applyTextViewerPreferences()
+
                 val displayWidth = textContentScrollView.width
                 val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
                 textViewerContent.text = formattedText
                 generateLineNumbers()
 
-                val bgColor = textViewerManager?.getBackgroundColor() ?: android.graphics.Color.WHITE
+                val bgColor = textViewerManager?.getBackgroundColor() ?: Color.WHITE
                 textViewerContainer.setBackgroundColor(bgColor)
-                view?.findViewById<LinearLayout>(R.id.headerLayout)?.setBackgroundColor(bgColor)
-                view?.findViewById<LinearLayout>(R.id.searchLayout)?.setBackgroundColor(bgColor)
-                view?.findViewById<LinearLayout>(R.id.extendedHeaderLayout)?.setBackgroundColor(bgColor)
             }
             .setNegativeButton(getString(R.string.moodle_cancel), null)
             .create()
@@ -11058,11 +11261,17 @@ class MoodleFragment : Fragment() {
             L.d("MoodleFragment", "Starting DOCX to PDF conversion")
 
             val outputStream = ByteArrayOutputStream()
-            val pdfDocument = com.itextpdf.text.Document(com.itextpdf.text.PageSize.A4, 50f, 50f, 50f, 50f)
-            com.itextpdf.text.pdf.PdfWriter.getInstance(pdfDocument, outputStream)
+            val pdfDocument = Document(PageSize.A4, 50f, 100f, 50f, 100f)
+            val pdfWriter = PdfWriter.getInstance(pdfDocument, outputStream)
+
             pdfDocument.open()
 
             val docxData = parseDocxStructure(docxBytes)
+
+            if (docxData.headers.isNotEmpty() || docxData.footers.isNotEmpty()) {
+                pdfWriter.pageEvent = DocxPdfPageEventListener(docxData.headers, docxData.footers
+                )
+            }
 
             renderDocxToPdf(docxData, pdfDocument)
 
@@ -11078,9 +11287,58 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private class DocxPdfPageEventListener(
+        val headers: List<DocxParagraph>,
+        val footers: List<DocxParagraph>
+    ) : PdfPageEventHelper() {
+        override fun onStartPage(writer: PdfWriter?, document: Document?) {
+            if (writer != null && headers.isNotEmpty()) {
+                val pageSize = document?.pageSize ?: PageSize.A4
+                val cb = writer.directContent
+
+                cb.beginText()
+                cb.setFontAndSize(BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, false), 10f)
+                cb.setTextMatrix(50f, pageSize.height - 30f)
+
+                for (header in headers) {
+                    for (run in header.runs) {
+                        if (run.text.isNotEmpty()) {
+                            cb.showText(run.text)
+                        }
+                    }
+                }
+
+                cb.endText()
+            }
+        }
+
+        override fun onEndPage(writer: PdfWriter?, document: Document?) {
+            if (writer != null && footers.isNotEmpty()) {
+                document?.pageSize ?: PageSize.A4
+                val cb = writer.directContent
+
+                cb.beginText()
+                cb.setFontAndSize(BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, false), 10f)
+                cb.setTextMatrix(50f, 30f)
+
+                for (footer in footers) {
+                    for (run in footer.runs) {
+                        if (run.text.isNotEmpty()) {
+                            cb.showText(run.text)
+                        }
+                    }
+                }
+
+                cb.endText()
+            }
+        }
+    }
+
     private data class DocxData(
         val paragraphs: List<DocxParagraph>,
-        val images: Map<String, ByteArray>
+        val images: Map<String, ByteArray>,
+        val headers: List<DocxParagraph> = emptyList(),
+        val footers: List<DocxParagraph> = emptyList()
     )
 
     private data class DocxParagraph(
@@ -11089,7 +11347,13 @@ class MoodleFragment : Fragment() {
         val spacingBefore: Int = 0,
         val spacingAfter: Int = 0,
         val isTable: Boolean = false,
-        val tableData: List<List<String>>? = null
+        val tableData: List<List<String>>? = null,
+        val style: String? = null,
+        val isHeading: Boolean = false,
+        val headingLevel: Int = 0,
+        val isList: Boolean = false,
+        val listType: String? = null,
+        val listLevel: Int = 0
     )
 
     private data class DocxRun(
@@ -11097,9 +11361,11 @@ class MoodleFragment : Fragment() {
         val isBold: Boolean = false,
         val isItalic: Boolean = false,
         val isUnderline: Boolean = false,
+        val isStrikethrough: Boolean = false,
         val fontSize: Float = 11f,
         val color: String? = null,
-        val imageRef: String? = null
+        val imageRef: String? = null,
+        val fontName: String = "Helvetica"
     )
 
     private fun parseDocxStructure(docxBytes: ByteArray): DocxData {
@@ -11108,11 +11374,24 @@ class MoodleFragment : Fragment() {
         val images = mutableMapOf<String, ByteArray>()
         val imageRelations = mutableMapOf<String, String>()
         var documentXml = ""
+        var headerXml = ""
+        var footerXml = ""
+        val styleRelations = mutableMapOf<String, DocxStyleInfo>()
 
         while (zipInputStream.nextEntry.also { entry = it } != null) {
             when {
                 entry?.name == "word/document.xml" -> {
                     documentXml = zipInputStream.bufferedReader().readText()
+                }
+                entry?.name == "word/styles.xml" -> {
+                    val stylesContent = zipInputStream.bufferedReader().readText()
+                    parseStyles(stylesContent, styleRelations)
+                }
+                entry?.name == "word/header1.xml" || entry?.name == "word/header2.xml" -> {
+                    headerXml = zipInputStream.bufferedReader().readText()
+                }
+                entry?.name == "word/footer1.xml" || entry?.name == "word/footer2.xml" -> {
+                    footerXml = zipInputStream.bufferedReader().readText()
                 }
                 entry?.name == "word/_rels/document.xml.rels" -> {
                     val relsXml = zipInputStream.bufferedReader().readText()
@@ -11138,9 +11417,51 @@ class MoodleFragment : Fragment() {
             }
         }
 
-        val paragraphs = parseDocumentXml(documentXml)
+        val paragraphs = parseDocumentXml(documentXml, styleRelations)
+        val headers = if (headerXml.isNotEmpty()) parseDocumentXml(headerXml, styleRelations) else emptyList()
+        val footers = if (footerXml.isNotEmpty()) parseDocumentXml(footerXml, styleRelations) else emptyList()
 
-        return DocxData(paragraphs, mappedImages)
+        return DocxData(paragraphs, mappedImages, headers, footers)
+    }
+
+    private data class DocxStyleInfo(
+        val styleId: String,
+        val isHeading: Boolean = false,
+        val headingLevel: Int = 0,
+        val fontSize: Float = 11f,
+        val isBold: Boolean = false,
+        val fontName: String = "Helvetica"
+    )
+
+    private fun parseStyles(stylesXml: String, styles: MutableMap<String, DocxStyleInfo>) {
+        val styleRegex = "<w:style[^>]+w:styleId=\"([^\"]+)\"[^>]*>.*?</w:style>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+        styleRegex.findAll(stylesXml).forEach { match ->
+            val styleXml = match.value
+            val styleId = match.groupValues[1]
+
+            val nameRegex = "<w:name\\s+w:val=\"([^\"]+)\"".toRegex()
+            val styleName = nameRegex.find(styleXml)?.groupValues?.get(1) ?: ""
+
+            val isHeading = styleName.contains("heading", ignoreCase = true)
+            val headingLevel = if (isHeading) {
+                val level = styleName.firstOrNull { it.isDigit() }?.toString()?.toIntOrNull() ?: 1
+                level
+            } else 0
+
+            val fontSizeRegex = "<w:sz\\s+w:val=\"(\\d+)\"".toRegex()
+            val fontSize = fontSizeRegex.find(styleXml)?.groupValues?.get(1)?.let { (it.toFloat() / 2f).coerceIn(6f, 72f) } ?: 11f
+
+            val isBold = styleXml.contains("<w:b/>") || styleXml.contains("<w:b ")
+
+            styles[styleId] = DocxStyleInfo(
+                styleId = styleId,
+                isHeading = isHeading,
+                headingLevel = headingLevel,
+                fontSize = fontSize,
+                isBold = isBold
+            )
+        }
     }
 
     private fun parseImageRelationships(relsXml: String, relations: MutableMap<String, String>) {
@@ -11155,7 +11476,7 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun parseDocumentXml(xml: String): List<DocxParagraph> {
+    private fun parseDocumentXml(xml: String, styles: Map<String, DocxStyleInfo>): List<DocxParagraph> {
         val paragraphs = mutableListOf<DocxParagraph>()
 
         try {
@@ -11170,17 +11491,27 @@ class MoodleFragment : Fragment() {
             paragraphRegex.findAll(bodyContent).forEach { paraMatch ->
                 val paraXml = paraMatch.value
                 val alignment = extractAlignment(paraXml)
+                val styleId = extractStyleId(paraXml)
+                val styleInfo = styles[styleId]
                 val runs = parseRuns(paraXml)
 
-                if (runs.isNotEmpty()) {
+                val isHeading = styleInfo?.isHeading ?: false
+                val headingLevel = styleInfo?.headingLevel ?: 0
+                val (isList, listType, listLevel) = extractListInfo(paraXml)
+
+                if (runs.isNotEmpty() || !isList) {
                     allElements.add(ElementWithPosition(
                         paraMatch.range.first,
-                        DocxParagraph(runs = runs, alignment = alignment)
-                    ))
-                } else {
-                    allElements.add(ElementWithPosition(
-                        paraMatch.range.first,
-                        DocxParagraph(runs = listOf(DocxRun(" ")))
+                        DocxParagraph(
+                            runs = runs.ifEmpty { listOf(DocxRun(" ")) },
+                            alignment = alignment,
+                            style = styleId,
+                            isHeading = isHeading,
+                            headingLevel = headingLevel,
+                            isList = isList,
+                            listType = listType,
+                            listLevel = listLevel
+                        )
                     ))
                 }
             }
@@ -11209,6 +11540,38 @@ class MoodleFragment : Fragment() {
         return paragraphs
     }
 
+    private fun extractStyleId(paraXml: String): String? {
+        val styleRegex = "<w:pStyle\\s+w:val=\"([^\"]+)\"".toRegex()
+        return styleRegex.find(paraXml)?.groupValues?.get(1)
+    }
+
+    private fun extractListInfo(paraXml: String): Triple<Boolean, String?, Int> {
+        val pStyleRegex = "<w:pStyle\\s+w:val=\"([^\"]+)\"".toRegex()
+        val styleVal = pStyleRegex.find(paraXml)?.groupValues?.get(1) ?: ""
+
+        val numPrRegex = "<w:numPr[\\s>](.*?)</w:numPr>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val numPrMatch = numPrRegex.find(paraXml)
+
+        if (numPrMatch != null) {
+            val numPrXml = numPrMatch.value
+
+            val ilvlRegex = "<w:ilvl\\s+w:val=\"(\\d+)\"".toRegex()
+            val level = ilvlRegex.find(numPrXml)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+
+            val listType = when {
+                styleVal.contains("List", ignoreCase = true) && styleVal.contains("Bullet", ignoreCase = true) -> "unordered"
+                styleVal.contains("List", ignoreCase = true) && styleVal.contains("Number", ignoreCase = true) -> "ordered"
+                styleVal.lowercase().contains("bullet") -> "unordered"
+                styleVal.lowercase().contains("number") || styleVal.lowercase().contains("paragraph") -> "ordered"
+                else -> "unordered"
+            }
+
+            return Triple(true, listType, level)
+        }
+
+        return Triple(false, null, 0)
+    }
+
     private fun parseTable(tableXml: String): List<List<String>> {
         val rows = mutableListOf<List<String>>()
 
@@ -11222,7 +11585,13 @@ class MoodleFragment : Fragment() {
 
             cellRegex.findAll(rowXml).forEach { cellMatch ->
                 val cellXml = cellMatch.value
-                val cellText = extractTextFromXml(cellXml)
+                val paragraphRegex = "<w:p[\\s>](.*?)</w:p>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                val cellText = paragraphRegex.findAll(cellXml)
+                    .joinToString("\n") { paraMatch ->
+                        extractTextFromXml(paraMatch.value)
+                    }
+                    .trim()
+
                 cells.add(cellText)
             }
 
@@ -11261,16 +11630,20 @@ class MoodleFragment : Fragment() {
                 val isBold = runXml.contains("<w:b/>") || runXml.contains("<w:b ")
                 val isItalic = runXml.contains("<w:i/>") || runXml.contains("<w:i ")
                 val isUnderline = runXml.contains("<w:u ")
+                val isStrikethrough = runXml.contains("<w:strike/>") || runXml.contains("<w:strike ")
                 val fontSize = extractFontSize(runXml)
                 val color = extractColor(runXml)
+                val fontName = extractFontName(runXml)
 
                 runs.add(DocxRun(
                     text = text,
                     isBold = isBold,
                     isItalic = isItalic,
                     isUnderline = isUnderline,
+                    isStrikethrough = isStrikethrough,
                     fontSize = fontSize,
-                    color = color
+                    color = color,
+                    fontName = fontName
                 ))
             }
         }
@@ -11305,15 +11678,18 @@ class MoodleFragment : Fragment() {
         return colorRegex.find(runXml)?.groupValues?.get(1)
     }
 
+    private fun extractFontName(runXml: String): String {
+        val fontRegex = "<w:rFonts\\s+w:ascii=\"([^\"]+)\"".toRegex()
+        return fontRegex.find(runXml)?.groupValues?.get(1) ?: "Helvetica"
+    }
+
     private fun extractImageReference(runXml: String): String? {
-        // Format 1: r:embed in drawing (what does that even mean)
         var embedRegex = "r:embed=\"([^\"]+)\"".toRegex()
         var match = embedRegex.find(runXml)
         if (match != null) {
             return match.groupValues[1]
         }
 
-        // Format 2: r:id in blip
         embedRegex = "r:id=\"([^\"]+)\"".toRegex()
         match = embedRegex.find(runXml)
         if (match != null) {
@@ -11323,7 +11699,7 @@ class MoodleFragment : Fragment() {
         return null
     }
 
-    private fun renderDocxToPdf(docxData: DocxData, pdfDocument: com.itextpdf.text.Document) {
+    private fun renderDocxToPdf(docxData: DocxData, pdfDocument: Document) {
         for (paragraph in docxData.paragraphs) {
             if (paragraph.isTable && paragraph.tableData != null) {
                 renderTable(paragraph.tableData, pdfDocument)
@@ -11336,19 +11712,24 @@ class MoodleFragment : Fragment() {
     private fun renderParagraph(
         paragraph: DocxParagraph,
         images: Map<String, ByteArray>,
-        pdfDocument: com.itextpdf.text.Document
+        pdfDocument: Document
     ) {
-        val pdfPara = com.itextpdf.text.Paragraph()
+        val pdfPara = Paragraph()
 
         when (paragraph.alignment) {
-            "center" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_CENTER
-            "right" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_RIGHT
-            "both" -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_JUSTIFIED
-            else -> pdfPara.alignment = com.itextpdf.text.Element.ALIGN_LEFT
+            "center" -> pdfPara.alignment = Element.ALIGN_CENTER
+            "right" -> pdfPara.alignment = Element.ALIGN_RIGHT
+            "both" -> pdfPara.alignment = Element.ALIGN_JUSTIFIED
+            else -> pdfPara.alignment = Element.ALIGN_LEFT
         }
 
-        pdfPara.spacingBefore = paragraph.spacingBefore * 0.35f
-        pdfPara.spacingAfter = if (paragraph.spacingAfter > 0) paragraph.spacingAfter * 0.35f else 3f
+        if (paragraph.isHeading) {
+            pdfPara.spacingBefore = 12f
+            pdfPara.spacingAfter = 6f
+        } else {
+            pdfPara.spacingBefore = paragraph.spacingBefore * 0.35f
+            pdfPara.spacingAfter = if (paragraph.spacingAfter > 0) paragraph.spacingAfter * 0.35f else 3f
+        }
 
         var hasContent = false
 
@@ -11357,7 +11738,7 @@ class MoodleFragment : Fragment() {
                 val imageData = images[run.imageRef]
                 if (imageData != null) {
                     try {
-                        val image = com.itextpdf.text.Image.getInstance(imageData)
+                        val image = Image.getInstance(imageData)
 
                         val maxWidth = pdfDocument.pageSize.width - pdfDocument.leftMargin() - pdfDocument.rightMargin()
                         val maxHeight = (pdfDocument.pageSize.height - pdfDocument.topMargin() - pdfDocument.bottomMargin()) * 0.4f
@@ -11368,12 +11749,14 @@ class MoodleFragment : Fragment() {
 
                         if (scale < 1f) {
                             image.scalePercent(scale * 100)
+                        } else {
+                            image.scalePercent(minOf(scale * 100, 100f))
                         }
 
                         image.alignment = when (paragraph.alignment) {
-                            "center" -> com.itextpdf.text.Element.ALIGN_CENTER
-                            "right" -> com.itextpdf.text.Element.ALIGN_RIGHT
-                            else -> com.itextpdf.text.Element.ALIGN_LEFT
+                            "center" -> Element.ALIGN_CENTER
+                            "right" -> Element.ALIGN_RIGHT
+                            else -> Element.ALIGN_LEFT
                         }
 
                         if (hasContent) {
@@ -11392,16 +11775,26 @@ class MoodleFragment : Fragment() {
                     L.w("MoodleFragment", "Image data not found for reference: ${run.imageRef}")
                 }
             } else if (run.text.isNotEmpty()) {
-                val fontStyle = when {
-                    run.isBold && run.isItalic -> com.itextpdf.text.Font.BOLDITALIC
-                    run.isBold -> com.itextpdf.text.Font.BOLD
-                    run.isItalic -> com.itextpdf.text.Font.ITALIC
-                    else -> com.itextpdf.text.Font.NORMAL
+                var fontSize = run.fontSize
+                if (paragraph.isHeading) {
+                    fontSize = when (paragraph.headingLevel) {
+                        1 -> 28f
+                        2 -> 24f
+                        3 -> 20f
+                        else -> 16f
+                    }
                 }
 
-                val font = com.itextpdf.text.FontFactory.getFont(
-                    com.itextpdf.text.FontFactory.HELVETICA,
-                    run.fontSize,
+                val fontStyle = when {
+                    run.isBold && run.isItalic -> Font.BOLDITALIC
+                    run.isBold -> Font.BOLD
+                    run.isItalic -> Font.ITALIC
+                    else -> Font.NORMAL
+                }
+
+                val font = FontFactory.getFont(
+                    run.fontName,
+                    fontSize,
                     fontStyle
                 )
 
@@ -11411,20 +11804,32 @@ class MoodleFragment : Fragment() {
                         val r = (colorInt shr 16 and 0xFF) / 255f
                         val g = (colorInt shr 8 and 0xFF) / 255f
                         val b = (colorInt and 0xFF) / 255f
-                        font.color = com.itextpdf.text.BaseColor(r, g, b)
+                        font.color = BaseColor(r, g, b)
                     } catch (_: Exception) {
                         // stay on default color
                     }
                 }
 
-                val chunk = com.itextpdf.text.Chunk(run.text, font)
+                val chunk = Chunk(run.text, font)
                 if (run.isUnderline) {
                     chunk.setUnderline(0.5f, -2f)
+                }
+                if (run.isStrikethrough) {
+                    chunk.setUnderline(0.5f, -0.5f)  // Line through middle
                 }
 
                 pdfPara.add(chunk)
                 hasContent = true
             }
+        }
+
+        if (paragraph.isList && hasContent) {
+            val listMarker = if (paragraph.listType == "ordered") {
+                "${paragraph.listLevel + 1}."
+            } else {
+                "•"
+            }
+            pdfPara.add(0, Chunk("$listMarker "))
         }
 
         if (hasContent || paragraph.runs.isEmpty()) {
@@ -11434,30 +11839,30 @@ class MoodleFragment : Fragment() {
 
     private fun renderTable(
         tableData: List<List<String>>,
-        pdfDocument: com.itextpdf.text.Document
+        pdfDocument: Document
     ) {
         if (tableData.isEmpty()) return
 
         val maxCols = tableData.maxOfOrNull { it.size } ?: return
-        val table = com.itextpdf.text.pdf.PdfPTable(maxCols)
+        val table = PdfPTable(maxCols)
         table.widthPercentage = 100f
         table.spacingBefore = 10f
         table.spacingAfter = 10f
 
-        val font = com.itextpdf.text.FontFactory.getFont(
-            com.itextpdf.text.FontFactory.HELVETICA,
+        val font = FontFactory.getFont(
+            FontFactory.HELVETICA,
             10f
         )
 
         for (row in tableData) {
             for (cellText in row) {
-                val cell = com.itextpdf.text.pdf.PdfPCell(com.itextpdf.text.Phrase(cellText, font))
+                val cell = PdfPCell(Phrase(cellText, font))
                 cell.setPadding(5f)
                 cell.borderWidth = 1f
                 table.addCell(cell)
             }
             repeat(maxCols - row.size) {
-                val emptyCell = com.itextpdf.text.pdf.PdfPCell()
+                val emptyCell = PdfPCell()
                 emptyCell.setPadding(5f)
                 table.addCell(emptyCell)
             }
@@ -12048,7 +12453,7 @@ class MoodleFragment : Fragment() {
             if (recipientInfo == null) {
                 Toast.makeText(
                     requireContext(),
-                    "Failed to get recipient information",
+                    getString(R.string.moodle_failed_to_get_recipient_info),
                     Toast.LENGTH_SHORT
                 ).show()
                 return@getRecipientInfo
@@ -12419,7 +12824,7 @@ class MoodleFragment : Fragment() {
                 L.d("MoodleFragment", "Message inserted successfully")
             } else {
                 L.e("MoodleFragment", "Failed to insert message")
-                Toast.makeText(requireContext(), "Failed to insert message", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_insert_message), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -12433,7 +12838,7 @@ class MoodleFragment : Fragment() {
 
         getRecipientInfo { recipientInfo ->
             if (recipientInfo == null) {
-                Toast.makeText(requireContext(), "Failed to get recipient information", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_get_recipient_data), Toast.LENGTH_SHORT).show()
                 return@getRecipientInfo
             }
 
@@ -12450,7 +12855,7 @@ class MoodleFragment : Fragment() {
                 dialogView.findViewById<View>(R.id.cbDontShowForNow)?.visibility = View.GONE
 
                 tvRecipientName.text = recipientInfo.username
-                userInfoContainer.gravity = android.view.Gravity.CENTER
+                userInfoContainer.gravity = Gravity.CENTER
 
                 if (recipientInfo.userIconUrl != null) {
                     loadUserIcon(recipientInfo.userIconUrl, ivUserIcon)
@@ -12575,7 +12980,7 @@ class MoodleFragment : Fragment() {
                 L.d("MoodleFragment", "Message sent successfully")
             } else {
                 L.e("MoodleFragment", "Failed to send message")
-                Toast.makeText(requireContext(), "Failed to send message", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.moodle_failed_to_send_message), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -12586,14 +12991,14 @@ class MoodleFragment : Fragment() {
 
     private fun getSystemDarkMode(): Boolean {
         val appContext = requireContext().applicationContext
-        val uiModeManager = appContext.getSystemService(android.app.UiModeManager::class.java)
+        val uiModeManager = appContext.getSystemService(UiModeManager::class.java)
 
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            uiModeManager?.nightMode == android.app.UiModeManager.MODE_NIGHT_YES
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            uiModeManager?.nightMode == UiModeManager.MODE_NIGHT_YES
         } else {
             val baseConfig = appContext.resources.configuration
-            val nightMode = baseConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-            nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val nightMode = baseConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            nightMode == Configuration.UI_MODE_NIGHT_YES
         }
     }
 
@@ -12629,13 +13034,13 @@ class MoodleFragment : Fragment() {
             webView.visibility = View.INVISIBLE
             isDarkModeReady = false
             webView.reload()
-            Toast.makeText(requireContext(), "Moodle Dark Mode aktiviert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.moodle_activated_dark_mode), Toast.LENGTH_SHORT).show()
         } else {
             removeMoodleDarkMode()
             webView.visibility = View.VISIBLE
             isDarkModeReady = false
             pendingDarkModeUrl = null
-            Toast.makeText(requireContext(), "Moodle Dark Mode deaktiviert", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.moodle_deactivated_dark_mode), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -12644,7 +13049,6 @@ class MoodleFragment : Fragment() {
 
         val darkModeCSS = """
     (function() {
-        // Return immediately if already injected
         if (document.getElementById('darkreader-moodle-override')) {
             return 'already_present';
         }
@@ -12668,7 +13072,7 @@ class MoodleFragment : Fragment() {
                     --dark-link-hover: #6ba4ff;
                 }
                 
-                /* === PREVENT LIGHT THEME FLASH - CRITICAL === */
+                /* === PREVENT LIGHT THEME FLASH === */
                 * {
                     background-color: transparent !important;
                 }
@@ -12694,7 +13098,7 @@ class MoodleFragment : Fragment() {
                     color: var(--dark-text-primary) !important;
                 }
                 
-                /* === User initials and avatars - CRITICAL FIX === */
+                /* === User initials and avatars === */
                 .userinitials {
                     color: inherit !important;
                     background-color: inherit !important;
@@ -12706,7 +13110,7 @@ class MoodleFragment : Fragment() {
                     background-color: inherit !important;
                 }
                 
-                /* Dim profile picture avatars but leave initials untouched */
+                /* Dim profile picture avatars */
                 .avatar img:not(.userinitials) {
                     filter: brightness(0.8) contrast(1.05) !important;
                 }
@@ -12819,7 +13223,7 @@ class MoodleFragment : Fragment() {
                     border-color: var(--dark-border) !important;
                 }
                 
-                /* === CARDS & BLOCKS - FIXED === */
+                /* === CARDS & BLOCKS === */
                 .card {
                     /* Make card background transparent so body-bg shows through */
                     background-color: transparent !important;
@@ -12911,7 +13315,7 @@ class MoodleFragment : Fragment() {
                     color: var(--dark-text-primary) !important;
                 }
                 
-                /* === BREADCRUMB - FIXED === */
+                /* === BREADCRUMB === */
                 .breadcrumb {
                     background-color: transparent !important;
                 }
@@ -13055,7 +13459,7 @@ class MoodleFragment : Fragment() {
                     border-color: var(--dark-border) !important;
                 }
                 
-                /* === LISTS - FIXED === */
+                /* === LISTS === */
                 .list-group {
                     background-color: transparent !important;
                     /* Fix border color variable */
@@ -13182,7 +13586,7 @@ class MoodleFragment : Fragment() {
                     color: var(--dark-text-primary) !important;
                 }
                 
-                /* First and last pagination items get rounded corners */
+                /* First and last pagination */
                 .page-item:first-child .page-link {
                     border-top-left-radius: 0.375rem !important;
                     border-bottom-left-radius: 0.375rem !important;
@@ -13474,6 +13878,769 @@ class MoodleFragment : Fragment() {
                 }
             }
         }
+    }
+
+    //endregion
+
+    //region **COURSE_ENTRY_DOWNLOADS**
+
+    private fun injectCourseDownloadButton() {
+        if (!isFragmentActive || !isAdded) return
+
+        val buttonText = if (Locale.getDefault().language == "de") "Herunterladen" else "Download"
+
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Injecting Course Download Button ===');
+
+                var existingButton = document.getElementById('course_download');
+                if (existingButton) {
+                    console.log('Download button already exists');
+                    return 'exists';
+                }
+
+                var targetDiv = document.evaluate(
+                    '/html/body/div[1]/div[2]/header/div/div/div',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!targetDiv) {
+                    console.log('Target div not found');
+                    return 'not_found';
+                }
+                
+                console.log('Found target div, injecting button');
+
+                var downloadButton = document.createElement('button');
+                downloadButton.type = 'submit';
+                downloadButton.className = 'btn btn-primary';
+                downloadButton.id = 'course_download';
+                downloadButton.textContent = '$buttonText';
+                downloadButton.style.marginLeft = '8px';
+
+                downloadButton.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.courseDownloadClicked = true;
+                    console.log('Course download button clicked');
+                    return false;
+                };
+
+                targetDiv.appendChild(downloadButton);
+                console.log('Download button injected successfully');
+                
+                return 'success';
+                
+            } catch(e) {
+                console.error('Error injecting button: ' + e.message);
+                return 'error';
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val cleanResult = result.trim('"')
+            L.d("MoodleFragment", "Download button injection result: $cleanResult")
+
+            if (cleanResult == "success") {
+                monitorCourseDownloadButton()
+            }
+        }
+    }
+
+    private fun monitorCourseDownloadButton() {
+        if (!isFragmentActive || !isAdded) return
+
+        stopDownloadButtonMonitoring()
+
+        isMonitoringDownloadButton = true
+        val checkInterval = 300L
+        downloadButtonMonitorHandler = Handler(Looper.getMainLooper())
+
+        downloadButtonMonitorRunnable = object : Runnable {
+            override fun run() {
+                if (!isFragmentActive || !isAdded || !isMonitoringDownloadButton) {
+                    stopDownloadButtonMonitoring()
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+                if (!currentUrl.startsWith("https://moodle.kleyer.eu/course/")) {
+                    stopDownloadButtonMonitoring()
+                    return
+                }
+
+                val jsCode = """
+                (function() {
+                    if (window.courseDownloadClicked === true) {
+                        window.courseDownloadClicked = false;
+                        return true;
+                    }
+                    return false;
+                })();
+            """.trimIndent()
+
+                webView.evaluateJavascript(jsCode) { result ->
+                    if (!isFragmentActive || !isAdded || !isMonitoringDownloadButton) {
+                        stopDownloadButtonMonitoring()
+                        return@evaluateJavascript
+                    }
+
+                    if (result == "true") {
+                        L.d("MoodleFragment", "Download button clicked - parsing course entries")
+                        parseCourseEntries()
+                    }
+
+                    downloadButtonMonitorHandler?.postDelayed(this, checkInterval)
+                }
+            }
+        }
+
+        downloadButtonMonitorHandler?.post(downloadButtonMonitorRunnable!!)
+    }
+
+    private fun stopDownloadButtonMonitoring() {
+        isMonitoringDownloadButton = false
+        downloadButtonMonitorRunnable?.let {
+            downloadButtonMonitorHandler?.removeCallbacks(it)
+        }
+        downloadButtonMonitorHandler = null
+        downloadButtonMonitorRunnable = null
+    }
+
+    private fun parseCourseEntries() {
+        val jsCode = """
+        (function() {
+            try {
+                console.log('=== Parsing Course Entries ===');
+                
+                var mainList = document.evaluate(
+                    '/html/body/div[1]/div[2]/div/div[1]/div/div/div/div/ul',
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                
+                if (!mainList) {
+                    console.log('Main course list not found');
+                    return JSON.stringify({ success: false, reason: 'no_list' });
+                }
+                
+                console.log('Found main list with ' + mainList.children.length + ' sections');
+                
+                var entries = [];
+                
+                function parseEntry(entryLi, sectionName) {
+                    try {
+                        // li/div/div[2]
+                        var entryMainDiv = entryLi.querySelector(':scope > div > div:nth-child(2)');
+                        if (!entryMainDiv) {
+                            console.log('No main div found in entry');
+                            return null;
+                        }
+                        
+                        // 1. entry url (path: div[2]/div/div/a)
+                        var linkElement = entryMainDiv.querySelector(':scope > div:nth-child(2) > div > div > a.aalink');
+                        if (!linkElement) {
+                            console.log('No link element found in entry');
+                            return null;
+                        }
+                        
+                        var entryUrl = linkElement.href;
+                        
+                        // 2. icon url (path: div[1]/img)
+                        var iconElement = entryMainDiv.querySelector(':scope > div:nth-child(1) > img.activityicon');
+                        var iconUrl = iconElement ? iconElement.src : '';
+                        
+                        // 3. link type (path: div[2]/div/div/a/span/span)
+                        var accessHideSpan = linkElement.querySelector('span.accesshide');
+                        var linkType = accessHideSpan ? accessHideSpan.textContent.trim() : '';
+                        
+                        // 4. entry name (path: div[2]/div/div/a/span)
+                        var instanceNameSpan = linkElement.querySelector('span.instancename');
+                        var entryName = '';
+                        if (instanceNameSpan) {
+                            var clone = instanceNameSpan.cloneNode(true);
+                            var accessHideInClone = clone.querySelector('span.accesshide');
+                            if (accessHideInClone) {
+                                accessHideInClone.remove();
+                            }
+                            entryName = clone.textContent.trim();
+                        }
+                        
+                        if (!entryName) {
+                            console.log('Entry has no name, skipping');
+                            return null;
+                        }
+                        
+                        // filter out "forum", "aufgabe" and "glossar" entries
+                        var linkTypeLower = linkType.toLowerCase();
+                        if (linkTypeLower.includes('forum') || linkTypeLower.includes('aufgabe') || linkTypeLower.includes('glossar')) {
+                            console.log('Skipping entry (filtered type): ' + linkType);
+                            return null;
+                        }
+                        
+                        console.log('Entry found: "' + entryName + '" Type: "' + linkType + '" in section: "' + sectionName + '"');
+                        
+                        return {
+                            url: entryUrl,
+                            iconUrl: iconUrl,
+                            linkType: linkType,
+                            name: entryName,
+                            sectionName: sectionName
+                        };
+                        
+                    } catch(entryError) {
+                        console.error('Error parsing entry: ' + entryError.message);
+                        return null;
+                    }
+                }
+                
+                function processNestedSection(nestedLi, parentSectionName) {
+                    try {
+                        console.log('Processing nested section item under: ' + parentSectionName);
+                        
+                        // nested structure: li/div/div/div
+                        var nestedDivContainer = nestedLi.querySelector(':scope > div > div > div');
+                        if (!nestedDivContainer) {
+                            console.log('No nested div container found');
+                            return [];
+                        }
+                        
+                        // get nested section name from: div/div/a
+                        var nestedSectionNameElement = nestedDivContainer.querySelector(':scope > div > a');
+                        var nestedSectionName = nestedSectionNameElement ? nestedSectionNameElement.textContent.trim() : '${getString(R.string.moodle_nested)}';
+                        
+                        console.log('Found nested section: "' + nestedSectionName + '"');
+                        
+                        var fullSectionName = parentSectionName + ' > ' + nestedSectionName;
+                        
+                        // entries path: div/ul/li/div/div[2]/ul
+                        var nestedUl = nestedDivContainer.querySelector(':scope > ul');
+                        if (!nestedUl) {
+                            console.log('No UL found in nested section');
+                            return [];
+                        }
+                        
+                        var nestedWrapperLi = nestedUl.querySelector(':scope > li');
+                        if (!nestedWrapperLi) {
+                            console.log('No wrapper LI found in nested section');
+                            return [];
+                        }
+                        
+                        var nestedContentDiv = nestedWrapperLi.querySelector(':scope > div > div:nth-child(2)');
+                        if (!nestedContentDiv) {
+                            console.log('No content div[2] found in nested section');
+                            return [];
+                        }
+                        
+                        var nestedEntryList = nestedContentDiv.querySelector(':scope > ul');
+                        if (!nestedEntryList) {
+                            console.log('No entry list found in nested section');
+                            return [];
+                        }
+                        
+                        var nestedEntryItems = nestedEntryList.querySelectorAll(':scope > li');
+                        console.log('Found ' + nestedEntryItems.length + ' entries in nested section: ' + nestedSectionName);
+                        
+                        var nestedEntries = [];
+                        for (var k = 0; k < nestedEntryItems.length; k++) {
+                            var entry = parseEntry(nestedEntryItems[k], fullSectionName);
+                            if (entry) {
+                                nestedEntries.push(entry);
+                            }
+                        }
+                        
+                        return nestedEntries;
+                    } catch(nestedError) {
+                        console.error('Error processing nested section: ' + nestedError.message);
+                        console.error('Stack: ' + nestedError.stack);
+                        return [];
+                    }
+                }
+                
+                // iterate through all main sections
+                for (var i = 0; i < mainList.children.length; i++) {
+                    var sectionLi = mainList.children[i];
+                    
+                    if (sectionLi.tagName !== 'LI') {
+                        continue;
+                    }
+                    
+                    var sectionName = sectionLi.getAttribute('data-sectionname') || 'Section ' + (i + 1);
+                    console.log('=== Processing main section [' + i + ']: ' + sectionName + ' ===');
+
+                    // li/div
+                    var sectionDiv = sectionLi.querySelector(':scope > div');
+                    if (!sectionDiv) {
+                        console.log('No direct div child in section');
+                        continue;
+                    }
+
+                    // li/div/div[2]
+                    var contentDiv = sectionDiv.querySelector(':scope > div:nth-child(2)');
+                    if (!contentDiv) {
+                        console.log('Section "' + sectionName + '" has no content div (div[2])');
+                        continue;
+                    }
+
+                    // li/div/div[2]/ul
+                    var entryList = contentDiv.querySelector(':scope > ul');
+                    if (!entryList) {
+                        console.log('Section "' + sectionName + '" has no entry list');
+                        continue;
+                    }
+
+                    if (entryList.children.length === 0) {
+                        console.log('Section "' + sectionName + '" has empty entry list');
+                        continue;
+                    }
+                    
+                    console.log('Section "' + sectionName + '" has ' + entryList.children.length + ' items');
+                    
+                    // get all direct <li> children
+                    var entryItems = entryList.querySelectorAll(':scope > li');
+                    
+                    for (var j = 0; j < entryItems.length; j++) {
+                        var entryLi = entryItems[j];
+                        
+                        console.log('Processing item ' + j + ' in section ' + sectionName);
+
+                        var possibleNestedDiv = entryLi.querySelector(':scope > div > div > div');
+                        
+                        if (possibleNestedDiv) {
+                            var hasNestedUl = possibleNestedDiv.querySelector(':scope > ul');
+                            if (hasNestedUl) {
+                                console.log('Item ' + j + ' is a nested section');
+                                var nestedEntries = processNestedSection(entryLi, sectionName);
+                                entries = entries.concat(nestedEntries);
+                            } else {
+                                console.log('Item ' + j + ' is a regular entry (deep structure)');
+                                var entry = parseEntry(entryLi, sectionName);
+                                if (entry) {
+                                    entries.push(entry);
+                                }
+                            }
+                        } else {
+                            console.log('Item ' + j + ' is a regular entry');
+                            var entry = parseEntry(entryLi, sectionName);
+                            if (entry) {
+                                entries.push(entry);
+                            }
+                        }
+                    }
+                }
+                
+                console.log('=== Parsing Complete ===');
+                console.log('Total entries parsed: ' + entries.length);
+                
+                return JSON.stringify({
+                    success: true,
+                    entries: entries
+                });
+                
+            } catch(e) {
+                console.error('Critical error parsing course: ' + e.message);
+                console.error('Stack: ' + e.stack);
+                return JSON.stringify({
+                    success: false,
+                    reason: 'exception',
+                    error: e.message,
+                    stack: e.stack
+                });
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            try {
+                L.d("MoodleFragment", "Raw parse result: $result")
+
+                if (result == null || result == "null" || result.trim('"').isEmpty()) {
+                    L.e("MoodleFragment", "JavaScript returned null or empty result")
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_failed_to_parse_course),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@evaluateJavascript
+                }
+
+                val cleanResult = result.replace("\\\"", "\"").trim('"')
+                L.d("MoodleFragment", "Cleaned parse result: $cleanResult")
+
+                if (!cleanResult.startsWith("{") || !cleanResult.endsWith("}")) {
+                    L.e("MoodleFragment", "Result is not valid JSON: $cleanResult")
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_error_parsing_entries),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@evaluateJavascript
+                }
+
+                val jsonResult = JSONObject(cleanResult)
+                val success = jsonResult.optBoolean("success", false)
+
+                if (success) {
+                    val entriesArray = jsonResult.getJSONArray("entries")
+                    val entries = mutableListOf<CourseEntry>()
+
+                    for (i in 0 until entriesArray.length()) {
+                        val entryJson = entriesArray.getJSONObject(i)
+                        entries.add(CourseEntry(
+                            url = entryJson.getString("url"),
+                            iconUrl = entryJson.getString("iconUrl"),
+                            linkType = entryJson.getString("linkType"),
+                            name = entryJson.getString("name"),
+                            sectionName = entryJson.getString("sectionName")
+                        ))
+                    }
+
+                    L.d("MoodleFragment", "Parsed ${entries.size} course entries")
+
+                    if (entries.isEmpty()) {
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.moodle_no_downloadable_entries),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        showCourseDownloadDialog(entries)
+                    }
+                } else {
+                    val reason = jsonResult.optString("reason", "unknown")
+                    val error = jsonResult.optString("error", "")
+                    val stack = jsonResult.optString("stack", "")
+                    L.e("MoodleFragment", "Failed to parse: $reason - $error")
+                    L.e("MoodleFragment", "Stack: $stack")
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_failed_to_parse_course),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: JSONException) {
+                L.e("MoodleFragment", "JSON parsing error - Raw result: $result", e)
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_error_parsing_entries),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Error processing course entries", e)
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_error_parsing_entries),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private class CourseSectionAdapter(
+        private var sections: List<CourseSection>,
+        private val allSections: List<CourseSection>,
+        private val selectedEntries: MutableMap<String, Boolean>,
+        private val onSelectionChanged: () -> Unit
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+        companion object {
+            private const val VIEW_TYPE_SECTION = 0
+            private const val VIEW_TYPE_ENTRY = 1
+        }
+
+        private val displayItems = mutableListOf<Any>()
+
+        init {
+            rebuildDisplayItems()
+        }
+
+        fun updateSections(newSections: List<CourseSection>) {
+            sections = newSections
+            rebuildDisplayItems()
+            notifyDataSetChanged()
+        }
+
+        private fun rebuildDisplayItems() {
+            displayItems.clear()
+            sections.forEach { section ->
+                displayItems.add(section)
+                if (section.isExpanded) {
+                    displayItems.addAll(section.entries)
+                }
+            }
+        }
+
+        override fun getItemViewType(position: Int): Int {
+            return when (displayItems[position]) {
+                is CourseSection -> VIEW_TYPE_SECTION
+                is CourseEntry -> VIEW_TYPE_ENTRY
+                else -> throw IllegalArgumentException("Unknown item type")
+            }
+        }
+
+        class SectionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val checkbox: CheckBox = view.findViewById(R.id.cbSection)
+            val name: TextView = view.findViewById(R.id.tvSectionName)
+            val expandIcon: ImageView = view.findViewById(R.id.ivExpandIcon)
+            val entryCount: TextView = view.findViewById(R.id.tvEntryCount)
+        }
+
+        class EntryViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val checkbox: CheckBox = view.findViewById(R.id.cbEntry)
+            val icon: ImageView = view.findViewById(R.id.ivEntryIcon)
+            val name: TextView = view.findViewById(R.id.tvEntryName)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            return when (viewType) {
+                VIEW_TYPE_SECTION -> {
+                    val view = LayoutInflater.from(parent.context)
+                        .inflate(R.layout.item_course_section, parent, false)
+                    SectionViewHolder(view)
+                }
+                VIEW_TYPE_ENTRY -> {
+                    val view = LayoutInflater.from(parent.context)
+                        .inflate(R.layout.item_course_entry, parent, false)
+                    EntryViewHolder(view)
+                }
+                else -> throw IllegalArgumentException("Unknown view type")
+            }
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            when (holder) {
+                is SectionViewHolder -> bindSectionViewHolder(holder, displayItems[position] as CourseSection)
+                is EntryViewHolder -> bindEntryViewHolder(holder, displayItems[position] as CourseEntry)
+            }
+        }
+
+        private fun bindSectionViewHolder(holder: SectionViewHolder, section: CourseSection) {
+            holder.name.text = section.sectionName
+            holder.entryCount.text = "${section.entries.size}"
+
+            val allEntriesSelected = section.entries.all { entry ->
+                selectedEntries["${section.sectionName}_${entry.name}"] == true
+            }
+
+            holder.checkbox.setOnCheckedChangeListener(null)
+            holder.checkbox.isChecked = allEntriesSelected
+            section.isSelected = allEntriesSelected
+
+            holder.expandIcon.rotation = if (section.isExpanded) 90f else 0f
+
+            holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
+                section.isSelected = isChecked
+                section.entries.forEach { entry ->
+                    selectedEntries["${section.sectionName}_${entry.name}"] = isChecked
+                }
+                onSelectionChanged()
+                notifyDataSetChanged()
+            }
+
+            holder.itemView.setOnClickListener {
+                section.isExpanded = !section.isExpanded
+                rebuildDisplayItems()
+                notifyDataSetChanged()
+            }
+        }
+
+        private fun bindEntryViewHolder(holder: EntryViewHolder, entry: CourseEntry) {
+            val section = sections.find { it.entries.contains(entry) }
+            val entryKey = "${section?.sectionName}_${entry.name}"
+            val isSelected = selectedEntries[entryKey] ?: false
+            val parentSelected = section?.isSelected ?: false
+
+            holder.checkbox.setOnCheckedChangeListener(null)
+            holder.checkbox.isChecked = isSelected
+            holder.checkbox.isEnabled = !parentSelected
+            holder.name.text = entry.name
+            holder.name.alpha = if (parentSelected) 0.6f else 1f
+
+            val iconResId = getIconResourceFromUrl(entry.iconUrl, entry.linkType)
+            holder.icon.setImageResource(iconResId)
+            holder.icon.setColorFilter(
+                holder.itemView.context.getThemeColor(R.attr.iconTintColor),
+                PorterDuff.Mode.SRC_IN
+            )
+            holder.icon.visibility = View.VISIBLE
+
+            holder.checkbox.setOnCheckedChangeListener { _, checked ->
+                if (!parentSelected) {
+                    selectedEntries[entryKey] = checked
+                    onSelectionChanged()
+                }
+            }
+
+            holder.itemView.setOnClickListener {
+                if (!parentSelected) {
+                    holder.checkbox.isChecked = !holder.checkbox.isChecked
+                }
+            }
+        }
+
+        private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+            val typedValue = TypedValue()
+            val theme = theme
+            theme.resolveAttribute(attrRes, typedValue, true)
+            return if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(this, typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
+        }
+
+        private fun getIconResourceFromUrl(iconUrl: String, linkType: String): Int {
+            val urlLower = iconUrl.lowercase()
+            val typeLower = linkType.lowercase()
+
+            return when {
+                urlLower.contains("/f/pdf") || typeLower.contains("pdf") -> R.drawable.ic_entry_pdf
+                urlLower.contains("/f/image") || typeLower.contains("image") -> R.drawable.ic_entry_img
+                urlLower.contains("/f/document") || typeLower.contains("document") || typeLower.contains("doc") -> R.drawable.ic_entry_doc
+                urlLower.contains("/f/audio") || typeLower.contains("audio") -> R.drawable.ic_entry_audio
+                urlLower.contains("/url/") || typeLower.contains("url") || typeLower.contains("link") -> R.drawable.ic_entry_url
+                urlLower.contains("/folder/") || typeLower.contains("folder") || typeLower.contains("verzeichnis") -> R.drawable.ic_entry_folder
+                urlLower.contains("/page/") || typeLower.contains("page") || typeLower.contains("seite") -> R.drawable.ic_entry_page
+                else -> R.drawable.ic_entry_unknown
+            }
+        }
+
+        override fun getItemCount() = displayItems.size
+    }
+
+    private fun showCourseDownloadDialog(entries: List<CourseEntry>) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_course_download, null)
+        val recyclerView = dialogView.findViewById<RecyclerView>(R.id.courseEntriesRecyclerView)
+        val selectAllButton = dialogView.findViewById<Button>(R.id.btnSelectAll)
+        val searchEditText = dialogView.findViewById<EditText>(R.id.searchEditText)
+        val tvSelectionCount = dialogView.findViewById<TextView>(R.id.tvSelectionCount)
+        val tvTotalCount = dialogView.findViewById<TextView>(R.id.tvTotalCount)
+
+        val groupedEntries = entries.groupBy { it.sectionName }
+        val allSections = groupedEntries.map { (sectionName, sectionEntries) ->
+            CourseSection(sectionName, sectionEntries, isExpanded = false, isSelected = false)
+        }
+
+        var filteredSections = allSections.toList()
+        val selectedEntries = mutableMapOf<String, Boolean>()
+
+        fun updateCounters() {
+            val selectedCount = selectedEntries.values.count { it }
+            val totalCount = filteredSections.sumOf { it.entries.size }
+            tvSelectionCount.text = selectedCount.toString()
+            tvTotalCount.text = totalCount.toString()
+
+            val allSelected = filteredSections.isNotEmpty() &&
+                    filteredSections.all { section ->
+                        section.entries.all { entry ->
+                            selectedEntries["${section.sectionName}_${entry.name}"] == true
+                        }
+                    }
+
+            selectAllButton.text = if (allSelected) {
+                getString(R.string.moodle_deselect_all)
+            } else {
+                getString(R.string.moodle_select_all)
+            }
+        }
+
+        val adapter = CourseSectionAdapter(
+            sections = filteredSections,
+            allSections = allSections,
+            selectedEntries = selectedEntries,
+            onSelectionChanged = { updateCounters() }
+        )
+
+        recyclerView.layoutManager = LinearLayoutManager(requireContext())
+        recyclerView.adapter = adapter
+
+        updateCounters()
+
+        selectAllButton.setOnClickListener {
+            val shouldSelect = filteredSections.any { section ->
+                section.entries.any { entry ->
+                    selectedEntries["${section.sectionName}_${entry.name}"] != true
+                }
+            }
+
+            filteredSections.forEach { section ->
+                section.entries.forEach { entry ->
+                    selectedEntries["${section.sectionName}_${entry.name}"] = shouldSelect
+                }
+            }
+
+            updateCounters()
+            adapter.notifyDataSetChanged()
+        }
+
+        searchEditText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+            override fun afterTextChanged(s: Editable?) {
+                val query = s.toString().lowercase().trim()
+
+                filteredSections = if (query.isEmpty()) {
+                    allSections.toList()
+                } else {
+                    allSections.mapNotNull { section ->
+                        val matchingEntries = section.entries.filter { entry ->
+                            entry.name.lowercase().contains(query) ||
+                                    entry.linkType.lowercase().contains(query)
+                        }
+                        if (matchingEntries.isNotEmpty()) {
+                            section.copy(entries = matchingEntries, isExpanded = true)
+                        } else if (section.sectionName.lowercase().contains(query)) {
+                            section.copy(isExpanded = true)
+                        } else {
+                            null
+                        }
+                    }
+                }
+
+                adapter.updateSections(filteredSections)
+                updateCounters()
+            }
+        })
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_select_entries_to_download))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.moodle_download)) { _, _ ->
+                val entriesToDownload = selectedEntries.filter { it.value }.keys.mapNotNull { key ->
+                    allSections.flatMap { it.entries }.find { entry ->
+                        "${allSections.find { section -> section.entries.contains(entry) }?.sectionName}_${entry.name}" == key
+                    }
+                }
+
+                if (entriesToDownload.isNotEmpty()) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_downloading_entries, entriesToDownload.size),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    L.d("MoodleFragment", "Selected ${entriesToDownload.size} entries for download")
+                } else {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_no_entries_selected),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton(getString(R.string.moodle_cancel), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     //endregion

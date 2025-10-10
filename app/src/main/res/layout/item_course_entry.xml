@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:paddingStart="48dp"
+    android:layout_marginVertical="2dp"
+    android:layout_marginHorizontal="8dp"
+    android:background="@drawable/rounded_background"
+    android:elevation="1dp">
+
+    <CheckBox
+        android:id="@+id/cbEntry"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:layout_marginEnd="8dp" />
+
+    <ImageView
+        android:id="@+id/ivEntryIcon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="center_vertical"
+        android:layout_marginEnd="12dp"
+        android:contentDescription="@string/moodle_entry_icon" />
+
+    <TextView
+        android:id="@+id/tvEntryName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_gravity="center_vertical"
+        android:textSize="14sp"
+        android:textColor="?android:attr/textColorPrimary" />
+
+</LinearLayout>

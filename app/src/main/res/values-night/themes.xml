@@ -140,6 +140,9 @@
         <item name="navHeaderStartColor">#0C417C</item>
         <item name="navHeaderCenterColor">#092C55</item>
         <item name="navHeaderEndColor">#00162D</item>
+
+        <!-- moodlefragment.kt -->
+        <item name="iconTintColor">@android:color/white</item>
     </style>
 
     <style name="Theme.MyApp" parent="Theme.Material3.DayNight.NoActionBar">

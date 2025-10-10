@@ -1660,6 +1660,21 @@
     <string name="moodle_audio_page">Audio Page</string>
     <string name="moodle_loading">Moodle loading…</string>
     <string name="moodle_downloading">Moodle downloading…</string>
+    <string name="moodle_no_session_cookies">No session cookies available</string>
+    <string name="moodle_couldnt_find_audio_file">Could not find audio file</string>
+    <string name="moodle_failed_to_load_audio_page">Failed to load audio page</string>
+    <string name="moodle_couldnt_find_image_file">Could not find image file</string>
+    <string name="moodle_failed_to_load_image_page">Failed to load image page</string>
+    <string name="moodle_no_session_cookies_reload">No session cookies available. Please reload the page.</string>
+    <string name="moodle_session_expired_reload">Session expired. Please reload the page.</string>
+    <string name="moodle_failed_to_parse_document">Failed to parse document</string>
+    <string name="moodle_couldnt_resolve_url_for_parsing">Could not resolve file URL for parsing</string>
+    <string name="moodle_failed_to_get_recipient_info">Failed to get recipient information</string>
+    <string name="moodle_failed_to_insert_message">Failed to insert message</string>
+    <string name="moodle_failed_to_get_recipient_data">Failed to get recipient information</string>
+    <string name="moodle_failed_to_send_message">Failed to send message</string>
+    <string name="moodle_activated_dark_mode">Moodle dark mode enabled</string>
+    <string name="moodle_deactivated_dark_mode">Moodle dark mode disabled</string>
     <!-- text viewer -->
     <string name="text_viewer_switch_to_text">Text Viewer</string>
     <string name="text_viewer_switch_to_pdf">PDF Viewer</string>
@@ -1696,5 +1711,26 @@
     <string name="text_viewer_bg_white">White</string>
     <string name="text_viewer_bg_light_gray">Light Gray</string>
     <string name="text_viewer_bg_beige">Beige</string>
+    <string name="text_viewer_preview_title">TITLE TEXT</string>
+    <string name="text_viewer_preview_normal">Normal text with</string>
+    <string name="text_viewer_preview_bold">bold</string>
+    <string name="text_viewer_preview_italic">italic</string>
+    <string name="text_viewer_preview_underline">underlined</string>
+    <string name="text_viewer_preview_strike">Strikethrough text</string>
+    <!-- course_entry_download -->
+    <string name="moodle_select_entries_to_download">Select entries to download</string>
+    <string name="moodle_select_all">Select All</string>
+    <string name="moodle_downloading_entries">Downloading %1$d entries…</string>
+    <string name="moodle_no_entries_selected">No entries selected</string>
+    <string name="moodle_failed_to_parse_course">Failed to parse course entries</string>
+    <string name="moodle_error_parsing_entries">Error parsing entries</string>
+    <string name="moodle_entry_icon">Entry icon</string>
+    <string name="moodle_select_entries_info">Select the entries you want to download from this course</string>
+    <string name="moodle_no_downloadable_entries">No downloadable entries found in this course</string>
+    <string name="moodle_search_entries">Search entries…</string>
+    <string name="moodle_deselect_all">Deselect all</string>
+    <string name="moodle_expand_icon">Expand section</string>
+    <string name="moodle_items"> x</string>
+    <string name="moodle_nested">Nested</string>
 
 </resources>

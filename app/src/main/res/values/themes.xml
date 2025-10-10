@@ -137,6 +137,9 @@
         <item name="navHeaderStartColor">#0f5293</item>
         <item name="navHeaderCenterColor">#0c3c74</item>
         <item name="navHeaderEndColor">#002344</item>
+
+        <!-- moodlefragment.kt -->
+        <item name="iconTintColor">@android:color/black</item>
     </style>
 
     <style name="Theme.VertretungsPlaner.NoActionBar">

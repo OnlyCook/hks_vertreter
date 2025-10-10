@@ -124,4 +124,7 @@
     <attr name="navHeaderStartColor" format="color" />
     <attr name="navHeaderCenterColor" format="color" />
     <attr name="navHeaderEndColor" format="color" />
+
+    <!-- moodlefragment.kt -->
+    <attr name="iconTintColor" format="color" />
 </resources>
