@@ -61,6 +61,7 @@ class SlideshowFragment : Fragment() {
     private var homeworkList = mutableListOf<HomeworkEntry>()
 
     private lateinit var searchBarHomework: EditText
+    private lateinit var btnClearSearchHomework: ImageButton
 
     private var currentSelectedLessonNumber: Int? = null
 
@@ -416,6 +417,7 @@ class SlideshowFragment : Fragment() {
 
     private fun initializeViews(view: View) {
         searchBarHomework = view.findViewById(R.id.searchBarHomework)
+        btnClearSearchHomework = view.findViewById(R.id.btnClearSearchHomework)  // ADD THIS LINE
         btnAddHomework = view.findViewById(R.id.btnAddHomework)
         btnMenu = view.findViewById(R.id.btnMenu)
         recyclerView = view.findViewById(R.id.recyclerViewHomework)
@@ -429,8 +431,17 @@ class SlideshowFragment : Fragment() {
             override fun afterTextChanged(s: android.text.Editable?) {
                 adapter.filter(s.toString())
                 updateHomeworkCount()
+
+                btnClearSearchHomework.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
         })
+
+        btnClearSearchHomework.setOnClickListener {
+            searchBarHomework.setText("")
+            btnClearSearchHomework.visibility = View.GONE
+            adapter.filter("")
+            updateHomeworkCount()
+        }
     }
 
     private fun setupRecyclerView() {

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="?attr/galleryBackgroundColor"
+    tools:context=".ui.moodle.CourseDownloadsActivity">
+
+    <!-- Header with search and menu -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:background="?attr/galleryBackgroundColor">
+
+        <RelativeLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp">
+
+            <EditText
+                android:id="@+id/searchBarCourseDownloads"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/frag_gal_search_hint"
+                android:inputType="text"
+                android:padding="12dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="40dp"
+                android:background="@drawable/subtle_search_background"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:textSize="16sp"
+                android:textColor="?attr/textPrimaryColor"
+                android:textColorHint="?attr/textSecondaryColor"
+                android:drawablePadding="8dp"
+                android:maxLines="1" />
+
+            <ImageButton
+                android:id="@+id/btnClearSearch"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_cancel"
+                android:contentDescription="@string/set_act_clear_search"
+                android:visibility="gone"
+                android:scaleType="centerInside" />
+        </RelativeLayout>
+
+        <ImageButton
+            android:id="@+id/btnEditMode"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_pencil"
+            android:contentDescription="@string/moodle_edit_mode"
+            android:layout_marginEnd="8dp"
+            android:scaleType="centerInside" />
+
+        <Button
+            android:id="@+id/btnMenuCourseDownloads"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="☰"
+            android:textSize="18sp"
+            android:backgroundTint="@android:color/holo_blue_light"
+            android:minWidth="40dp"
+            android:padding="0dp"
+            style="@style/Widget.AppCompat.Button" />
+
+    </LinearLayout>
+
+    <!-- Info bar - only visible in edit mode -->
+    <LinearLayout
+        android:id="@+id/infoBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:background="?attr/galleryBackgroundColor"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/moodle_courses"
+            android:textSize="14sp"
+            android:textColor="?attr/textSecondaryColor" />
+
+        <TextView
+            android:id="@+id/tvCourseCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="?attr/textPrimaryColor"
+            android:layout_marginEnd="16dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/moodle_selected"
+            android:textSize="14sp"
+            android:textColor="?attr/textSecondaryColor" />
+
+        <TextView
+            android:id="@+id/tvSelectedCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="?attr/textPrimaryColor" />
+
+    </LinearLayout>
+
+    <!-- RecyclerView for courses -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/courseDownloadsRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="?attr/galleryBackgroundColor" />
+
+    <!-- Edit mode controls -->
+    <LinearLayout
+        android:id="@+id/editModeControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center"
+        android:background="?attr/galleryBackgroundColor"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="140dp"
+            android:layout_height="50dp"
+            android:text="@string/frag_gal_btn_cancel"
+            android:textSize="14sp"
+            android:layout_marginEnd="12dp"
+            android:backgroundTint="@android:color/holo_red_light" />
+
+        <Button
+            android:id="@+id/btnDelete"
+            android:layout_width="140dp"
+            android:layout_height="50dp"
+            android:text="@string/moodle_delete"
+            android:textSize="14sp"
+            android:layout_marginStart="12dp"
+            android:backgroundTint="@android:color/holo_orange_light" />
+
+    </LinearLayout>
+
+</LinearLayout>

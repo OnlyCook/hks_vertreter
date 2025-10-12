@@ -40,6 +40,7 @@ class SubjectSelectionActivity : BaseActivity() {
     private lateinit var tvSelectionCount: TextView
     private lateinit var tvTotalCount: TextView
     private lateinit var tvSearchResults: TextView
+    private lateinit var btnClearSearch: ImageButton
 
     private lateinit var adapter: SubjectAdapter
 
@@ -160,6 +161,7 @@ class SubjectSelectionActivity : BaseActivity() {
         tvSelectionCount = findViewById(R.id.tvSelectionCount)
         tvTotalCount = findViewById(R.id.tvTotalCount)
         tvSearchResults = findViewById(R.id.tvSearchResults)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
     }
 
     private fun setupToolbar() {
@@ -528,9 +530,18 @@ class SubjectSelectionActivity : BaseActivity() {
 
             override fun afterTextChanged(s: Editable?) {
                 val searchText = s.toString().trim()
+
+                btnClearSearch.visibility = if (searchText.isNotEmpty()) View.VISIBLE else View.GONE
+
                 filterSubjects(searchText)
             }
         })
+
+        btnClearSearch.setOnClickListener {
+            searchEditText.text.clear()
+            searchEditText.requestFocus()
+            btnClearSearch.visibility = View.GONE
+        }
     }
 
     private fun filterSubjects(searchText: String) {

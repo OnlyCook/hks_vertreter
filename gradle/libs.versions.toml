@@ -16,6 +16,8 @@ navigationUiKtx = "2.6.0"
 preferenceKtx = "1.2.1"
 preference = "1.2.1"
 playServicesMaps = "19.2.0"
+litert = "2.0.2"
+recyclerview = "1.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,6 +35,8 @@ androidx-preference-ktx = { group = "androidx.preference", name = "preference-kt
 androidx-preference = { group = "androidx.preference", name = "preference", version.ref = "preference" }
 mpandroidchart = { module = "com.github.PhilJay:MPAndroidChart", version.ref = "mpandroidchart" }
 play-services-maps = { group = "com.google.android.gms", name = "play-services-maps", version.ref = "playServicesMaps" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

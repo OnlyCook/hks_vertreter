@@ -48,7 +48,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.navigation.fragment.findNavController
 import com.thecooker.vertretungsplaner.FetchType
-import com.thecooker.vertretungsplaner.MoodleFetchConfig
 import java.io.File
 
 class ExamFragment : Fragment() {
@@ -57,6 +56,7 @@ class ExamFragment : Fragment() {
     private lateinit var loadingView: View
 
     private lateinit var searchBar: EditText
+    private lateinit var btnClearSearchExam: ImageButton
     private lateinit var btnAddExam: Button
     private lateinit var btnMenu: Button
     private lateinit var recyclerView: RecyclerView
@@ -380,7 +380,6 @@ class ExamFragment : Fragment() {
     }
 
     // moodle exam schedule fetching
-    private var moodleFetchConfig: MoodleFetchConfig? = null
     private var isMoodleFetchInProgress = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -466,6 +465,7 @@ class ExamFragment : Fragment() {
 
     private fun initializeViews(view: View) {
         searchBar = view.findViewById(R.id.searchBarExam)
+        btnClearSearchExam = view.findViewById(R.id.btnClearSearchExam)
         btnAddExam = view.findViewById(R.id.btnAddExam)
         btnMenu = view.findViewById(R.id.btnMenuExam)
         recyclerView = view.findViewById(R.id.recyclerViewExam)
@@ -534,11 +534,19 @@ class ExamFragment : Fragment() {
             showMenuPopup()
         }
 
+        btnClearSearchExam.setOnClickListener {
+            searchBar.text.clear()
+            searchBar.clearFocus()
+        }
+
         searchBar.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                filterExams(s.toString())
+                val query = s.toString()
+                filterExams(query)
+
+                btnClearSearchExam.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
             }
         })
     }
@@ -761,46 +769,6 @@ class ExamFragment : Fragment() {
             Toast.makeText(requireContext(), getString(R.string.exam_moodle_fetch_error), Toast.LENGTH_LONG).show()
             isMoodleFetchInProgress = false
         }
-    }
-
-    private fun showNotePreservationDialog() {
-        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_exam, null)
-
-        val container = dialogView as ViewGroup
-        container.removeAllViews()
-
-        val messageText = TextView(requireContext()).apply {
-            text = getString(R.string.exam_preserve_notes_message)
-            textSize = 16f
-            setPadding(0, 0, 0, 32)
-        }
-
-        val checkBox = CheckBox(requireContext()).apply {
-            text = getString(R.string.exam_preserve_notes)
-            isChecked = true
-        }
-
-        val layout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(64, 32, 64, 32)
-            addView(messageText)
-            addView(checkBox)
-        }
-
-        container.addView(layout)
-
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.exam_scan_schedule))
-            .setView(dialogView)
-            .setPositiveButton(getString(R.string.exam_continue)) { _, _ ->
-                proceedWithExamScheduleScan(preserveNotes = checkBox.isChecked)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun proceedWithExamScheduleScan(preserveNotes: Boolean) {
@@ -1251,8 +1219,6 @@ class ExamFragment : Fragment() {
         val existingMoodleEntries = calendarManager.getMoodleCalendarEntries()
         L.d(TAG, "Preserving ${existingMoodleEntries.size} existing Moodle calendar entries")
 
-        val allDays = calendarManager.getAllCalendarDays()
-
         calendarManager.clearCalendarData()
 
         existingMoodleEntries.forEach { moodleEntry ->
@@ -1336,9 +1302,7 @@ class ExamFragment : Fragment() {
 
                 val mergedContent = if (dayEntry.content.isNotEmpty() && existingDayInfo.content.isNotEmpty()) {
                     "${existingDayInfo.content}\n\n---\n\n${dayEntry.content}"
-                } else if (dayEntry.content.isNotEmpty()) {
-                    dayEntry.content
-                } else {
+                } else dayEntry.content.ifEmpty {
                     existingDayInfo.content
                 }
 

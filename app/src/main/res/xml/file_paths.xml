@@ -3,4 +3,6 @@
     <cache-path name="homework_share" path="." />
     <cache-path name="cache" path="." />
     <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-path name="external" path="." />
 </paths>

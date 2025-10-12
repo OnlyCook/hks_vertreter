@@ -43,6 +43,7 @@ class GradesFragment : Fragment() {
     private lateinit var loadingView: View
 
     private lateinit var searchBar: EditText
+    private lateinit var btnClearSearch: ImageButton
     private lateinit var btnMenu: Button
     private lateinit var recyclerView: RecyclerView
     private lateinit var tvGradeCount: TextView
@@ -323,6 +324,7 @@ class GradesFragment : Fragment() {
 
     private fun initializeViews(view: View) {
         searchBar = view.findViewById(R.id.searchBarGrades)
+        btnClearSearch = view.findViewById(R.id.btnClearSearch)
         btnMenu = view.findViewById(R.id.btnMenuGrades)
         recyclerView = view.findViewById(R.id.recyclerViewGrades)
         tvGradeCount = view.findViewById(R.id.tvGradeCount)
@@ -396,9 +398,16 @@ class GradesFragment : Fragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                filterGrades(s.toString())
+                val text = s.toString()
+                filterGrades(text)
+                btnClearSearch.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
             }
         })
+
+        btnClearSearch.setOnClickListener {
+            searchBar.text.clear()
+            btnClearSearch.visibility = View.GONE
+        }
 
         setupSubjectChangeListeners()
     }

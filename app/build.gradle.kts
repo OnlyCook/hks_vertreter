@@ -51,6 +51,7 @@ dependencies {
     implementation(libs.androidx.preference.ktx)
     implementation(libs.androidx.preference)
     implementation(libs.play.services.maps)
+    implementation(libs.litert)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

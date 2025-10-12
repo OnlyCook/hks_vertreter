@@ -65,6 +65,15 @@
                 android:value=".MainActivity" />
         </activity>
 
+        <activity
+            android:name=".ui.moodle.CourseDownloadsActivity"
+            android:label="@string/moodle_course_downloads"
+            android:parentActivityName=".MainActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

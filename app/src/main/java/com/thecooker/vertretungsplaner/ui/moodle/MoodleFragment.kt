@@ -391,6 +391,16 @@ class MoodleFragment : Fragment() {
     private var downloadButtonMonitorRunnable: Runnable? = null
     private var isMonitoringDownloadButton = false
 
+    private val downloadsDirectory: File
+        get() {
+            val baseDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                requireContext().getExternalFilesDir(null)
+            } else {
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            }
+            return File(baseDir, "HKS_Moodle_Downloads")
+        }
+
     //region **SETUP**
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -804,7 +814,7 @@ class MoodleFragment : Fragment() {
                     return
                 }
 
-                if (url?.startsWith("https://moodle.kleyer.eu/course/") == true) {
+                if (url?.startsWith("https://moodle.kleyer.eu/course/view.php") == true) {
                     Handler(Looper.getMainLooper()).postDelayed({
                         injectCourseDownloadButton()
                     }, 500)
@@ -1173,6 +1183,12 @@ class MoodleFragment : Fragment() {
         btnBack.setOnLongClickListener {
             showBackButtonMenu()
             true
+        }
+
+        val btnCourseDownloads = view?.findViewById<ImageButton>(R.id.btnCourseDownloads)
+        btnCourseDownloads?.setOnClickListener {
+            val intent = Intent(requireContext(), CourseDownloadsActivity::class.java)
+            startActivity(intent)
         }
     }
 
@@ -2014,6 +2030,22 @@ class MoodleFragment : Fragment() {
         isFragmentActive = true
         setupSharedPreferences()
         performPeriodicCacheCleanup()
+
+        updateCourseDownloadsCounter()
+
+        CourseDownloadQueue.getInstance().addListener(object : CourseDownloadQueue.QueueListener {
+            override fun onQueueChanged() {
+                if (isFragmentActive) {
+                    updateCourseDownloadsCounter()
+                }
+            }
+
+            override fun onEntryStatusChanged(entry: CourseDownloadQueue.DownloadQueueEntry) {
+                if (isFragmentActive && entry.status == "completed") {
+                    updateCourseDownloadsCounter()
+                }
+            }
+        })
 
         if (webView.url == loginUrl) {
             Handler(Looper.getMainLooper()).postDelayed({
@@ -13969,7 +14001,7 @@ class MoodleFragment : Fragment() {
                 }
 
                 val currentUrl = webView.url ?: ""
-                if (!currentUrl.startsWith("https://moodle.kleyer.eu/course/")) {
+                if (!currentUrl.startsWith("https://moodle.kleyer.eu/course/view.php")) {
                     stopDownloadButtonMonitoring()
                     return
                 }
@@ -14621,12 +14653,7 @@ class MoodleFragment : Fragment() {
                 }
 
                 if (entriesToDownload.isNotEmpty()) {
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.moodle_downloading_entries, entriesToDownload.size),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    L.d("MoodleFragment", "Selected ${entriesToDownload.size} entries for download")
+                    queueCourseEntriesForDownload(entriesToDownload)
                 } else {
                     Toast.makeText(
                         requireContext(),
@@ -14641,6 +14668,350 @@ class MoodleFragment : Fragment() {
         val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun queueCourseEntriesForDownload(entries: List<CourseEntry>) {
+        val downloadQueue = CourseDownloadQueue.getInstance()
+        val currentCourse = webView.title ?: "Unknown Course"
+
+        entries.forEach { entry ->
+            val fileName = when {
+                entry.linkType.contains("PDF", ignoreCase = true) ->
+                    "${entry.name}.pdf"
+                entry.linkType.contains("document", ignoreCase = true) ||
+                        entry.linkType.contains("doc", ignoreCase = true) ->
+                    "${entry.name}.docx"
+                entry.linkType.contains("image", ignoreCase = true) -> {
+                    val extension = getImageExtensionFromUrl(entry.url)
+                    "${entry.name}$extension"
+                }
+                entry.linkType.contains("audio", ignoreCase = true) ->
+                    "${entry.name}.mp3"
+                else -> {
+                    val extension = entry.url.substringAfterLast(".").takeIf { it.length <= 5 } ?: "bin"
+                    "${entry.name}.$extension"
+                }
+            }
+
+            downloadQueue.addToQueue(
+                courseName = currentCourse,
+                entryName = entry.name,
+                url = entry.url,
+                fileName = fileName,
+                linkType = entry.linkType,
+                iconUrl = entry.iconUrl,
+                sectionName = entry.sectionName
+            )
+        }
+
+        Toast.makeText(
+            requireContext(),
+            getString(R.string.moodle_downloading_entries, entries.size),
+            Toast.LENGTH_SHORT
+        ).show()
+
+        updateCourseDownloadsCounter()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            startCourseDownloads()
+        }, 500)
+    }
+
+    private fun startCourseDownloads() {
+        val downloadQueue = CourseDownloadQueue.getInstance()
+        val pendingEntries = downloadQueue.getPendingEntries()
+
+        if (pendingEntries.isEmpty()) {
+            L.d("MoodleFragment", "No pending downloads")
+            return
+        }
+
+        L.d("MoodleFragment", "Starting ${pendingEntries.size} downloads")
+
+        pendingEntries.take(3).forEach { entry ->
+            downloadCourseEntry(entry)
+        }
+    }
+
+    private fun sanitizeFileName(name: String): String {
+        if (name.isEmpty()) return "unnamed"
+
+        // Replace illegal characters with underscore
+        var sanitized = name
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_") // Windows illegal chars
+            .replace("|", "_") // Pipe
+            .replace(":", "_") // Colon
+            .replace("*", "_") // Asterisk
+            .replace("?", "_") // Question mark
+            .replace("\"", "_") // Quote
+            .replace("<", "_") // Less than
+            .replace(">", "_") // Greater than
+            .trim() // Remove leading/trailing spaces
+
+        // Remove control characters
+        sanitized = sanitized.replace(Regex("[\\x00-\\x1F\\x7F]"), "")
+
+        // Replace multiple underscores with single underscore
+        sanitized = sanitized.replace(Regex("_{2,}"), "_")
+
+        // Remove leading/trailing dots and underscores
+        sanitized = sanitized.trim('.', '_')
+
+        // Limit length to avoid filesystem issues (most systems support 255 chars)
+        if (sanitized.length > 200) {
+            sanitized = sanitized.substring(0, 200)
+        }
+
+        // If everything was removed, use a default name
+        if (sanitized.isEmpty()) {
+            sanitized = "unnamed_file"
+        }
+
+        // Ensure it doesn't start with a dot (hidden file on Unix)
+        if (sanitized.startsWith(".")) {
+            sanitized = "_$sanitized"
+        }
+
+        return sanitized
+    }
+
+    private fun downloadCourseEntry(entry: CourseDownloadQueue.DownloadQueueEntry) {
+        backgroundExecutor.execute {
+            try {
+                L.d("MoodleFragment", "=== Starting Course Entry Download ===")
+                L.d("MoodleFragment", "Entry: ${entry.entryName}")
+                L.d("MoodleFragment", "URL: ${entry.url}")
+                L.d("MoodleFragment", "File: ${entry.fileName}")
+
+                entry.status = "downloading"
+                entry.progress = 0
+                CourseDownloadQueue.getInstance().updateEntry(entry)
+
+                val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
+
+                if (freshCookies == null) {
+                    L.e("MoodleFragment", "No cookies available for download")
+                    entry.status = "failed"
+                    entry.errorMessage = getString(R.string.moodle_no_session_cookies)
+                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    return@execute
+                }
+
+                val sanitizedCourseName = sanitizeFileName(entry.courseName)
+                val sanitizedFileName = sanitizeFileName(entry.fileName)
+
+                L.d("MoodleFragment", "Original course name: ${entry.courseName}")
+                L.d("MoodleFragment", "Sanitized course name: $sanitizedCourseName")
+                L.d("MoodleFragment", "Sanitized file name: $sanitizedFileName")
+
+                val baseDir = downloadsDirectory
+                if (!baseDir.exists()) {
+                    val created = baseDir.mkdirs()
+                    L.d("MoodleFragment", "Created base directory: $created - ${baseDir.absolutePath}")
+                }
+
+                val courseFolder = File(baseDir, sanitizedCourseName)
+                if (!courseFolder.exists()) {
+                    val created = courseFolder.mkdirs()
+                    L.d("MoodleFragment", "Created course folder: $created - ${courseFolder.absolutePath}")
+
+                    if (!created) {
+                        L.e("MoodleFragment", "Failed to create course folder")
+                        entry.status = "failed"
+                        entry.errorMessage = "Could not create folder"
+                        CourseDownloadQueue.getInstance().updateEntry(entry)
+                        return@execute
+                    }
+                }
+
+                L.d("MoodleFragment", "Download directory: ${courseFolder.absolutePath}")
+                L.d("MoodleFragment", "Directory exists: ${courseFolder.exists()}")
+                L.d("MoodleFragment", "Directory writable: ${courseFolder.canWrite()}")
+
+                var currentUrl = entry.url
+                var redirectCount = 0
+                val maxRedirects = 10
+                var finalUrl: String? = null
+
+                while (redirectCount < maxRedirects) {
+                    L.d("MoodleFragment", "Redirect attempt $redirectCount: $currentUrl")
+
+                    val conn = URL(currentUrl).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Cookie", freshCookies)
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    conn.setRequestProperty("Referer", moodleBaseUrl)
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 30000
+
+                    val responseCode = conn.responseCode
+                    L.d("MoodleFragment", "Response code: $responseCode")
+
+                    when (responseCode) {
+                        in 300..399 -> {
+                            val location = conn.getHeaderField("Location")
+                            conn.disconnect()
+
+                            if (location.isNullOrBlank()) {
+                                L.e("MoodleFragment", "Redirect without location")
+                                break
+                            }
+
+                            currentUrl = when {
+                                location.startsWith("http") -> location
+                                location.startsWith("/") -> "$moodleBaseUrl$location"
+                                else -> {
+                                    val baseUrl = currentUrl.substringBeforeLast("/")
+                                    "$baseUrl/$location"
+                                }
+                            }
+                            redirectCount++
+                        }
+                        200 -> {
+                            finalUrl = currentUrl
+                            L.d("MoodleFragment", "Found final download URL")
+                            conn.disconnect()
+                            break
+                        }
+                        401, 403 -> {
+                            L.e("MoodleFragment", "Authentication failed: $responseCode")
+                            conn.disconnect()
+                            entry.status = "failed"
+                            entry.errorMessage = getString(R.string.moodle_session_expired_reload)
+                            CourseDownloadQueue.getInstance().updateEntry(entry)
+                            return@execute
+                        }
+                        else -> {
+                            L.e("MoodleFragment", "Unexpected response: $responseCode")
+                            conn.disconnect()
+                            entry.status = "failed"
+                            entry.errorMessage = "HTTP Error: $responseCode"
+                            CourseDownloadQueue.getInstance().updateEntry(entry)
+                            return@execute
+                        }
+                    }
+                }
+
+                if (finalUrl == null) {
+                    L.e("MoodleFragment", "Failed to resolve download URL")
+                    entry.status = "failed"
+                    entry.errorMessage = getString(R.string.moodle_couldnt_resolve_download_url)
+                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    return@execute
+                }
+
+                L.d("MoodleFragment", "Downloading from: $finalUrl")
+                val conn = URL(finalUrl).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Cookie", freshCookies)
+                conn.setRequestProperty("User-Agent", userAgent)
+                conn.setRequestProperty("Referer", moodleBaseUrl)
+                conn.connectTimeout = 15000
+                conn.readTimeout = 60000
+
+                if (conn.responseCode == 200) {
+                    val inputStream = conn.inputStream
+                    val file = File(courseFolder, sanitizedFileName)
+
+                    val totalBytes = conn.contentLength.toLong()
+                    var downloadedBytes = 0L
+
+                    L.d("MoodleFragment", "Total size: $totalBytes bytes")
+                    L.d("MoodleFragment", "Saving to: ${file.absolutePath}")
+
+                    file.outputStream().use { output ->
+                        inputStream.use { input ->
+                            val buffer = ByteArray(8192)
+                            var bytes = input.read(buffer)
+
+                            while (bytes != -1) {
+                                output.write(buffer, 0, bytes)
+                                downloadedBytes += bytes
+
+                                if (totalBytes > 0) {
+                                    val newProgress = (downloadedBytes * 100 / totalBytes).toInt()
+                                    if (newProgress != entry.progress) {
+                                        entry.progress = newProgress
+                                        CourseDownloadQueue.getInstance().updateEntry(entry)
+                                    }
+                                }
+
+                                bytes = input.read(buffer)
+                            }
+                        }
+                    }
+
+                    conn.disconnect()
+
+                    if (file.exists()) {
+                        L.d("MoodleFragment", "File created successfully: ${file.absolutePath}")
+                        L.d("MoodleFragment", "File size: ${file.length()} bytes")
+
+                        entry.status = "completed"
+                        entry.progress = 100
+                        CourseDownloadQueue.getInstance().updateEntry(entry)
+
+                        activity?.runOnUiThread {
+                            updateCourseDownloadsCounter()
+                        }
+                    } else {
+                        L.e("MoodleFragment", "File was not created!")
+                        entry.status = "failed"
+                        entry.errorMessage = "File not created"
+                        CourseDownloadQueue.getInstance().updateEntry(entry)
+                    }
+
+                } else {
+                    L.e("MoodleFragment", "Download failed with code: ${conn.responseCode}")
+                    conn.disconnect()
+                    entry.status = "failed"
+                    entry.errorMessage = "HTTP Error: ${conn.responseCode}"
+                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                }
+
+            } catch (e: Exception) {
+                L.e("MoodleFragment", "Exception during download", e)
+                entry.status = "failed"
+                entry.errorMessage = e.message ?: "Unknown error"
+                CourseDownloadQueue.getInstance().updateEntry(entry)
+            }
+        }
+    }
+
+    private fun getImageExtensionFromUrl(url: String): String {
+        return when {
+            url.contains(".jpg", ignoreCase = true) -> ".jpg"
+            url.contains(".png", ignoreCase = true) -> ".png"
+            url.contains(".gif", ignoreCase = true) -> ".gif"
+            url.contains(".webp", ignoreCase = true) -> ".webp"
+            else -> ".jpg"
+        }
+    }
+
+    private fun updateCourseDownloadsCounter() {
+        val tvCourseDownloads = view?.findViewById<TextView>(R.id.tvCourseDownloads)
+        val downloadQueue = CourseDownloadQueue.getInstance()
+        val pendingSize = downloadQueue.getPendingSize()
+
+        activity?.runOnUiThread {
+            tvCourseDownloads?.apply {
+                if (pendingSize > 0) {
+                    text = pendingSize.toString()
+                    visibility = View.VISIBLE
+                } else {
+                    visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    private fun getDisplayPath(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "Android/data/${requireContext().packageName}/files/HKS_Moodle_Downloads"
+        } else {
+            "Documents/HKS_Moodle_Downloads"
+        }
     }
 
     //endregion

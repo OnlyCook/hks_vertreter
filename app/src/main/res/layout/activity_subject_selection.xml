@@ -23,22 +23,41 @@
         android:padding="12dp"
         android:background="?attr/subjectSelectionBackgroundColor">
 
-        <EditText
-            android:id="@+id/searchEditText"
+        <RelativeLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/act_sub_sel_search_hint"
-            android:drawableStart="@android:drawable/ic_menu_search"
-            android:drawablePadding="8dp"
-            android:padding="12dp"
-            android:paddingStart="20dp"
-            android:background="@drawable/subtle_search_background"
-            android:layout_marginEnd="8dp"
-            android:inputType="text"
-            android:maxLines="1"
-            android:textSize="16sp"
-            android:textColorHint="#757575" />
+            android:layout_weight="1">
+
+            <EditText
+                android:id="@+id/searchEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/act_sub_sel_search_hint"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="8dp"
+                android:padding="12dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="40dp"
+                android:background="@drawable/subtle_search_background"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textSize="16sp"
+                android:textColorHint="#757575" />
+
+            <ImageButton
+                android:id="@+id/btnClearSearch"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_cancel"
+                android:contentDescription="@string/set_act_clear_search"
+                android:visibility="gone"
+                android:scaleType="centerInside" />
+
+        </RelativeLayout>
 
         <Button
             android:id="@+id/btnAddManual"
@@ -49,6 +68,7 @@
             android:textStyle="bold"
             android:backgroundTint="@android:color/holo_green_light"
             android:minWidth="48dp"
+            android:layout_marginStart="8dp"
             style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>
@@ -138,6 +158,8 @@
             android:layout_marginEnd="8dp"
             android:text="@string/act_sub_sel_select_all"
             android:backgroundTint="@android:color/holo_green_light"
+            android:singleLine="true"
+            android:ellipsize="end"
             style="@style/Widget.AppCompat.Button" />
 
         <Button
@@ -148,6 +170,8 @@
             android:layout_marginStart="8dp"
             android:text="@string/act_sub_sel_deselect_all"
             android:backgroundTint="@android:color/holo_orange_light"
+            android:singleLine="true"
+            android:ellipsize="end"
             style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>

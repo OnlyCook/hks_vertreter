@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="?attr/selectableItemBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/ivQueueStatus"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_pending"
+            android:contentDescription="@string/moodle_status" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="12dp">
+
+            <TextView
+                android:id="@+id/tvQueueCourseName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Course Name"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tvQueueEntryName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Entry Name"
+                android:textSize="14sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvQueueProgress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0%"
+            android:textSize="12sp"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/progressBarQueue"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="8dp"
+        android:progress="0"
+        android:max="100" />
+
+    <TextView
+        android:id="@+id/tvQueueStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/moodle_status_pending"
+        android:textSize="11sp"
+        android:layout_marginTop="4dp" />
+
+</LinearLayout>

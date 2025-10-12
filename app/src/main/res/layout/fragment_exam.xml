@@ -13,22 +13,42 @@
         android:padding="12dp"
         android:background="?attr/homeworkFragmentBackgroundColor">
 
-        <!-- search -->
-        <EditText
-            android:id="@+id/searchBarExam"
+        <!-- search with clear button -->
+        <RelativeLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:hint="@string/frag_exam_search_hint"
-            android:inputType="text"
-            android:padding="12dp"
-            android:background="@drawable/subtle_search_background"
-            android:drawableStart="@android:drawable/ic_menu_search"
-            android:textSize="16sp"
-            android:textColorHint="#757575"
-            android:drawablePadding="8dp"
-            android:paddingStart="20dp"/>
+            android:layout_marginEnd="8dp">
+
+            <EditText
+                android:id="@+id/searchBarExam"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/frag_exam_search_hint"
+                android:inputType="text"
+                android:padding="12dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="40dp"
+                android:background="@drawable/subtle_search_background"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="8dp"
+                android:textSize="16sp"
+                android:textColorHint="#757575" />
+
+            <ImageButton
+                android:id="@+id/btnClearSearchExam"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_cancel"
+                android:contentDescription="@string/set_act_clear_search"
+                android:visibility="gone"
+                android:scaleType="centerInside" />
+
+        </RelativeLayout>
 
         <Button
             android:id="@+id/btnAddExam"
@@ -70,7 +90,7 @@
             android:text="@string/frag_exam_your_exams"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:textColor="?attr/homeworkFragmentTextColor"/>
+            android:textColor="?attr/homeworkFragmentTextColor" />
 
         <TextView
             android:id="@+id/tvExamCount"

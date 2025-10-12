@@ -2267,7 +2267,7 @@ class GalleryFragment : Fragment() {
             append("<br/>")
 
             val displaySubject = translateSubjectForDisplay(timetableEntry.subject)
-            val subjectText = if (isCancelled) "<s>$displaySubject</s>" else displaySubject
+            val subjectText = if (isCancelled) "<s><b>$displaySubject</b></s>" else "<b>$displaySubject</b>"
             if (timetableEntry.subject == InternalConstants.FREE_LESSON) {
                 append(subjectText).append("<br/>")
             }
@@ -2277,18 +2277,18 @@ class GalleryFragment : Fragment() {
 
             if (timetableEntry.teacher.isNotBlank() && timetableEntry.teacher != "UNKNOWN") {
                 val teacherText = when {
-                    isCancelled -> "<s>${timetableEntry.teacher}</s>"
-                    hasTeacherSubstitute -> "<s>${timetableEntry.teacher}</s>"
-                    else -> timetableEntry.teacher
+                    isCancelled -> "<s><b>${timetableEntry.teacher}</b></s>"
+                    hasTeacherSubstitute -> "<s><b>${timetableEntry.teacher}</b></s>"
+                    else -> "<b>${timetableEntry.teacher}</b>"
                 }
                 append(getString(R.string.gall_teacher, teacherText)).append("<br/>")
             }
 
             if (timetableEntry.room.isNotBlank() && timetableEntry.room != "UNKNOWN") {
                 val roomText = when {
-                    isCancelled -> "<s>${timetableEntry.room}</s>"
-                    hasRoomChange -> "<s>${timetableEntry.room}</s> ➞ $newRoom"
-                    else -> timetableEntry.room
+                    isCancelled -> "<s><b>${timetableEntry.room}</b></s>"
+                    hasRoomChange -> "<s><b>${timetableEntry.room}</b></s> ➞ <b>$newRoom</b>"
+                    else -> "<b>${timetableEntry.room}</b>"
                 }
                 append(getString(R.string.gall_room, roomText)).append("<br/>")
             }
@@ -2431,64 +2431,36 @@ class GalleryFragment : Fragment() {
     private fun showEditDayDialog(date: Date) {
         val dateStr = getTranslatedDate(date)
 
-        val container = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-        }
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_day, null)
 
-        val notesLabel = TextView(requireContext()).apply {
-            text = getString(R.string.gall_notes)
-            textSize = 16f
-            setTextColor(getThemeColor(R.attr.textPrimaryColor))
-            setTypeface(null, Typeface.BOLD)
-        }
-
-        val notesEditText = EditText(requireContext()).apply {
-            hint = getString(R.string.gall_notes_hint)
-            minLines = 2
-            maxLines = 4
-            text = Editable.Factory.getInstance().newEditable(getUserNotesForDate(date))
-        }
-
-        val occasionsLabel = TextView(requireContext()).apply {
-            text = getString(R.string.gall_special_events)
-            textSize = 16f
-            setTextColor(getThemeColor(R.attr.textPrimaryColor))
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 24, 0, 8)
-        }
-
-        val occasionsContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val editTextNotes = dialogView.findViewById<EditText>(R.id.editTextNotes)
+        val occasionsContainer = dialogView.findViewById<LinearLayout>(R.id.occasionsContainer)
+        val btnAddOccasion = dialogView.findViewById<Button>(R.id.btnAddOccasion)
 
         val userOccasions = getUserSpecialOccasionsForDate(date).toMutableList()
         val occasionEditTexts = mutableListOf<EditText>()
 
-        fun addOccasionField(text: String = "", animate: Boolean = false) {
+        editTextNotes.setText(getUserNotesForDate(date))
+
+        fun updateAddButtonVisibility() {
+            btnAddOccasion.visibility = if (occasionEditTexts.size >= 5) View.GONE else View.VISIBLE
+        }
+
+        fun addOccasionField(text: String = "") {
             if (occasionEditTexts.size >= 5) {
                 Toast.makeText(requireContext(), getString(R.string.gall_max_occasions_reached), Toast.LENGTH_SHORT).show()
                 return
             }
 
             fun removeOccasionField(occasionLayout: LinearLayout, editText: EditText) {
-                occasionLayout.animate()
-                    .alpha(0f)
-                    .scaleY(0f)
-                    .setDuration(200)
-                    .setInterpolator(android.view.animation.AccelerateInterpolator())
-                    .withEndAction {
-                        occasionsContainer.removeView(occasionLayout)
-                        occasionEditTexts.remove(editText)
-                    }
-                    .start()
+                occasionsContainer.removeView(occasionLayout)
+                occasionEditTexts.remove(editText)
+                updateAddButtonVisibility()
             }
 
             val occasionLayout = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 4, 0, 4)
-                alpha = if (animate) 0f else 1f
-                scaleY = if (animate) 0f else 1f
             }
 
             val editText = EditText(requireContext()).apply {
@@ -2513,39 +2485,29 @@ class GalleryFragment : Fragment() {
             occasionLayout.addView(removeButton)
             occasionsContainer.addView(occasionLayout)
 
-            if (animate) {
-                occasionLayout.animate()
-                    .alpha(1f)
-                    .scaleY(1f)
-                    .setDuration(250)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .start()
-            }
+            updateAddButtonVisibility()
         }
 
         userOccasions.forEach { occasion ->
-            addOccasionField(occasion, false)
+            addOccasionField(occasion)
         }
 
-        val addOccasionButton = Button(requireContext()).apply {
-            text = getString(R.string.gall_add_event)
-            setOnClickListener {
-                addOccasionField("", true)
+        btnAddOccasion.setOnClickListener {
+            if (occasionEditTexts.size < 5) {
+                addOccasionField("")
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.gall_max_occasions_reached), Toast.LENGTH_SHORT).show()
             }
         }
 
-        container.addView(notesLabel)
-        container.addView(notesEditText)
-        container.addView(occasionsLabel)
-        container.addView(occasionsContainer)
-        container.addView(addOccasionButton)
+        updateAddButtonVisibility()
 
         val mainDialog = AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.gall_edit_day, dateStr))
-            .setView(container)
+            .setView(dialogView)
             .setNegativeButton(getString(R.string.cancel), null)
             .setPositiveButton(getString(R.string.gall_save)) { _, _ ->
-                val notes = notesEditText.text.toString().trim()
+                val notes = editTextNotes.text.toString().trim()
                 saveUserNotesForDate(date, notes)
 
                 val occasions = occasionEditTexts.mapNotNull { editText ->
@@ -4846,17 +4808,20 @@ class GalleryFragment : Fragment() {
     }
 
     private fun setupSearchBar() {
-        searchBar = binding.root.findViewById(R.id.searchBarCalendar)
+        val searchContainer = binding.root.findViewById<RelativeLayout>(R.id.searchBarContainer)
+        searchBar = searchContainer.findViewById(R.id.searchBarCalendar)
+        val clearButton = searchContainer.findViewById<ImageButton>(R.id.btnClearSearch)
 
         searchBar.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-
-            override fun afterTextChanged(s: Editable?) {
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 currentSearchQuery = s?.toString()?.trim() ?: ""
+                clearButton.visibility = if (currentSearchQuery.isNotEmpty()) View.VISIBLE else View.GONE
                 updateCalendar()
             }
+
+            override fun afterTextChanged(s: Editable?) {}
         })
 
         searchBar.setOnEditorActionListener { _, actionId, _ ->
@@ -4864,6 +4829,14 @@ class GalleryFragment : Fragment() {
                 hideKeyboard()
                 true
             } else false
+        }
+
+        clearButton.setOnClickListener {
+            searchBar.text.clear()
+            currentSearchQuery = ""
+            clearButton.visibility = View.GONE
+            updateCalendar()
+            hideKeyboard()
         }
     }
 

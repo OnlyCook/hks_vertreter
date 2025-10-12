@@ -15,22 +15,43 @@
         android:background="?attr/galleryBackgroundColor">
 
         <!-- search bar -->
-        <EditText
-            android:id="@+id/searchBarCalendar"
+        <RelativeLayout
+            android:id="@+id/searchBarContainer"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:hint="@string/frag_gal_search_hint"
-            android:inputType="text"
-            android:padding="12dp"
-            android:background="@drawable/subtle_search_background"
-            android:drawableStart="@android:drawable/ic_menu_search"
-            android:textSize="16sp"
-            android:textColor="?attr/textPrimaryColor"
-            android:textColorHint="?attr/textSecondaryColor"
-            android:drawablePadding="8dp"
-            android:paddingStart="20dp"/>
+            android:layout_marginEnd="8dp">
+
+            <EditText
+                android:id="@+id/searchBarCalendar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/frag_gal_search_hint"
+                android:inputType="text"
+                android:padding="12dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="40dp"
+                android:background="@drawable/subtle_search_background"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:textSize="16sp"
+                android:textColor="?attr/textPrimaryColor"
+                android:textColorHint="?attr/textSecondaryColor"
+                android:drawablePadding="8dp"
+                android:maxLines="1" />
+
+            <ImageButton
+                android:id="@+id/btnClearSearch"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_cancel"
+                android:contentDescription="@string/set_act_clear_search"
+                android:visibility="gone"
+                android:scaleType="centerInside" />
+        </RelativeLayout>
 
         <Button
             android:id="@+id/btnEditCalendar"
