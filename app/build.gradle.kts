@@ -51,7 +51,6 @@ dependencies {
     implementation(libs.androidx.preference.ktx)
     implementation(libs.androidx.preference)
     implementation(libs.play.services.maps)
-    implementation(libs.litert)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -65,4 +64,5 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.security:security-crypto:1.1.0")
     implementation(libs.androidx.preference.ktx)
+    implementation("org.jsoup:jsoup:1.21.2")
 }

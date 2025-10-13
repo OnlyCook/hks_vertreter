@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:layout_marginStart="48dp"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground">
+
+    <CheckBox
+        android:id="@+id/cbEntry"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_marginEnd="12dp" />
+
+    <ImageView
+        android:id="@+id/ivEntryIcon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@drawable/ic_entry_folder"
+        android:contentDescription="@string/moodle_entry_icon"
+        android:layout_marginEnd="12dp"
+        android:scaleType="centerInside" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvEntryName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/moodle_entry"
+            android:textSize="13sp"
+            android:textColor="?attr/textPrimaryColor" />
+
+        <TextView
+            android:id="@+id/tvEntrySize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/moodle_file_size"
+            android:textSize="11sp"
+            android:textColor="?attr/textSecondaryColor"
+            android:layout_marginTop="2dp" />
+
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/btnOpenEntry"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_arrow_forward"
+        android:contentDescription="@string/moodle_open_entry"
+        android:layout_marginStart="8dp"
+        android:scaleType="centerInside" />
+
+</LinearLayout>

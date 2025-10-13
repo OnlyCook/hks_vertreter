@@ -1,137 +1,285 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:fitsSystemWindows="true"
-    android:background="?attr/galleryBackgroundColor"
-    tools:context=".ui.moodle.CourseDownloadsActivity">
+    android:background="?attr/subjectSelectionBackgroundColor">
 
-    <!-- Header with search and menu -->
+    <!-- Toolbar -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorPrimary"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar" />
+
+    <!-- Search and Menu section -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:gravity="center_vertical"
-        android:background="?attr/galleryBackgroundColor">
+        android:background="?attr/subjectSelectionBackgroundColor">
 
         <RelativeLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp">
+            android:layout_weight="1">
 
             <EditText
                 android:id="@+id/searchBarCourseDownloads"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/frag_gal_search_hint"
-                android:inputType="text"
+                android:hint="@string/moodle_search_downloads"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="8dp"
                 android:padding="12dp"
                 android:paddingStart="20dp"
                 android:paddingEnd="40dp"
                 android:background="@drawable/subtle_search_background"
-                android:drawableStart="@android:drawable/ic_menu_search"
+                android:inputType="text"
+                android:maxLines="1"
                 android:textSize="16sp"
-                android:textColor="?attr/textPrimaryColor"
-                android:textColorHint="?attr/textSecondaryColor"
-                android:drawablePadding="8dp"
-                android:maxLines="1" />
+                android:textColorHint="#757575" />
 
-            <ImageButton
-                android:id="@+id/btnClearSearch"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
-                android:layout_marginEnd="8dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_cancel"
-                android:contentDescription="@string/set_act_clear_search"
-                android:visibility="gone"
-                android:scaleType="centerInside" />
         </RelativeLayout>
 
         <ImageButton
             android:id="@+id/btnEditMode"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_pencil"
             android:contentDescription="@string/moodle_edit_mode"
-            android:layout_marginEnd="8dp"
             android:scaleType="centerInside" />
 
         <Button
             android:id="@+id/btnMenuCourseDownloads"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="☰"
             android:textSize="18sp"
             android:backgroundTint="@android:color/holo_blue_light"
-            android:minWidth="40dp"
-            android:padding="0dp"
+            android:minWidth="48dp"
             style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>
 
-    <!-- Info bar - only visible in edit mode -->
+    <!-- Info bar for course count -->
+    <LinearLayout
+        android:id="@+id/courseCountLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="?attr/subjectSelectionBackgroundColor"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/moodle_downloaded_content"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/rounded_background"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/tvCourseCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/holo_blue_dark" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" "
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/moodle_courses"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" | "
+                android:textSize="14sp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:id="@+id/tvEntryCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/holo_blue_dark" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" "
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/moodle_entries"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Info bar for selection in edit mode -->
     <LinearLayout
         android:id="@+id/infoBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
+        android:padding="16dp"
+        android:background="?attr/subjectSelectionBackgroundColor"
         android:gravity="center_vertical"
-        android:background="?attr/galleryBackgroundColor"
         android:visibility="gone">
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/moodle_courses"
-            android:textSize="14sp"
-            android:textColor="?attr/textSecondaryColor" />
+            android:text="@string/moodle_selected_items"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/tvCourseCount"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="?attr/textPrimaryColor"
-            android:layout_marginEnd="16dp" />
+            android:orientation="horizontal"
+            android:background="@drawable/rounded_background"
+            android:padding="8dp">
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/moodle_selected"
-            android:textSize="14sp"
-            android:textColor="?attr/textSecondaryColor" />
+            <TextView
+                android:id="@+id/tvSelectedCourseCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/holo_blue_dark" />
 
-        <TextView
-            android:id="@+id/tvSelectedCount"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="?attr/textPrimaryColor" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" / "
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tvTotalCourseCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" "
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/moodle_courses"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" | "
+                android:textSize="14sp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:id="@+id/tvSelectedEntryCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/holo_blue_dark" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" / "
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tvTotalEntryCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" "
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/moodle_entries"
+                android:textSize="14sp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
-    <!-- RecyclerView for courses -->
+    <!-- RecyclerView for downloads -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/courseDownloadsRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="?attr/galleryBackgroundColor" />
+        android:paddingHorizontal="8dp"
+        android:paddingBottom="16dp"
+        android:clipToPadding="false"
+        android:scrollbars="vertical" />
+
+    <!-- Empty state -->
+    <TextView
+        android:id="@+id/tvEmptyState"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/moodle_no_downloads"
+        android:textSize="18sp"
+        android:textColor="@android:color/darker_gray"
+        android:visibility="gone"
+        android:padding="32dp" />
 
     <!-- Edit mode controls -->
     <LinearLayout
@@ -139,28 +287,31 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
-        android:gravity="center"
-        android:background="?attr/galleryBackgroundColor"
+        android:padding="16dp"
+        android:paddingBottom="32dp"
+        android:background="?attr/subjectSelectionBackgroundColor"
+        android:elevation="4dp"
         android:visibility="gone">
 
         <Button
             android:id="@+id/btnCancel"
-            android:layout_width="140dp"
-            android:layout_height="50dp"
-            android:text="@string/frag_gal_btn_cancel"
-            android:textSize="14sp"
-            android:layout_marginEnd="12dp"
-            android:backgroundTint="@android:color/holo_red_light" />
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:text="@string/moodle_cancel"
+            android:backgroundTint="@android:color/holo_green_light"
+            style="@style/Widget.AppCompat.Button" />
 
         <Button
             android:id="@+id/btnDelete"
-            android:layout_width="140dp"
-            android:layout_height="50dp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:text="@string/moodle_delete"
-            android:textSize="14sp"
-            android:layout_marginStart="12dp"
-            android:backgroundTint="@android:color/holo_orange_light" />
+            android:backgroundTint="@android:color/holo_red_light"
+            style="@style/Widget.AppCompat.Button" />
 
     </LinearLayout>
 

@@ -1807,5 +1807,19 @@
     <string name="moodle_share_files">Dateien teilen</string>
     <string name="moodle_error_sharing_files">Fehler beim Teilen der Dateien</string>
     <string name="moodle_open_folder">Ordner öffnen</string>
+    <string name="moodle_url_link">URL-Link</string>
+    <string name="moodle_error_opening_url">Fehler beim Öffnen der URL</string>
+    <string name="moodle_open_in_browser">Im Browser öffnen</string>
+    <string name="moodle_error_sharing_url">Fehler beim Teilen der URL</string>
+    <string name="moodle_share_url">URL teilen</string>
+    <string name="moodle_no_files_in_folder">Keine Dateien im Ordner gefunden</string>
+    <string name="moodle_search_downloads">In Downloads suchen…</string>
+    <string name="moodle_downloaded_courses">Heruntergeladene Kurse</string>
+    <string name="moodle_cda_courses">Kurse</string>
+    <string name="moodle_selected_items">Ausgewählte Elemente</string>
+    <string name="moodle_cda_items">Elemente</string>
+    <string name="moodle_downloaded_content">Heruntergeladener Inhalt</string>
+    <string name="moodle_cda_entries">Einträge</string>
+    <string name="moodle_no_downloads">Noch keine Downloads.\nLade Kursmaterialien von Moodle herunter, um sie hier zu sehen.</string>
 
 </resources>

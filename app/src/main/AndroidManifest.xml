@@ -68,7 +68,8 @@
         <activity
             android:name=".ui.moodle.CourseDownloadsActivity"
             android:label="@string/moodle_course_downloads"
-            android:parentActivityName=".MainActivity">
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/Theme.VertretungsPlaner.NoActionBar">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".MainActivity" />

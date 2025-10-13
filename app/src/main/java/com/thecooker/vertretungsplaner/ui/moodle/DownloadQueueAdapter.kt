@@ -34,7 +34,7 @@ class DownloadQueueAdapter(
         holder.courseName.text = entry.courseName
         holder.entryName.text = entry.entryName
         holder.progressBar.progress = entry.progress
-        holder.progressText.text = "${entry.progress}%"
+        "${entry.progress}%".also { holder.progressText.text = it }
 
         when (entry.status) {
             "pending" -> {

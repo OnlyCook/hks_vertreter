@@ -15,5 +15,10 @@ data class DownloadedEntry(
     val size: Long,
     val dateModified: Long,
     val mimeType: String,
-    var isSelected: Boolean = false
+    val isUrlLink: Boolean = false,
+    val linkUrl: String? = null,
+    val isFolder: Boolean = false,
+    val folderFiles: List<DownloadedEntry> = emptyList(),
+    var isSelected: Boolean = false,
+    var isExpanded: Boolean = false
 )

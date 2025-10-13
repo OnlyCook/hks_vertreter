@@ -2,12 +2,14 @@ package com.thecooker.vertretungsplaner.ui.moodle
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.TypedValue
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -16,8 +18,10 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.AttrRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -27,6 +31,7 @@ import java.io.File
 
 class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueListener {
 
+    private lateinit var tvEmptyState: TextView
     private lateinit var recyclerView: RecyclerView
     private lateinit var searchEditText: EditText
     private lateinit var btnEditMode: ImageButton
@@ -35,8 +40,13 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
     private lateinit var btnCancel: Button
     private lateinit var btnDelete: Button
     private lateinit var tvCourseCount: TextView
-    private lateinit var tvSelectedCount: TextView
     private lateinit var infoBarLayout: LinearLayout
+
+    private lateinit var tvEntryCount: TextView
+    private lateinit var tvSelectedCourseCount: TextView
+    private lateinit var tvTotalCourseCount: TextView
+    private lateinit var tvSelectedEntryCount: TextView
+    private lateinit var tvTotalEntryCount: TextView
 
     private var isEditMode = false
     private var downloadedCourses = mutableListOf<DownloadedCourse>()
@@ -57,7 +67,13 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_course_downloads)
 
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setDisplayShowHomeEnabled(true)
+        }
+
         title = getString(R.string.moodle_course_downloads)
 
         initViews()
@@ -66,7 +82,6 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         setupSearchBar()
         setupMenuButton()
 
-        // Register as listener
         CourseDownloadQueue.getInstance().addListener(this)
     }
 
@@ -77,7 +92,6 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
     override fun onQueueChanged() {
         runOnUiThread {
-            // Reload courses when queue changes (new downloads completed)
             loadDownloadedCourses()
         }
     }
@@ -99,8 +113,13 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         btnCancel = findViewById(R.id.btnCancel)
         btnDelete = findViewById(R.id.btnDelete)
         tvCourseCount = findViewById(R.id.tvCourseCount)
-        tvSelectedCount = findViewById(R.id.tvSelectedCount)
+        tvEntryCount = findViewById(R.id.tvEntryCount)
+        tvSelectedCourseCount = findViewById(R.id.tvSelectedCourseCount)
+        tvTotalCourseCount = findViewById(R.id.tvTotalCourseCount)
+        tvSelectedEntryCount = findViewById(R.id.tvSelectedEntryCount)
+        tvTotalEntryCount = findViewById(R.id.tvTotalEntryCount)
         infoBarLayout = findViewById(R.id.infoBarLayout)
+        tvEmptyState = findViewById(R.id.tvEmptyState)
 
         btnEditMode.setOnClickListener { toggleEditMode() }
         btnCancel.setOnClickListener { toggleEditMode() }
@@ -136,10 +155,30 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
     private fun showMenuPopup() {
         val popup = PopupMenu(this, btnMenuCourseDownloads)
-        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_downloads_folder))
-        popup.menu.add(0, 2, 0, getString(R.string.moodle_share_download_link))
-        popup.menu.add(0, 3, 0, getString(R.string.moodle_view_download_queue))
-        popup.menu.add(0, 4, 0, getString(R.string.moodle_delete_all_downloads))
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_open_downloads_folder)).apply {
+            setIcon(R.drawable.ic_folder)
+        }
+        popup.menu.add(0, 2, 0, getString(R.string.moodle_share_download_link)).apply {
+            setIcon(R.drawable.ic_share)
+        }
+        popup.menu.add(0, 3, 0, getString(R.string.moodle_view_download_queue)).apply {
+            setIcon(R.drawable.ic_queue)
+        }
+        popup.menu.add(0, 4, 0, getString(R.string.moodle_delete_all_downloads)).apply {
+            setIcon(R.drawable.ic_trash_can)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (_: Exception) {
+            // icons wont show but button will work anyways
+        }
 
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -206,7 +245,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         ${getString(R.string.moodle_open_with_file_manager_instruction)}
     """.trimIndent()
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.moodle_downloads_folder))
             .setMessage(message)
             .setPositiveButton(getString(R.string.moodle_copy_path)) { _, _ ->
@@ -217,7 +256,13 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }
             .setNegativeButton(getString(R.string.moodle_close), null)
             .show()
+
+        val buttonColor = this.getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
     }
+
 
     private fun copyPathToClipboard(path: String) {
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -297,7 +342,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
     }
 
     private fun showDeleteAllDialog() {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.moodle_delete_all_downloads))
             .setMessage(getString(R.string.moodle_delete_all_downloads_confirm))
             .setPositiveButton(getString(R.string.moodle_delete)) { _, _ ->
@@ -305,6 +350,10 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }
             .setNegativeButton(getString(R.string.moodle_cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun deleteAllDownloads() {
@@ -322,11 +371,14 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         val queueEntries = CourseDownloadQueue.getInstance().getAllEntries()
 
         if (queueEntries.isEmpty()) {
-            AlertDialog.Builder(this)
+            val dialog = AlertDialog.Builder(this)
                 .setTitle(getString(R.string.moodle_download_queue))
                 .setMessage(getString(R.string.moodle_download_queue_empty))
                 .setPositiveButton(getString(R.string.moodle_close), null)
                 .show()
+
+            val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
             return
         }
 
@@ -349,9 +401,12 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
                 CourseDownloadQueue.getInstance().retryFailed()
                 Toast.makeText(this, getString(R.string.moodle_retrying_failed), Toast.LENGTH_SHORT).show()
             }
-            .create()
+            .show()
 
-        dialog.show()
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun toggleEditMode() {
@@ -359,6 +414,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
         editModeControls.visibility = if (isEditMode) View.VISIBLE else View.GONE
         infoBarLayout.visibility = if (isEditMode) View.VISIBLE else View.GONE
+        findViewById<LinearLayout>(R.id.courseCountLayout).visibility = if (isEditMode) View.GONE else View.VISIBLE
 
         if (!isEditMode) {
             downloadedCourses.forEach { course ->
@@ -387,27 +443,88 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         courseFolders?.forEach { courseFolder ->
             val entries = mutableListOf<DownloadedEntry>()
 
-            courseFolder.listFiles { file -> file.isFile }?.forEach { file ->
-                val entry = DownloadedEntry(
-                    name = file.nameWithoutExtension,
-                    fileName = file.name,
-                    path = file.absolutePath,
-                    size = file.length(),
-                    dateModified = file.lastModified(),
-                    mimeType = getMimeType(file.extension)
-                )
-                entries.add(entry)
-                L.d("CourseDownloadsActivity", "  - ${file.name} (${formatFileSize(file.length())})")
+            courseFolder.listFiles()?.forEach { item ->
+                if (item.isFile) {
+                    if (item.extension.lowercase() == "url") {
+                        val linkUrl = parseUrlFile(item)
+                        if (linkUrl != null) {
+                            val entry = DownloadedEntry(
+                                name = item.nameWithoutExtension,
+                                fileName = item.name,
+                                path = item.absolutePath,
+                                size = 0L,
+                                dateModified = item.lastModified(),
+                                mimeType = "text/url",
+                                isUrlLink = true,
+                                linkUrl = linkUrl
+                            )
+                            entries.add(entry)
+                        }
+                    } else {
+                        val entry = DownloadedEntry(
+                            name = item.nameWithoutExtension,
+                            fileName = item.name,
+                            path = item.absolutePath,
+                            size = item.length(),
+                            dateModified = item.lastModified(),
+                            mimeType = getMimeType(item.extension),
+                            isUrlLink = false,
+                            linkUrl = null
+                        )
+                        entries.add(entry)
+                    }
+                } else if (item.isDirectory) {
+                    val folderFiles = mutableListOf<DownloadedEntry>()
+                    var totalSize = 0L
+                    var latestModified = 0L
+
+                    item.listFiles { file -> file.isFile }?.forEach { file ->
+                        val fileEntry = DownloadedEntry(
+                            name = file.nameWithoutExtension,
+                            fileName = file.name,
+                            path = file.absolutePath,
+                            size = file.length(),
+                            dateModified = file.lastModified(),
+                            mimeType = getMimeType(file.extension),
+                            isUrlLink = false,
+                            linkUrl = null
+                        )
+                        folderFiles.add(fileEntry)
+                        totalSize += file.length()
+                        if (file.lastModified() > latestModified) {
+                            latestModified = file.lastModified()
+                        }
+                    }
+
+                    if (folderFiles.isNotEmpty()) {
+                        val folderEntry = DownloadedEntry(
+                            name = item.name,
+                            fileName = item.name,
+                            path = item.absolutePath,
+                            size = totalSize,
+                            dateModified = latestModified,
+                            mimeType = "folder",
+                            isFolder = true,
+                            folderFiles = folderFiles
+                        )
+                        entries.add(folderEntry)
+                        L.d("CourseDownloadsActivity", "  - ${item.name} (Folder with ${folderFiles.size} files)")
+                    }
+                }
             }
 
             if (entries.isNotEmpty()) {
+                val cleanCourseName = courseFolder.name
+                    .removePrefix("Kurs_ ")
+                    .removeSuffix(" _ Heinrich-Kleyer-Schule_ Moodle")
+                    .trim()
+
                 val course = DownloadedCourse(
-                    name = courseFolder.name,
+                    name = cleanCourseName,
                     entries = entries,
                     path = courseFolder.absolutePath
                 )
                 downloadedCourses.add(course)
-                L.d("CourseDownloadsActivity", "Added course: ${courseFolder.name} with ${entries.size} entries")
             }
         }
 
@@ -418,8 +535,17 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         filteredCourses = downloadedCourses.toMutableList()
         adapter.updateCourses(filteredCourses)
         updateCourseCount()
+    }
 
-        L.d("CourseDownloadsActivity", "Loaded ${downloadedCourses.size} courses total")
+    private fun parseUrlFile(file: File): String? {
+        return try {
+            val content = file.readText(Charsets.UTF_8)
+            val match = "URL=(.+)".toRegex().find(content)
+            match?.groupValues?.get(1)?.trim()
+        } catch (e: Exception) {
+            L.e("CourseDownloadsActivity", "Error parsing URL file", e)
+            null
+        }
     }
 
     private fun filterCourses(query: String) {
@@ -458,13 +584,13 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         val message = when {
             selectedCourses.isNotEmpty() && selectedEntries.isEmpty() ->
                 getString(R.string.moodle_delete_courses_confirm, selectedCourses.size)
-            selectedCourses.isEmpty() && selectedEntries.isNotEmpty() ->
+            selectedCourses.isEmpty() ->
                 getString(R.string.moodle_delete_entries_confirm, selectedEntries.size)
             else ->
                 getString(R.string.moodle_delete_items_confirm, selectedCourses.size, selectedEntries.size)
         }
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.moodle_confirm_deletion))
             .setMessage(message)
             .setPositiveButton(getString(R.string.moodle_delete)) { _, _ ->
@@ -472,12 +598,15 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }
             .setNegativeButton(getString(R.string.moodle_cancel), null)
             .show()
+
+        val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
     private fun performDeletion(courses: List<DownloadedCourse>, entries: List<DownloadedEntry>) {
         var deletedCount = 0
 
-        // Delete selected courses
         courses.forEach { course ->
             val folder = File(course.path)
             if (folder.exists() && folder.deleteRecursively()) {
@@ -486,7 +615,6 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }
         }
 
-        // Delete selected entries
         entries.forEach { entry ->
             val file = File(entry.path)
             if (file.exists() && file.delete()) {
@@ -494,12 +622,10 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }
         }
 
-        // Remove entries from courses
         downloadedCourses.forEach { course ->
             course.entries.toMutableList().removeAll { it.isSelected }
         }
 
-        // Remove empty courses
         downloadedCourses.removeAll { it.entries.isEmpty() }
 
         filteredCourses = downloadedCourses.toMutableList()
@@ -516,7 +642,15 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
     }
 
     private fun updateCourseCount() {
+        val totalEntries = downloadedCourses.flatMap { it.entries }.size
         tvCourseCount.text = downloadedCourses.size.toString()
+        tvEntryCount.text = totalEntries.toString()
+
+        val isEmpty = downloadedCourses.isEmpty()
+        tvEmptyState.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+        findViewById<LinearLayout>(R.id.courseCountLayout).visibility = if (isEmpty) View.GONE else View.VISIBLE
+        btnEditMode.isEnabled = !isEmpty
     }
 
     private fun updateSelectedCount() {
@@ -525,7 +659,12 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             course.entries.filter { it.isSelected && !course.isSelected }
         }.size
 
-        tvSelectedCount.text = (selectedCourses + selectedEntries).toString()
+        val totalEntries = downloadedCourses.flatMap { it.entries }.size
+
+        tvSelectedCourseCount.text = selectedCourses.toString()
+        tvTotalCourseCount.text = downloadedCourses.size.toString()
+        tvSelectedEntryCount.text = selectedEntries.toString()
+        tvTotalEntryCount.text = totalEntries.toString()
     }
 
     private fun getMimeType(extension: String): String {
@@ -562,11 +701,14 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         return true
     }
 
-    private fun getDisplayPath(): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "Android/data/${packageName}/files/HKS_Moodle_Downloads"
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
         } else {
-            "Documents/HKS_Moodle_Downloads"
+            typedValue.data
         }
     }
 }

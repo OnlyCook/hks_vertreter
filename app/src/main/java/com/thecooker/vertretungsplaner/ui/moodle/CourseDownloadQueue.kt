@@ -1,6 +1,5 @@
 package com.thecooker.vertretungsplaner.ui.moodle
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.thecooker.vertretungsplaner.L
@@ -11,7 +10,6 @@ class CourseDownloadQueue private constructor() {
 
     private val queue = ConcurrentLinkedQueue<DownloadQueueEntry>()
     private val entryMap = ConcurrentHashMap<String, DownloadQueueEntry>()
-    private var isProcessing = false
     private val listeners = mutableListOf<QueueListener>()
 
     data class DownloadQueueEntry(
@@ -23,9 +21,18 @@ class CourseDownloadQueue private constructor() {
         val linkType: String = "",
         val iconUrl: String = "",
         val sectionName: String = "",
+        val isFolder: Boolean = false,
+        val folderFiles: MutableList<FolderFile> = mutableListOf(),
         var progress: Int = 0,
-        var status: String = "pending", // pending, downloading, completed, failed
+        var status: String = "pending",
         var errorMessage: String = ""
+    )
+
+    data class FolderFile(
+        val name: String,
+        val url: String,
+        val iconUrl: String = "",
+        var downloaded: Boolean = false
     )
 
     interface QueueListener {
