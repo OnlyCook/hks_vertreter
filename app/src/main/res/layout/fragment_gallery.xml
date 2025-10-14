@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?attr/galleryBackgroundColor"
+    android:background="?attr/homeworkFragmentBackgroundColor"
     tools:context=".ui.gallery.GalleryFragment">
 
     <LinearLayout
@@ -12,7 +12,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="?attr/galleryBackgroundColor">
+        android:background="?attr/homeworkFragmentBackgroundColor">
 
         <!-- search bar -->
         <RelativeLayout
@@ -88,7 +88,7 @@
         android:paddingBottom="8dp"
         android:paddingStart="4dp"
         android:paddingEnd="4dp"
-        android:background="?attr/galleryBackgroundColor">
+        android:background="?attr/homeworkFragmentBackgroundColor">
 
         <Button
             android:id="@+id/btnPreviousWeek"
@@ -143,7 +143,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:fillViewport="true"
-                android:background="?attr/galleryBackgroundColor">
+                android:background="?attr/homeworkFragmentBackgroundColor">
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
@@ -211,7 +211,7 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:padding="8dp"
-        android:background="?attr/galleryBackgroundColor" />
+        android:background="?attr/homeworkFragmentBackgroundColor" />
 
     <!-- edit mode controls -->
     <LinearLayout
@@ -221,7 +221,7 @@
         android:orientation="vertical"
         android:padding="12dp"
         android:gravity="center"
-        android:background="?attr/galleryBackgroundColor"
+        android:background="?attr/homeworkFragmentBackgroundColor"
         android:visibility="gone">
 
         <!-- top: Undo and Redo buttons -->

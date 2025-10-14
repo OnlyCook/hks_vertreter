@@ -3,6 +3,7 @@ package com.thecooker.vertretungsplaner
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -10,6 +11,7 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -26,8 +28,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.graphics.drawable.toDrawable
 
-class SubjectSelectionActivity : BaseActivity() {
+open class SubjectSelectionActivity : BaseActivity() {
 
     private lateinit var toolbar: Toolbar
     private lateinit var searchEditText: EditText
@@ -101,6 +104,8 @@ class SubjectSelectionActivity : BaseActivity() {
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_subject_selection)
+
+        setStatusBarStyle()
 
         sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
         isEditingMode = intent.getBooleanExtra(EXTRA_IS_EDITING_MODE, false)
@@ -186,6 +191,16 @@ class SubjectSelectionActivity : BaseActivity() {
 
         if (schuljahr.isNotEmpty() && klasse.isNotEmpty()) {
             supportActionBar?.subtitle = "$klasse - $schuljahr"
+
+            val typedValue = TypedValue()
+            theme.resolveAttribute(R.attr.colorSecondaryVariant, typedValue, true)
+            val subtitleColor = if (typedValue.resourceId != 0) {
+                ContextCompat.getColor(this, typedValue.resourceId)
+            } else {
+                typedValue.data
+            }
+
+            toolbar.setSubtitleTextColor(subtitleColor)
         }
     }
 
@@ -942,5 +957,35 @@ class SubjectSelectionActivity : BaseActivity() {
 
             notifyDataSetChanged()
         }
+    }
+
+    protected fun setStatusBarStyle() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+
+        val isNightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        if (isNightMode) {
+            window.statusBarColor = ContextCompat.getColor(this, android.R.color.black)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        } else {
+            window.statusBarColor = ContextCompat.getColor(this, R.color.white)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+
+        var flags = window.decorView.systemUiVisibility
+
+        if (isNightMode) {
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        } else {
+            flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
+
+        window.decorView.systemUiVisibility = flags
     }
 }

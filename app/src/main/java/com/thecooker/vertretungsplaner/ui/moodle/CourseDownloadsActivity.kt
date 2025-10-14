@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -11,6 +12,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -23,13 +25,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.thecooker.vertretungsplaner.L
 import com.thecooker.vertretungsplaner.R
 import java.io.File
+import androidx.core.net.toUri
 
-class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueListener {
+open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueListener {
 
     private lateinit var tvEmptyState: TextView
     private lateinit var recyclerView: RecyclerView
@@ -64,8 +68,16 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
+        val landscapeEnabled = tempPrefs.getBoolean("landscape_mode_enabled", true)
+        if (!landscapeEnabled) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_course_downloads)
+
+        setStatusBarStyle()
 
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -273,13 +285,10 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
     private fun openFilesApp() {
         try {
-            val intent = packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
-                ?: packageManager.getLaunchIntentForPackage("com.android.documentsui")
-                ?: Intent(Intent.ACTION_VIEW).apply {
-                    type = "*/*"
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                }
-
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType("content://com.android.externalstorage.documents/root/primary".toUri(), "vnd.android.document/directory")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             startActivity(intent)
 
             Toast.makeText(
@@ -288,11 +297,30 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Exception) {
-            Toast.makeText(
-                this,
-                getString(R.string.moodle_no_file_manager_found),
-                Toast.LENGTH_SHORT
-            ).show()
+            try {
+                val intent = packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
+                    ?: packageManager.getLaunchIntentForPackage("com.android.documentsui")
+                if (intent != null) {
+                    startActivity(intent)
+                    Toast.makeText(
+                        this,
+                        getString(R.string.moodle_navigate_to_folder_instruction),
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.moodle_no_file_manager_found),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (_: Exception) {
+                Toast.makeText(
+                    this,
+                    getString(R.string.moodle_no_file_manager_found),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -306,7 +334,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         downloadsDirectory.listFiles()?.forEach { courseFolder ->
             if (courseFolder.isDirectory) {
                 courseFolder.listFiles()?.forEach { file ->
-                    if (file.isFile) {
+                    if (file.isFile && file.name != ".metadata.json") {
                         files.add(file)
                     }
                 }
@@ -343,6 +371,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
     private fun showDeleteAllDialog() {
         val dialog = AlertDialog.Builder(this)
+            .setIcon(android.R.drawable.ic_dialog_alert)
             .setTitle(getString(R.string.moodle_delete_all_downloads))
             .setMessage(getString(R.string.moodle_delete_all_downloads_confirm))
             .setPositiveButton(getString(R.string.moodle_delete)) { _, _ ->
@@ -384,6 +413,10 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_download_queue, null)
         val queueRecyclerView = dialogView.findViewById<RecyclerView>(R.id.queueRecyclerView)
+
+        val displayMetrics = resources.displayMetrics
+        val maxHeight = (displayMetrics.heightPixels * 0.5).toInt()
+        queueRecyclerView.layoutParams.height = maxHeight
 
         val queueAdapter = DownloadQueueAdapter(queueEntries.toMutableList())
         queueRecyclerView.layoutManager = LinearLayoutManager(this)
@@ -445,6 +478,11 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
             courseFolder.listFiles()?.forEach { item ->
                 if (item.isFile) {
+                    // Skip .metadata.json files
+                    if (item.name == ".metadata.json") {
+                        return@forEach
+                    }
+
                     if (item.extension.lowercase() == "url") {
                         val linkUrl = parseUrlFile(item)
                         if (linkUrl != null) {
@@ -479,6 +517,11 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
                     var latestModified = 0L
 
                     item.listFiles { file -> file.isFile }?.forEach { file ->
+                        // filter ".metadata.json" files
+                        if (file.name == ".metadata.json") {
+                            return@forEach
+                        }
+
                         val fileEntry = DownloadedEntry(
                             name = file.nameWithoutExtension,
                             fileName = file.name,
@@ -561,6 +604,7 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
             }.toMutableList()
         }
         adapter.updateCourses(filteredCourses)
+        updateSelectedCount()
     }
 
     private fun toggleCourseExpansion(course: DownloadedCourse) {
@@ -655,8 +699,9 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
 
     private fun updateSelectedCount() {
         val selectedCourses = downloadedCourses.count { it.isSelected }
+
         val selectedEntries = downloadedCourses.flatMap { course ->
-            course.entries.filter { it.isSelected && !course.isSelected }
+            course.entries.filter { it.isSelected }
         }.size
 
         val totalEntries = downloadedCourses.flatMap { it.entries }.size
@@ -687,15 +732,6 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         }
     }
 
-    private fun formatFileSize(bytes: Long): String {
-        return when {
-            bytes >= 1024 * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
-            bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
-            bytes >= 1024 -> "%.2f KB".format(bytes / 1024.0)
-            else -> "$bytes B"
-        }
-    }
-
     override fun onSupportNavigateUp(): Boolean {
         onBackPressed()
         return true
@@ -710,5 +746,48 @@ class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueLi
         } else {
             typedValue.data
         }
+    }
+
+    fun openPdfInMoodleFragment(filePath: String, fileName: String, mimeType: String) {
+        L.d("CourseDownloadsActivity", "Opening PDF in Moodle fragment: $fileName")
+
+        val sharedPrefs = getSharedPreferences("moodle_temp", MODE_PRIVATE)
+        sharedPrefs.edit {
+            putString("open_pdf_path", filePath)
+            putString("open_pdf_name", fileName)
+            putString("open_pdf_mime", mimeType)
+        }
+
+        finish()
+    }
+
+    protected fun setStatusBarStyle() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+
+        val isNightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        if (isNightMode) {
+            window.statusBarColor = ContextCompat.getColor(this, android.R.color.black)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        } else {
+            window.statusBarColor = ContextCompat.getColor(this, R.color.white)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+
+        var flags = window.decorView.systemUiVisibility
+
+        if (isNightMode) {
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        } else {
+            flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
+
+        window.decorView.systemUiVisibility = flags
     }
 }

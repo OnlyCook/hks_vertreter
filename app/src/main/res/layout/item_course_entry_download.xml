@@ -3,26 +3,31 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="12dp"
-    android:layout_marginStart="24dp"
+    android:padding="10dp"
+    android:layout_marginStart="16dp"
+    android:layout_marginVertical="3dp"
+    android:layout_marginEnd="8dp"
     android:gravity="center_vertical"
-    android:background="?attr/selectableItemBackground">
+    android:background="@drawable/entry_item_background"
+    android:elevation="0.5dp">
 
     <CheckBox
         android:id="@+id/cbEntry"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:visibility="gone"
-        android:layout_marginEnd="12dp" />
+        android:layout_marginEnd="8dp" />
 
     <ImageView
         android:id="@+id/ivEntryIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
         android:src="@drawable/ic_entry_pdf"
         android:contentDescription="@string/moodle_entry_icon"
-        android:layout_marginEnd="12dp"
-        android:scaleType="centerInside" />
+        android:layout_marginEnd="10dp"
+        android:scaleType="centerInside"
+        android:background="@drawable/icon_background"
+        android:padding="6dp" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -35,18 +40,22 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/moodle_entry"
-            android:textSize="14sp"
+            android:textSize="13.5sp"
             android:textStyle="bold"
-            android:textColor="?attr/textPrimaryColor" />
+            android:textColor="?attr/textPrimaryColor"
+            android:maxLines="2"
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/tvEntrySize"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/moodle_file_size"
-            android:textSize="12sp"
+            android:textSize="11.5sp"
             android:textColor="?attr/textSecondaryColor"
-            android:layout_marginTop="4dp" />
+            android:layout_marginTop="2dp"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
     </LinearLayout>
 
@@ -55,9 +64,9 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:src="@drawable/ic_arrow_forward"
+        android:src="@drawable/ic_output"
         android:contentDescription="@string/moodle_open_entry"
-        android:layout_marginStart="12dp"
+        android:layout_marginStart="8dp"
         android:scaleType="centerInside" />
 
 </LinearLayout>

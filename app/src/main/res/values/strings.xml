@@ -1763,7 +1763,7 @@
     <string name="moodle_error_opening_file">Fehler beim Öffnen der Datei</string>
     <string name="moodle_no_app_found">Keine passende App zum Öffnen dieser Datei gefunden</string>
     <string name="moodle_error_sharing_file">Fehler beim Teilen der Datei</string>
-    <string name="moodle_entry_info">Eintragsinformation</string>
+    <string name="moodle_entry_info">Eintragsinformationen</string>
     <string name="moodle_name">Name</string>
     <string name="moodle_file_name">Dateiname</string>
     <string name="moodle_size">Größe</string>
@@ -1816,10 +1816,13 @@
     <string name="moodle_search_downloads">In Downloads suchen…</string>
     <string name="moodle_downloaded_courses">Heruntergeladene Kurse</string>
     <string name="moodle_cda_courses">Kurse</string>
-    <string name="moodle_selected_items">Ausgewählte Elemente</string>
+    <string name="moodle_cda_courses_singular">Kurs</string>
+    <string name="moodle_selected_items">Ausgewählt</string>
     <string name="moodle_cda_items">Elemente</string>
-    <string name="moodle_downloaded_content">Heruntergeladener Inhalt</string>
+    <string name="moodle_cda_items_singular">Element</string>
+    <string name="moodle_downloaded_content">Heruntergeladen</string>
     <string name="moodle_cda_entries">Einträge</string>
+    <string name="moodle_cda_entries_singular">Eintrag</string>
     <string name="moodle_no_downloads">Noch keine Downloads.\nLade Kursmaterialien von Moodle herunter, um sie hier zu sehen.</string>
 
 </resources>

@@ -53,6 +53,7 @@ import android.text.TextWatcher
 import android.text.Editable
 import android.util.TypedValue
 import android.view.LayoutInflater
+import android.view.WindowManager
 import android.widget.ScrollView
 import androidx.core.graphics.toColorInt
 import android.widget.CheckBox
@@ -65,7 +66,7 @@ import androidx.security.crypto.MasterKey
 import com.thecooker.vertretungsplaner.ui.moodle.MoodleFragment
 import java.io.File
 
-class SettingsActivity : BaseActivity() {
+open class SettingsActivity : BaseActivity() {
 
     private var isInitializing = true
     private var isUpdatingThemeSettings = false
@@ -192,6 +193,8 @@ class SettingsActivity : BaseActivity() {
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+
+        setStatusBarStyle()
 
         sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE)
         isInitializing = true
@@ -4483,6 +4486,36 @@ class SettingsActivity : BaseActivity() {
             }
             L.d("Settings", "Synced Moodle theme with app theme: $appDarkModeEnabled")
         }
+    }
+
+    protected fun setStatusBarStyle() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+
+        val isNightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        if (isNightMode) {
+            window.statusBarColor = ContextCompat.getColor(this, android.R.color.black)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        } else {
+            window.statusBarColor = ContextCompat.getColor(this, R.color.white)
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+
+        var flags = window.decorView.systemUiVisibility
+
+        if (isNightMode) {
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        } else {
+            flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
+
+        window.decorView.systemUiVisibility = flags
     }
 }
 

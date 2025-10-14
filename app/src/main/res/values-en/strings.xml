@@ -1814,10 +1814,13 @@
     <string name="moodle_search_downloads">Search in downloads…</string>
     <string name="moodle_downloaded_courses">Downloaded Courses</string>
     <string name="moodle_cda_courses">Courses</string>
-    <string name="moodle_selected_items">Selected Items</string>
+    <string name="moodle_cda_courses_singular">Course</string>
+    <string name="moodle_selected_items">Selected</string>
     <string name="moodle_cda_items">Items</string>
-    <string name="moodle_downloaded_content">Downloaded Content</string>
+    <string name="moodle_cda_items_singular">Item</string>
+    <string name="moodle_downloaded_content">Downloaded</string>
     <string name="moodle_cda_entries">Entries</string>
+    <string name="moodle_cda_entries_singular">Entry</string>
     <string name="moodle_no_downloads">No downloads yet.\nDownload course materials from Moodle to see them here.</string>
 
 </resources>

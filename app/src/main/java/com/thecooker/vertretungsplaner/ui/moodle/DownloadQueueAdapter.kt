@@ -65,10 +65,4 @@ class DownloadQueueAdapter(
     }
 
     override fun getItemCount() = entries.size
-
-    fun updateEntries(newEntries: List<CourseDownloadQueue.DownloadQueueEntry>) {
-        entries.clear()
-        entries.addAll(newEntries)
-        notifyDataSetChanged()
-    }
 }

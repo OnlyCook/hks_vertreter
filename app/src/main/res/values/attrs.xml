@@ -49,6 +49,7 @@
     <attr name="subjectSelectionEditButtonColor" format="color" />
     <attr name="subjectSelectionDeleteButtonColor" format="color" />
     <attr name="subjectSelectionIconColor" format="color" />
+    <attr name="colorSecondaryVariant" format="color" />
 
     <!-- dialog_add_subject_manual.xml -->
     <attr name="dialogAddSubjectBackgroundColor" format="color" />

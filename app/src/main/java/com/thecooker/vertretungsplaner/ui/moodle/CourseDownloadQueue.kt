@@ -25,7 +25,8 @@ class CourseDownloadQueue private constructor() {
         val folderFiles: MutableList<FolderFile> = mutableListOf(),
         var progress: Int = 0,
         var status: String = "pending",
-        var errorMessage: String = ""
+        var errorMessage: String = "",
+        var actualFileName: String? = null
     )
 
     data class FolderFile(

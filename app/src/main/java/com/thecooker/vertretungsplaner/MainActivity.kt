@@ -18,6 +18,8 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.content.edit
 import androidx.navigation.ui.NavigationUI
@@ -25,7 +27,7 @@ import androidx.activity.OnBackPressedCallback
 import com.thecooker.vertretungsplaner.ui.moodle.MoodleFragment
 import androidx.core.content.ContextCompat
 
-class MainActivity : BaseActivity() {
+open class MainActivity : BaseActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
     private var isProcessingSharedContent = false
@@ -52,6 +54,10 @@ class MainActivity : BaseActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        applyNavigationBarInsets()
+
+        setStatusBarStyle()
 
         setSupportActionBar(binding.appBarMain.toolbar)
 
@@ -789,5 +795,73 @@ class MainActivity : BaseActivity() {
         }
 
         onBackPressedDispatcher.addCallback(this, moodleBackPressedCallback!!)
+    }
+
+    protected fun setStatusBarStyle() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+
+        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION.inv() and
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN.inv()
+
+        val isNightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+        val barColor = if (isNightMode) {
+            ContextCompat.getColor(this, R.color.homework_fragment_bg_dark)
+        } else {
+            ContextCompat.getColor(this, R.color.homework_fragment_bg_light)
+        }
+
+        window.statusBarColor = barColor
+        window.navigationBarColor = barColor
+
+        var flags = window.decorView.systemUiVisibility
+
+        if (isNightMode) {
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        } else {
+            flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
+
+        window.decorView.systemUiVisibility = flags
+    }
+
+    private fun applyNavigationBarInsets() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            binding.root.setOnApplyWindowInsetsListener { view, insets ->
+                val systemWindowInsets = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(android.view.WindowInsets.Type.systemBars())
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.graphics.Insets.of(
+                        insets.systemWindowInsetLeft,
+                        insets.systemWindowInsetTop,
+                        insets.systemWindowInsetRight,
+                        insets.systemWindowInsetBottom
+                    )
+                }
+
+                binding.appBarMain.root.setPadding(
+                    0,
+                    0,
+                    0,
+                    systemWindowInsets.bottom
+                )
+
+                L.d("MainActivity", "Applied navigation bar padding: ${systemWindowInsets.bottom}px")
+
+                insets
+            }
+        }
     }
 }

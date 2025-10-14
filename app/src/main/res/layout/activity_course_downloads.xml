@@ -5,15 +5,17 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:fitsSystemWindows="true"
-    android:background="?attr/subjectSelectionBackgroundColor">
+    android:background="?attr/homeworkFragmentBackgroundColor">
 
     <!-- Toolbar -->
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar" />
+        android:background="?attr/homeworkFragmentBackgroundColor"
+        app:titleTextColor="?attr/tableTextColor"
+        app:theme="@style/Theme.VertretungsPlaner.AppBarOverlay"
+        app:popupTheme="@style/Theme.VertretungsPlaner.PopupOverlay" />
 
     <!-- Search and Menu section -->
     <LinearLayout
@@ -21,7 +23,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="?attr/subjectSelectionBackgroundColor">
+        android:background="?attr/homeworkFragmentBackgroundColor">
 
         <RelativeLayout
             android:layout_width="0dp"
@@ -310,8 +312,7 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:text="@string/moodle_delete"
-            android:backgroundTint="@android:color/holo_red_light"
-            style="@style/Widget.AppCompat.Button" />
+            android:backgroundTint="@android:color/holo_red_light" />
 
     </LinearLayout>
 

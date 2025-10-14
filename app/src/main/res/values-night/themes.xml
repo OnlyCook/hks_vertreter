@@ -7,14 +7,14 @@
         <item name="colorSecondary">@color/medium_gray</item>
         <item name="colorSecondaryVariant">@color/light_gray</item>
         <item name="colorOnSecondary">@color/black</item>
-        <item name="android:statusBarColor">@color/primary_blue_dark</item>
         <item name="colorSurface">@color/dark_gray</item>
         <item name="colorOnSurface">@color/white</item>
         <item name="android:colorBackground">@color/black</item>
         <item name="elevation">0dp</item>
 
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:navigationBarColor">@color/settings_background_dark</item>
+        <item name="android:navigationBarColor">@color/homework_fragment_bg_dark</item>
+        <item name="android:statusBarColor">@color/homework_fragment_bg_dark</item>
 
         <!-- drawables -->
         <item name="searchBackgroundColor">@color/dark_component_background</item>
@@ -36,14 +36,14 @@
         <item name="highlightTextColor">@color/highlight_text_dark</item>
         <item name="highlightBackgroundColor">@color/highlight_background_dark</item>
         <item name="highlightAnimationColor">@color/highlight_animation_dark</item>
-        <item name="headerBackgroundColor">@color/header_bg_dark</item>
+        <item name="headerBackgroundColor">@color/homework_fragment_bg_dark</item>
         <item name="tableHeaderBackgroundColor">@color/highlight_background_dark</item>
         <item name="tableHeaderTextColor">@color/table_header_text_dark</item>
 
         <!-- settingsactivity.kt -->
         <item name="settingsBackgroundColor">@color/settings_background_dark</item>
         <item name="searchBarBackgroundColor">@color/search_bar_dark</item>
-        <item name="cardBackgroundColor">@color/card_background_dark</item>
+        <item name="cardBackgroundColor">@color/settings_background_dark</item>
         <item name="textPrimaryColor">@color/text_primary_dark</item>
         <item name="textSecondaryColor">@color/text_secondary_dark</item>
         <item name="sectionHeaderTextColor">@color/text_primary_dark</item>
@@ -143,6 +143,11 @@
 
         <!-- moodlefragment.kt -->
         <item name="iconTintColor">@android:color/white</item>
+    </style>
+
+    <style name="Theme.VertretungsPlaner.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar">
+        <item name="android:textColorPrimary">@color/white</item>
+        <item name="elevation">0dp</item>
     </style>
 
     <style name="Theme.MyApp" parent="Theme.Material3.DayNight.NoActionBar">

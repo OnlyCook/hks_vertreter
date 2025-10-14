@@ -3,31 +3,37 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="16dp"
+    android:padding="12dp"
+    android:layout_marginVertical="4dp"
+    android:layout_marginHorizontal="8dp"
     android:gravity="center_vertical"
-    android:background="?attr/selectableItemBackground">
+    android:background="@drawable/course_item_background"
+    android:elevation="1dp">
 
     <CheckBox
         android:id="@+id/cbCourse"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:visibility="gone"
-        android:layout_marginEnd="12dp" />
+        android:layout_marginEnd="8dp" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginStart="4dp">
 
         <TextView
             android:id="@+id/tvCourseName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/moodle_course"
-            android:textSize="16sp"
+            android:textSize="15sp"
             android:textStyle="bold"
-            android:textColor="?attr/textPrimaryColor" />
+            android:textColor="?attr/textPrimaryColor"
+            android:maxLines="2"
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/tvEntryCount"
@@ -36,7 +42,9 @@
             android:text="@string/moodle_entries"
             android:textSize="12sp"
             android:textColor="?attr/textSecondaryColor"
-            android:layout_marginTop="4dp" />
+            android:layout_marginTop="3dp"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
     </LinearLayout>
 
@@ -44,7 +52,7 @@
         android:id="@+id/ivExpandIcon"
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:src="@drawable/ic_arrow_forward"
+        android:src="@drawable/ic_chevron"
         android:contentDescription="@string/moodle_expand"
         android:layout_marginStart="12dp"
         android:tint="?attr/textSecondaryColor" />

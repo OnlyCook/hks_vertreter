@@ -5,7 +5,7 @@
     android:id="@+id/drawer_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
+    android:background="?attr/homeworkFragmentBackgroundColor"
     tools:openDrawer="start">
 
     <include
@@ -22,7 +22,7 @@
         android:fitsSystemWindows="true"
         app:headerLayout="@layout/nav_header_with_divider"
         app:menu="@menu/activity_main_drawer"
-        android:background="?attr/settingsBackgroundColor"
+        android:background="?attr/homeworkFragmentBackgroundColor"
         app:itemTextColor="@color/nav_item_text_color"
         app:itemIconTint="@color/nav_item_icon_tint" />
 

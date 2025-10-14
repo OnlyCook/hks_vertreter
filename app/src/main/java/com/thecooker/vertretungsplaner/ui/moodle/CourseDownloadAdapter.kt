@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.AttrRes
@@ -23,6 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.core.net.toUri
+import com.thecooker.vertretungsplaner.L
 
 class CourseDownloadAdapter(
     private var courses: MutableList<DownloadedCourse>,
@@ -60,29 +60,40 @@ class CourseDownloadAdapter(
 
         fun bind(course: DownloadedCourse) {
             courseName.text = course.name
-            "${course.entries.size} ${itemView.context.getString(R.string.moodle_entries)}".also { entryCount.text = it }
+            val entryCountText = if (course.entries.size == 1) {
+                "${course.entries.size} ${itemView.context.getString(R.string.moodle_cda_entries_singular)}"
+            } else {
+                "${course.entries.size} ${itemView.context.getString(R.string.moodle_cda_entries)}"
+            }
+            entryCount.text = entryCountText
 
             checkbox.visibility = if (isEditMode()) View.VISIBLE else View.GONE
             checkbox.setOnCheckedChangeListener(null)
             checkbox.isChecked = course.isSelected
             checkbox.setOnCheckedChangeListener { _, isChecked ->
                 course.isSelected = isChecked
-                course.entries.forEach { entry ->
-                    entry.isSelected = isChecked
-                }
+                setChildrenSelected(course.entries, isChecked)
                 onSelectionChanged()
                 notifyDataSetChanged()
             }
 
             expandIcon.rotation = if (course.isExpanded) 90f else 0f
 
-            itemView.setOnClickListener {
-                if (isEditMode()) {
-                    checkbox.isChecked = !checkbox.isChecked
-                } else {
-                    course.isExpanded = !course.isExpanded
-                    rebuildDisplayItems()
-                    notifyDataSetChanged()
+            itemView.setOnClickListener { v ->
+                if (v.findViewById<CheckBox>(R.id.cbCourse).isPressed) {
+                    return@setOnClickListener
+                }
+                course.isExpanded = !course.isExpanded
+                rebuildDisplayItems()
+                notifyDataSetChanged()
+            }
+        }
+
+        private fun setChildrenSelected(entries: List<DownloadedEntry>, isSelected: Boolean) {
+            entries.forEach { entry ->
+                entry.isSelected = isSelected
+                if (entry.isFolder) {
+                    setChildrenSelected(entry.folderFiles, isSelected)
                 }
             }
         }
@@ -99,8 +110,14 @@ class CourseDownloadAdapter(
             entryName.text = entry.name
 
             if (entry.isFolder) {
+                val filesCount = entry.folderFiles.size
                 val folderSize = entry.folderFiles.sumOf { it.size }
-                "${entry.folderFiles.size} ${itemView.context.getString(R.string.moodle_files)} | ${formatFileSize(folderSize)}".also { entrySize.text = it }
+                val filesText = if (filesCount == 1) {
+                    "$filesCount ${itemView.context.getString(R.string.moodle_cda_items_singular)}"
+                } else {
+                    "$filesCount ${itemView.context.getString(R.string.moodle_cda_items)}"
+                }
+                "$filesText | ${formatFileSize(folderSize)}".also { entrySize.text = it }
                 entryIcon.setImageResource(R.drawable.ic_entry_folder)
 
                 btnOpen.setImageResource(if (entry.isExpanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more)
@@ -135,21 +152,47 @@ class CourseDownloadAdapter(
             checkbox.isChecked = entry.isSelected
             checkbox.setOnCheckedChangeListener { _, isChecked ->
                 entry.isSelected = isChecked
+                if (entry.isFolder) {
+                    setChildrenSelected(entry.folderFiles, isChecked)
+                }
+                updateParentSelection()
                 onSelectionChanged()
+                notifyDataSetChanged()
             }
 
-            itemView.setOnClickListener {
-                if (isEditMode()) {
-                    checkbox.isChecked = !checkbox.isChecked
+            itemView.setOnClickListener { v ->
+                if (v.findViewById<CheckBox>(R.id.cbEntry).isPressed) {
+                    return@setOnClickListener
+                }
+                if (entry.isFolder) {
+                    entry.isExpanded = !entry.isExpanded
+                    rebuildDisplayItems()
+                    notifyDataSetChanged()
                 } else {
+                    showEntryInfo(itemView.context, entry)
+                }
+            }
+        }
+
+        private fun setChildrenSelected(entries: List<DownloadedEntry>, isSelected: Boolean) {
+            entries.forEach { entry ->
+                entry.isSelected = isSelected
+                if (entry.isFolder) {
+                    setChildrenSelected(entry.folderFiles, isSelected)
+                }
+            }
+        }
+
+        private fun updateParentSelection() {
+            courses.forEach { course ->
+                course.entries.forEach { entry ->
                     if (entry.isFolder) {
-                        entry.isExpanded = !entry.isExpanded
-                        rebuildDisplayItems()
-                        notifyDataSetChanged()
-                    } else {
-                        showEntryInfo(itemView.context, entry)
+                        val allChildrenSelected = entry.folderFiles.all { it.isSelected }
+                        entry.isSelected = allChildrenSelected
                     }
                 }
+                val allEntriesSelected = course.entries.all { it.isSelected }
+                course.isSelected = allEntriesSelected
             }
         }
 
@@ -172,15 +215,15 @@ class CourseDownloadAdapter(
 
             data class DialogOption(val text: String, val iconRes: Int, val action: Int)
 
-            val options = mutableListOf(
-                DialogOption(context.getString(R.string.moodle_open_with_default), R.drawable.ic_home, 1),
-                DialogOption(context.getString(R.string.moodle_open_in_moodle_browser), R.drawable.ic_globe, 2),
-                DialogOption(context.getString(R.string.moodle_share), R.drawable.ic_share, 3)
-            )
+            val options = mutableListOf<DialogOption>()
 
-            if (entry.mimeType.contains("pdf")) {
-                options.add(0, DialogOption(context.getString(R.string.moodle_open_with_pdf_viewer), R.drawable.ic_pdf_viewer, 0))
+            if (entry.mimeType.contains("pdf") || entry.mimeType.contains("word") || entry.mimeType.contains("document")) {
+                options.add(DialogOption(context.getString(R.string.moodle_open_with_pdf_viewer), R.drawable.ic_pdf_viewer, 0))
             }
+
+            options.add(DialogOption(context.getString(R.string.moodle_open_with_default), R.drawable.ic_home, 1))
+            options.add(DialogOption(context.getString(R.string.moodle_open_in_browser), R.drawable.ic_globe, 2))
+            options.add(DialogOption(context.getString(R.string.moodle_share), R.drawable.ic_share, 3))
 
             val adapter = object : android.widget.ArrayAdapter<DialogOption>(
                 context,
@@ -203,7 +246,7 @@ class CourseDownloadAdapter(
                     when (options[which].action) {
                         0 -> openWithPdfViewer(context, entry)
                         1 -> openWithDefault(context, entry)
-                        2 -> openInMoodleBrowser(context, entry)
+                        2 -> openInBrowser(context, entry)
                         3 -> shareFile(context, entry)
                     }
                 }
@@ -231,11 +274,6 @@ class CourseDownloadAdapter(
         }
 
         private fun openWithPdfViewer(context: Context, entry: DownloadedEntry) {
-            if (!entry.mimeType.contains("pdf")) {
-                Toast.makeText(context, context.getString(R.string.moodle_not_a_pdf), Toast.LENGTH_SHORT).show()
-                return
-            }
-
             val file = File(entry.path)
             if (!file.exists()) {
                 Toast.makeText(context, context.getString(R.string.moodle_file_not_found), Toast.LENGTH_SHORT).show()
@@ -243,20 +281,11 @@ class CourseDownloadAdapter(
             }
 
             try {
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-
-                val intent = Intent(context, MoodleFragment::class.java).apply {
-                    action = "open_pdf"
-                    putExtra("pdf_uri", uri.toString())
-                    putExtra("pdf_path", file.absolutePath)
+                if (context is CourseDownloadsActivity) {
+                    context.openPdfInMoodleFragment(file.absolutePath, entry.fileName, entry.mimeType)
                 }
-
-                context.startActivity(intent)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                L.e("CourseDownloadAdapter", "Error opening with PDF viewer", e)
                 Toast.makeText(context, context.getString(R.string.moodle_error_opening_file), Toast.LENGTH_SHORT).show()
             }
         }
@@ -286,7 +315,7 @@ class CourseDownloadAdapter(
             }
         }
 
-        private fun openInMoodleBrowser(context: Context, entry: DownloadedEntry) {
+        private fun openInBrowser(context: Context, entry: DownloadedEntry) {
             val file = File(entry.path)
             if (!file.exists()) {
                 Toast.makeText(context, context.getString(R.string.moodle_file_not_found), Toast.LENGTH_SHORT).show()
@@ -294,19 +323,20 @@ class CourseDownloadAdapter(
             }
 
             try {
-                val intent = Intent(context, context.javaClass.`package`?.name?.let { packageName ->
-                    Class.forName("$packageName.MainActivity")
-                }).apply {
-                    action = "OPEN_FILE_IN_MOODLE"
-                    putExtra("file_path", file.absolutePath)
-                    putExtra("file_name", entry.fileName)
-                    putExtra("mime_type", entry.mimeType)
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, entry.mimeType)
+                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
                 }
 
                 context.startActivity(intent)
             } catch (_: Exception) {
-                openWithDefault(context, entry)
+                Toast.makeText(context, context.getString(R.string.moodle_no_app_found), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -390,7 +420,13 @@ class CourseDownloadAdapter(
             checkbox.isChecked = file.isSelected
             checkbox.setOnCheckedChangeListener { _, isChecked ->
                 file.isSelected = isChecked
+                updateParentSelection()
                 onSelectionChanged()
+                notifyDataSetChanged()
+            }
+
+            checkbox.setOnClickListener {
+                checkbox.isChecked = !checkbox.isChecked
             }
 
             btnOpen.setOnClickListener {
@@ -399,19 +435,27 @@ class CourseDownloadAdapter(
 
             itemView.setOnClickListener {
                 if (isEditMode()) {
-                    checkbox.isChecked = !checkbox.isChecked
+                    showEntryInfo(itemView.context, file)
                 } else {
                     showEntryInfo(itemView.context, file)
                 }
             }
         }
 
-        private fun openWithPdfViewer(context: Context, entry: DownloadedEntry) {
-            if (!entry.mimeType.contains("pdf")) {
-                Toast.makeText(context, context.getString(R.string.moodle_not_a_pdf), Toast.LENGTH_SHORT).show()
-                return
+        private fun updateParentSelection() {
+            courses.forEach { course ->
+                course.entries.forEach { entry ->
+                    if (entry.isFolder) {
+                        val allChildrenSelected = entry.folderFiles.all { it.isSelected }
+                        entry.isSelected = allChildrenSelected
+                    }
+                }
+                val allEntriesSelected = course.entries.all { it.isSelected }
+                course.isSelected = allEntriesSelected
             }
+        }
 
+        private fun openWithPdfViewer(context: Context, entry: DownloadedEntry) {
             val file = File(entry.path)
             if (!file.exists()) {
                 Toast.makeText(context, context.getString(R.string.moodle_file_not_found), Toast.LENGTH_SHORT).show()
@@ -419,20 +463,11 @@ class CourseDownloadAdapter(
             }
 
             try {
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-
-                val intent = Intent(context, MoodleFragment::class.java).apply {
-                    action = "open_pdf"
-                    putExtra("pdf_uri", uri.toString())
-                    putExtra("pdf_path", file.absolutePath)
+                if (context is CourseDownloadsActivity) {
+                    context.openPdfInMoodleFragment(file.absolutePath, entry.fileName, entry.mimeType)
                 }
-
-                context.startActivity(intent)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                L.e("CourseDownloadAdapter", "Error opening with PDF viewer", e)
                 Toast.makeText(context, context.getString(R.string.moodle_error_opening_file), Toast.LENGTH_SHORT).show()
             }
         }
@@ -462,7 +497,7 @@ class CourseDownloadAdapter(
             }
         }
 
-        private fun openInMoodleBrowser(context: Context, entry: DownloadedEntry) {
+        private fun openInBrowser(context: Context, entry: DownloadedEntry) {
             val file = File(entry.path)
             if (!file.exists()) {
                 Toast.makeText(context, context.getString(R.string.moodle_file_not_found), Toast.LENGTH_SHORT).show()
@@ -470,19 +505,20 @@ class CourseDownloadAdapter(
             }
 
             try {
-                val intent = Intent(context, context.javaClass.`package`?.name?.let { packageName ->
-                    Class.forName("$packageName.MainActivity")
-                }).apply {
-                    action = "OPEN_FILE_IN_MOODLE"
-                    putExtra("file_path", file.absolutePath)
-                    putExtra("file_name", entry.fileName)
-                    putExtra("mime_type", entry.mimeType)
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, entry.mimeType)
+                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
                 }
 
                 context.startActivity(intent)
             } catch (_: Exception) {
-                openWithDefault(context, entry)
+                Toast.makeText(context, context.getString(R.string.moodle_no_app_found), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -520,15 +556,15 @@ class CourseDownloadAdapter(
 
             data class DialogOption(val text: String, val iconRes: Int, val action: Int)
 
-            val options = mutableListOf(
-                DialogOption(context.getString(R.string.moodle_open_with_default), R.drawable.ic_home, 1),
-                DialogOption(context.getString(R.string.moodle_open_in_moodle_browser), R.drawable.ic_globe, 2),
-                DialogOption(context.getString(R.string.moodle_share), R.drawable.ic_share, 3)
-            )
+            val options = mutableListOf<DialogOption>()
 
-            if (entry.mimeType.contains("pdf")) {
-                options.add(0, DialogOption(context.getString(R.string.moodle_open_with_pdf_viewer), R.drawable.ic_pdf_viewer, 0))
+            if (entry.mimeType.contains("pdf") || entry.mimeType.contains("word") || entry.mimeType.contains("document")) {
+                options.add(DialogOption(context.getString(R.string.moodle_open_with_pdf_viewer), R.drawable.ic_pdf_viewer, 0))
             }
+
+            options.add(DialogOption(context.getString(R.string.moodle_open_with_default), R.drawable.ic_home, 1))
+            options.add(DialogOption(context.getString(R.string.moodle_open_in_browser), R.drawable.ic_globe, 2))
+            options.add(DialogOption(context.getString(R.string.moodle_share), R.drawable.ic_share, 3))
 
             val adapter = object : android.widget.ArrayAdapter<DialogOption>(
                 context,
@@ -551,7 +587,7 @@ class CourseDownloadAdapter(
                     when (options[which].action) {
                         0 -> openWithPdfViewer(context, entry)
                         1 -> openWithDefault(context, entry)
-                        2 -> openInMoodleBrowser(context, entry)
+                        2 -> openInBrowser(context, entry)
                         3 -> shareFile(context, entry)
                     }
                 }
@@ -611,16 +647,33 @@ class CourseDownloadAdapter(
             return
         }
 
-        val options = arrayOf(
-            context.getString(R.string.moodle_open_in_browser),
-            context.getString(R.string.moodle_copy_url),
-            context.getString(R.string.moodle_share_url)
+        data class DialogOption(val text: String, val iconRes: Int, val action: Int)
+
+        val options = listOf(
+            DialogOption(context.getString(R.string.moodle_open_in_browser), R.drawable.ic_globe, 0),
+            DialogOption(context.getString(R.string.moodle_copy_url), R.drawable.ic_import_clipboard, 1),
+            DialogOption(context.getString(R.string.moodle_share_url), R.drawable.ic_share, 2)
         )
 
-        AlertDialog.Builder(context)
+        val adapter = object : android.widget.ArrayAdapter<DialogOption>(
+            context,
+            android.R.layout.simple_list_item_1,
+            options
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                val option = getItem(position)!!
+                view.text = option.text
+                view.setCompoundDrawablesWithIntrinsicBounds(option.iconRes, 0, 0, 0)
+                view.compoundDrawablePadding = 16
+                return view
+            }
+        }
+
+        val dialog = AlertDialog.Builder(context)
             .setTitle(entry.name)
-            .setItems(options) { _, which ->
-                when (which) {
+            .setAdapter(adapter) { _, which ->
+                when (options[which].action) {
                     0 -> openUrlLink(context, entry)
                     1 -> copyUrlToClipboard(context, entry.linkUrl)
                     2 -> shareUrl(context, entry.linkUrl)
@@ -628,6 +681,20 @@ class CourseDownloadAdapter(
             }
             .setNegativeButton(context.getString(R.string.moodle_cancel), null)
             .show()
+
+        val buttonColor = context.getThemeColor(R.attr.dialogSectionButtonColor)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
+        val typedValue = TypedValue()
+        val theme = theme
+        theme.resolveAttribute(attrRes, typedValue, true)
+        return if (typedValue.resourceId != 0) {
+            ContextCompat.getColor(this, typedValue.resourceId)
+        } else {
+            typedValue.data
+        }
     }
 
     private fun copyUrlToClipboard(context: Context, url: String) {

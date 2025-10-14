@@ -407,6 +407,19 @@ class MoodleFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        arguments?.getString("open_file_path")?.let { filePath ->
+            val fileName = arguments?.getString("open_file_name") ?: "document"
+            val mimeType = arguments?.getString("open_file_mime_type") ?: "application/pdf"
+
+            arguments?.remove("open_file_path")
+            arguments?.remove("open_file_name")
+            arguments?.remove("open_file_mime_type")
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                openDownloadedFileInViewer(filePath, fileName, mimeType)
+            }, 500)
+        }
+
         arguments?.getString("moodle_search_category")?.let { category ->
             val summary = arguments?.getString("moodle_search_summary") ?: ""
             val entryId = arguments?.getString("moodle_entry_id") ?: ""
@@ -2032,6 +2045,26 @@ class MoodleFragment : Fragment() {
         setupSharedPreferences()
         performPeriodicCacheCleanup()
 
+        val tempPrefs = requireContext().getSharedPreferences("moodle_temp", Context.MODE_PRIVATE)
+        val pendingPdfPath = tempPrefs.getString("open_pdf_path", null)
+        if (pendingPdfPath != null) {
+            L.d("MoodleFragment", "Found pending PDF, opening in viewer")
+            val fileName = tempPrefs.getString("open_pdf_name", "document.pdf") ?: "document.pdf"
+            val mimeType = tempPrefs.getString("open_pdf_mime", "application/pdf") ?: "application/pdf"
+
+            tempPrefs.edit {
+                remove("open_pdf_path")
+                remove("open_pdf_name")
+                remove("open_pdf_mime")
+            }
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isFragmentActive && isAdded) {
+                    openDownloadedFileInViewer(pendingPdfPath, fileName, mimeType)
+                }
+            }, 300)
+        }
+
         updateCourseDownloadsCounter()
 
         CourseDownloadQueue.getInstance().addListener(object : CourseDownloadQueue.QueueListener {
@@ -2052,7 +2085,7 @@ class MoodleFragment : Fragment() {
         if (currentUrl.startsWith("https://moodle.kleyer.eu/course/view.php")) {
             Handler(Looper.getMainLooper()).postDelayed({
                 if (isFragmentActive && isAdded) {
-                    injectCourseDownloadButton()
+                    checkAndRestartDownloadButtonMonitoring()
                 }
             }, 500)
         }
@@ -3227,6 +3260,12 @@ class MoodleFragment : Fragment() {
         }
 
         if (isPdfTab(index)) {
+            activity?.runOnUiThread {
+                webView.visibility = View.GONE
+                pdfContainer.visibility = View.VISIBLE
+                webControlsLayout.visibility = View.GONE
+                pdfControlsLayout.visibility = View.VISIBLE
+            }
             loadPdfTab(tab)
         } else {
             if (isPdfTab(previousIndex)) {
@@ -3565,19 +3604,21 @@ class MoodleFragment : Fragment() {
                     pdfViewerManager?.setCurrentPage(savedPage)
                     if (!scrollMode) pdfViewerManager?.toggleScrollMode()
 
-                    webView.visibility = View.GONE
-                    pdfContainer.visibility = View.VISIBLE
-                    webControlsLayout.visibility = View.GONE
-                    pdfControlsLayout.visibility = View.VISIBLE
+                    activity?.runOnUiThread {
+                        webView.visibility = View.GONE
+                        pdfContainer.visibility = View.VISIBLE
+                        webControlsLayout.visibility = View.GONE
+                        pdfControlsLayout.visibility = View.VISIBLE
 
-                    btnBack.visibility = View.GONE
-                    btnOpenInBrowser.visibility = View.VISIBLE
+                        btnBack.visibility = View.GONE
+                        btnOpenInBrowser.visibility = View.VISIBLE
 
-                    setupPdfControls()
-                    renderPdfContent()
+                        setupPdfControls()
+                        renderPdfContent()
 
-                    isAtTop = true
-                    showExtendedHeaderWithAnimation()
+                        isAtTop = true
+                        showExtendedHeaderWithAnimation()
+                    }
                 } else {
                     Toast.makeText(requireContext(), getString(R.string.moodle_pdf_load_failed), Toast.LENGTH_SHORT).show()
                     closeTab(currentTabIndex)
@@ -9791,6 +9832,64 @@ class MoodleFragment : Fragment() {
         animateToScale(1f)
     }
 
+    private fun openDownloadedFileInViewer(filePath: String, fileName: String, mimeType: String) {
+        val file = File(filePath)
+        if (!file.exists()) {
+            Toast.makeText(requireContext(), getString(R.string.moodle_file_not_found), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (mimeType.contains("pdf")) {
+            showPdfViewer(file, fileName, "file://$filePath")
+        } else if (mimeType.contains("word") || mimeType.contains("document")) {
+            val loadingDialog = AlertDialog.Builder(requireContext())
+                .setMessage(getString(R.string.text_viewer_loading))
+                .setCancelable(false)
+                .show()
+
+            backgroundExecutor.execute {
+                try {
+                    val text = parseDocxToText(file.inputStream())
+
+                    if (text != null) {
+                        val tempPdfFile = File(requireContext().cacheDir, "docx_preview_${System.currentTimeMillis()}.pdf")
+                        createPdfFromText(text, tempPdfFile)
+
+                        activity?.runOnUiThread {
+                            loadingDialog.dismiss()
+                            showPdfViewer(tempPdfFile, fileName.replace(".docx", ".pdf"), "file://${tempPdfFile.absolutePath}")
+                        }
+                    } else {
+                        activity?.runOnUiThread {
+                            loadingDialog.dismiss()
+                            Toast.makeText(requireContext(), getString(R.string.text_viewer_parse_failed), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Error converting DOCX to PDF", e)
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        Toast.makeText(requireContext(), getString(R.string.text_viewer_error), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun createPdfFromText(text: String, outputFile: File) {
+        val document = Document(PageSize.A4)
+        val writer = PdfWriter.getInstance(document, outputFile.outputStream())
+
+        document.open()
+
+        val font = FontFactory.getFont(FontFactory.HELVETICA, 12f, BaseColor.BLACK)
+        val paragraph = Paragraph(text, font)
+
+        document.add(paragraph)
+        document.close()
+        writer.close()
+    }
+
     //endregion
 
     //region **TEXT_VIEWER**
@@ -14055,6 +14154,33 @@ class MoodleFragment : Fragment() {
         L.d("MoodleFragment", "Stopped download button monitoring")
     }
 
+    private fun checkAndRestartDownloadButtonMonitoring() {
+        val jsCode = """
+        (function() {
+            try {
+                var existingButton = document.getElementById('course_download');
+                return existingButton !== null;
+            } catch(e) {
+                return false;
+            }
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            val buttonExists = result == "true"
+            L.d("MoodleFragment", "Download button exists: $buttonExists")
+
+            if (buttonExists) {
+                L.d("MoodleFragment", "Restarting monitoring for existing button")
+                monitorCourseDownloadButton()
+            } else {
+                L.d("MoodleFragment", "Button not found, injecting new one")
+                stopDownloadButtonMonitoring()
+                injectCourseDownloadButton()
+            }
+        }
+    }
+
     private fun parseCourseEntries() {
         val jsCode = """
         (function() {
@@ -14391,6 +14517,7 @@ class MoodleFragment : Fragment() {
         private val allSections: List<CourseSection>,
         private val selectedEntries: MutableMap<String, Boolean>,
         private val downloadedEntries: Set<String> = emptySet(),
+        private val lockedEntries: Set<String> = emptySet(),
         private val onSelectionChanged: () -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -14469,23 +14596,34 @@ class MoodleFragment : Fragment() {
             holder.name.text = section.sectionName
             holder.entryCount.text = "${section.entries.size}"
 
-            val allEntriesSelected = section.entries.all { entry ->
-                selectedEntries["${section.sectionName}_${entry.name}"] == true
+            val allNonLockedSelected = section.entries.all { entry ->
+                val entryKey = "${section.sectionName}_${entry.name}"
+                lockedEntries.contains(entryKey) || selectedEntries[entryKey] == true
+            }
+
+            val allEntriesLocked = section.entries.all { entry ->
+                lockedEntries.contains("${section.sectionName}_${entry.name}")
             }
 
             holder.checkbox.setOnCheckedChangeListener(null)
-            holder.checkbox.isChecked = allEntriesSelected
-            section.isSelected = allEntriesSelected
+            holder.checkbox.isChecked = allNonLockedSelected
+            holder.checkbox.isEnabled = !allEntriesLocked
+            section.isSelected = allNonLockedSelected
 
             holder.expandIcon.rotation = if (section.isExpanded) 90f else 0f
 
             holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
-                section.isSelected = isChecked
-                section.entries.forEach { entry ->
-                    selectedEntries["${section.sectionName}_${entry.name}"] = isChecked
+                if (!allEntriesLocked) {
+                    section.entries.forEach { entry ->
+                        val entryKey = "${section.sectionName}_${entry.name}"
+                        if (!lockedEntries.contains(entryKey)) {
+                            selectedEntries[entryKey] = isChecked
+                        }
+                    }
+                    section.isSelected = isChecked
+                    onSelectionChanged()
+                    notifyDataSetChanged()
                 }
-                onSelectionChanged()
-                notifyDataSetChanged()
             }
 
             holder.itemView.setOnClickListener {
@@ -14499,14 +14637,14 @@ class MoodleFragment : Fragment() {
             val section = sections.find { it.entries.contains(entry) }
             val entryKey = "${section?.sectionName}_${entry.name}"
             val isSelected = selectedEntries[entryKey] ?: false
-            val parentSelected = section?.isSelected ?: false
+            val isLocked = lockedEntries.contains(entryKey)
             val isDownloaded = downloadedEntries.contains(entryKey)
 
             holder.checkbox.setOnCheckedChangeListener(null)
             holder.checkbox.isChecked = isSelected
-            holder.checkbox.isEnabled = !parentSelected && !isDownloaded
+            holder.checkbox.isEnabled = !isLocked
             holder.name.text = entry.name
-            holder.name.alpha = if (parentSelected || isDownloaded) 0.6f else 1f
+            holder.name.alpha = if (isLocked) 0.6f else 1f
 
             val iconResId = getIconResourceFromUrl(entry.iconUrl, entry.linkType)
             holder.icon.setImageResource(iconResId)
@@ -14517,14 +14655,24 @@ class MoodleFragment : Fragment() {
             holder.icon.visibility = View.VISIBLE
 
             holder.checkbox.setOnCheckedChangeListener { _, checked ->
-                if (!parentSelected && !isDownloaded) {
+                if (!isLocked) {
                     selectedEntries[entryKey] = checked
+
+                    if (section != null) {
+                        val allNonLockedSelected = section.entries.all { e ->
+                            val key = "${section.sectionName}_${e.name}"
+                            lockedEntries.contains(key) || selectedEntries[key] == true
+                        }
+                        section.isSelected = allNonLockedSelected
+                    }
+
                     onSelectionChanged()
+                    notifyDataSetChanged()
                 }
             }
 
             holder.itemView.setOnClickListener {
-                if (!parentSelected && !isDownloaded) {
+                if (!isLocked) {
                     holder.checkbox.isChecked = !holder.checkbox.isChecked
                 }
             }
@@ -14569,7 +14717,11 @@ class MoodleFragment : Fragment() {
 
         val groupedEntries = entries.groupBy { it.sectionName }
 
-        val downloadedFiles = getDownloadedFileNames()
+        val downloadedEntryKeys = getDownloadedEntryKeys(entries)
+        L.d("MoodleFragment", "Found ${downloadedEntryKeys.size} downloaded entries")
+        downloadedEntryKeys.forEach { key ->
+            L.d("MoodleFragment", "Downloaded: $key")
+        }
 
         val allSections = groupedEntries.map { (sectionName, sectionEntries) ->
             CourseSection(sectionName, sectionEntries, isExpanded = false, isSelected = false)
@@ -14578,15 +14730,26 @@ class MoodleFragment : Fragment() {
         var filteredSections = allSections.toList()
         val selectedEntries = mutableMapOf<String, Boolean>()
         val downloadedEntries = mutableSetOf<String>()
+        val lockedEntries = mutableSetOf<String>()
 
         allSections.forEach { section ->
             section.entries.forEach { entry ->
                 val entryKey = "${section.sectionName}_${entry.name}"
-                val isDownloaded = downloadedFiles.contains(entry.name)
-                if (isDownloaded) {
+
+                if (downloadedEntryKeys.contains(entry.name)) {
+                    L.d("MoodleFragment", "Marking as downloaded and locked: $entryKey")
                     selectedEntries[entryKey] = true
                     downloadedEntries.add(entryKey)
+                    lockedEntries.add(entryKey)
                 }
+            }
+
+            val allEntriesDownloaded = section.entries.isNotEmpty() && section.entries.all { entry ->
+                downloadedEntryKeys.contains(entry.name)
+            }
+
+            if (allEntriesDownloaded) {
+                section.isSelected = true
             }
         }
 
@@ -14596,14 +14759,14 @@ class MoodleFragment : Fragment() {
             tvSelectionCount.text = selectedCount.toString()
             tvTotalCount.text = totalCount.toString()
 
-            val allSelected = filteredSections.isNotEmpty() &&
-                    filteredSections.all { section ->
-                        section.entries.all { entry ->
-                            selectedEntries["${section.sectionName}_${entry.name}"] == true
-                        }
-                    }
+            val allNonLockedSelected = filteredSections.all { section ->
+                section.entries.all { entry ->
+                    val entryKey = "${section.sectionName}_${entry.name}"
+                    lockedEntries.contains(entryKey) || selectedEntries[entryKey] == true
+                }
+            }
 
-            selectAllButton.text = if (allSelected) {
+            selectAllButton.text = if (allNonLockedSelected && filteredSections.isNotEmpty()) {
                 getString(R.string.moodle_deselect_all)
             } else {
                 getString(R.string.moodle_select_all)
@@ -14615,6 +14778,7 @@ class MoodleFragment : Fragment() {
             allSections = allSections,
             selectedEntries = selectedEntries,
             downloadedEntries = downloadedEntries,
+            lockedEntries = lockedEntries,
             onSelectionChanged = { updateCounters() }
         )
 
@@ -14626,14 +14790,23 @@ class MoodleFragment : Fragment() {
         selectAllButton.setOnClickListener {
             val shouldSelect = filteredSections.any { section ->
                 section.entries.any { entry ->
-                    selectedEntries["${section.sectionName}_${entry.name}"] != true
+                    val entryKey = "${section.sectionName}_${entry.name}"
+                    !lockedEntries.contains(entryKey) && selectedEntries[entryKey] != true
                 }
             }
 
             filteredSections.forEach { section ->
                 section.entries.forEach { entry ->
-                    selectedEntries["${section.sectionName}_${entry.name}"] = shouldSelect
+                    val entryKey = "${section.sectionName}_${entry.name}"
+                    if (!lockedEntries.contains(entryKey)) {
+                        selectedEntries[entryKey] = shouldSelect
+                    }
                 }
+
+                val allSelected = section.entries.all { entry ->
+                    selectedEntries["${section.sectionName}_${entry.name}"] == true
+                }
+                section.isSelected = allSelected
             }
 
             updateCounters()
@@ -14674,7 +14847,9 @@ class MoodleFragment : Fragment() {
             .setTitle(getString(R.string.moodle_select_entries_to_download))
             .setView(dialogView)
             .setPositiveButton(getString(R.string.moodle_download)) { _, _ ->
-                val entriesToDownload = selectedEntries.filter { it.value }.keys.mapNotNull { key ->
+                val entriesToDownload = selectedEntries.filter {
+                    it.value && !lockedEntries.contains(it.key)
+                }.keys.mapNotNull { key ->
                     allSections.flatMap { it.entries }.find { entry ->
                         "${allSections.find { section -> section.entries.contains(entry) }?.sectionName}_${entry.name}" == key
                     }
@@ -14698,22 +14873,140 @@ class MoodleFragment : Fragment() {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
-    private fun getDownloadedFileNames(): Set<String> {
-        val downloadedNames = mutableSetOf<String>()
+    private fun getDownloadedEntryKeys(entries: List<CourseEntry>): Set<String> {
+        val downloadedKeys = mutableSetOf<String>()
+        val currentCourse = webView.title ?: return downloadedKeys
 
-        if (downloadsDirectory.exists()) {
-            downloadsDirectory.listFiles()?.forEach { courseFolder ->
-                if (courseFolder.isDirectory) {
-                    courseFolder.listFiles()?.forEach { file ->
-                        if (file.isFile) {
-                            downloadedNames.add(file.nameWithoutExtension)
+        val cleanCourseName = sanitizeFileName(currentCourse)
+
+        L.d("MoodleFragment", "Checking downloads for course: $cleanCourseName")
+
+        if (!downloadsDirectory.exists()) {
+            return downloadedKeys
+        }
+
+        val courseFolders = downloadsDirectory.listFiles { file -> file.isDirectory }
+
+        courseFolders?.forEach { courseFolder ->
+            val folderName = courseFolder.name
+
+            if (folderName == cleanCourseName ||
+                folderName.contains(cleanCourseName, ignoreCase = true)) {
+
+                L.d("MoodleFragment", "Found matching course folder: $folderName")
+
+                val metadataFile = File(courseFolder, ".metadata.json")
+                val metadata = if (metadataFile.exists()) {
+                    try {
+                        JSONObject(metadataFile.readText())
+                    } catch (e: Exception) {
+                        L.e("MoodleFragment", "Error loading metadata", e)
+                        null
+                    }
+                } else {
+                    null
+                }
+
+                if (metadata != null) {
+                    L.d("MoodleFragment", "Using metadata file for fast lookup")
+
+                    val downloadedFiles = courseFolder.listFiles()?.filter { it.isFile && !it.name.startsWith(".") } ?: emptyList()
+                    val downloadedFileNames = downloadedFiles.map { it.name }.toSet()
+
+                    entries.forEach { entry ->
+                        try {
+                            if (metadata.has(entry.name)) {
+                                val expectedFileName = metadata.getString(entry.name)
+
+                                if (downloadedFileNames.contains(expectedFileName)) {
+                                    L.d("MoodleFragment", "✓ Matched (metadata): ${entry.name} -> $expectedFileName")
+                                    downloadedKeys.add(entry.name)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            L.e("MoodleFragment", "Error checking metadata for ${entry.name}", e)
+                        }
+                    }
+
+                    downloadedFiles.forEach { file ->
+                        entries.forEach { entry ->
+                            val iconUrlLower = entry.iconUrl.lowercase()
+                            if (iconUrlLower.contains("/page/") ||
+                                iconUrlLower.contains("/url/") ||
+                                iconUrlLower.contains("/folder/")) {
+
+                                val fileNameWithoutExt = file.nameWithoutExtension
+                                if (fileNameWithoutExt == entry.name || file.name == entry.name) {
+                                    L.d("MoodleFragment", "✓ Matched (non-file): ${entry.name}")
+                                    downloadedKeys.add(entry.name)
+                                }
+                            }
+                        }
+                    }
+
+                } else {
+                    L.d("MoodleFragment", "No metadata file, using fallback method")
+
+                    val downloadedFiles = courseFolder.listFiles() ?: return@forEach
+
+                    entries.forEach { entry ->
+                        val iconUrlLower = entry.iconUrl.lowercase()
+
+                        if (iconUrlLower.contains("/f/pdf") ||
+                            iconUrlLower.contains("/f/document") ||
+                            iconUrlLower.contains("/f/image") ||
+                            iconUrlLower.contains("/f/audio")) {
+
+                            downloadedFiles.forEach { downloadedFile ->
+                                if (downloadedFile.isFile) {
+                                    val downloadedNameWithoutExt = downloadedFile.nameWithoutExtension
+
+                                    if (downloadedNameWithoutExt == entry.name) {
+                                        L.d("MoodleFragment", "✓ Matched (fallback - name): ${entry.name}")
+                                        downloadedKeys.add(entry.name)
+                                    }
+                                }
+                            }
+                        } else {
+                            downloadedFiles.forEach { item ->
+                                val itemName = if (item.isFile) {
+                                    item.nameWithoutExtension
+                                } else {
+                                    item.name
+                                }
+
+                                if (itemName == entry.name) {
+                                    L.d("MoodleFragment", "✓ Matched (fallback - non-file): ${entry.name}")
+                                    downloadedKeys.add(entry.name)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        return downloadedNames
+        L.d("MoodleFragment", "Total downloaded entries found: ${downloadedKeys.size}")
+        return downloadedKeys
+    }
+
+    private fun extractFileNameFromUrl(url: String): String? {
+        try {
+            val decodedUrl = URLDecoder.decode(url, "UTF-8")
+
+            val fileName = decodedUrl.substringAfterLast("/").substringBefore("?")
+
+            if (fileName.isNotEmpty() && fileName.contains(".")) {
+                L.d("MoodleFragment", "Extracted filename from URL: $fileName")
+                return fileName
+            }
+
+            L.w("MoodleFragment", "Could not extract filename from URL: $url")
+            return null
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error extracting filename from URL", e)
+            return null
+        }
     }
 
     private fun queueCourseEntriesForDownload(entries: List<CourseEntry>) {
@@ -14772,10 +15065,31 @@ class MoodleFragment : Fragment() {
             return
         }
 
-        L.d("MoodleFragment", "Starting ${pendingEntries.size} downloads")
+        L.d("MoodleFragment", "Starting downloads - ${pendingEntries.size} pending")
 
-        pendingEntries.take(3).forEach { entry ->
+        val maxConcurrent = 3
+        val downloadingCount = downloadQueue.getDownloadingEntries().size
+        val slotsAvailable = maxConcurrent - downloadingCount
+
+        pendingEntries.take(slotsAvailable).forEach { entry ->
             downloadCourseEntry(entry)
+        }
+    }
+
+    private fun onDownloadComplete(entry: CourseDownloadQueue.DownloadQueueEntry) {
+        L.d("MoodleFragment", "Download complete: ${entry.entryName}, status: ${entry.status}")
+
+        activity?.runOnUiThread {
+            updateCourseDownloadsCounter()
+
+            val downloadQueue = CourseDownloadQueue.getInstance()
+            val pendingEntries = downloadQueue.getPendingEntries()
+            val downloadingCount = downloadQueue.getDownloadingEntries().size
+
+            if (pendingEntries.isNotEmpty() && downloadingCount < 3) {
+                L.d("MoodleFragment", "Starting next download from queue")
+                startCourseDownloads()
+            }
         }
     }
 
@@ -14942,12 +15256,20 @@ class MoodleFragment : Fragment() {
                 if (match != null) {
                     val imageUrl = match.groupValues[1]
                     L.d("MoodleFragment", "Found image URL: $imageUrl")
+
+                    val actualFileName = extractFileNameFromUrl(imageUrl)
+                    if (actualFileName != null) {
+                        entry.actualFileName = actualFileName
+                        CourseDownloadQueue.getInstance().updateEntry(entry)
+                    }
+
                     downloadResolvedCourseEntry(entry, imageUrl, cookies)
                 } else {
                     L.e("MoodleFragment", "Image src not found in HTML")
                     entry.status = "failed"
                     entry.errorMessage = getString(R.string.moodle_couldnt_find_image_file)
                     CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
                 }
             } else {
                 L.e("MoodleFragment", "Failed to load image page: $responseCode")
@@ -14955,12 +15277,14 @@ class MoodleFragment : Fragment() {
                 entry.status = "failed"
                 entry.errorMessage = "HTTP Error: $responseCode"
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
             }
         } catch (e: Exception) {
             L.e("MoodleFragment", "Error downloading image", e)
             entry.status = "failed"
             entry.errorMessage = e.message ?: "Unknown error"
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
         }
     }
 
@@ -14993,6 +15317,13 @@ class MoodleFragment : Fragment() {
                 if (match != null) {
                     val audioUrl = match.groupValues[1]
                     L.d("MoodleFragment", "Found audio URL: $audioUrl")
+
+                    val actualFileName = extractFileNameFromUrl(audioUrl)
+                    if (actualFileName != null) {
+                        entry.actualFileName = actualFileName
+                        CourseDownloadQueue.getInstance().updateEntry(entry)
+                    }
+
                     downloadResolvedCourseEntry(entry, audioUrl, cookies)
                 } else {
                     L.e("MoodleFragment", "Audio source not found in HTML")
@@ -15136,6 +15467,7 @@ class MoodleFragment : Fragment() {
                     entry.status = "failed"
                     entry.errorMessage = "Could not create folder"
                     CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
                     return
                 }
             }
@@ -15170,6 +15502,7 @@ class MoodleFragment : Fragment() {
                     entry.status = "failed"
                     entry.errorMessage = "Server returned HTML instead of file"
                     CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
                     return
                 }
 
@@ -15183,6 +15516,9 @@ class MoodleFragment : Fragment() {
                         L.d("MoodleFragment", "Using filename from header: $actualFileName")
                     }
                 }
+
+                entry.actualFileName = actualFileName
+                CourseDownloadQueue.getInstance().updateEntry(entry)
 
                 val file = File(courseFolder, actualFileName)
 
@@ -15219,19 +15555,18 @@ class MoodleFragment : Fragment() {
                 if (file.exists() && file.length() > 0) {
                     L.d("MoodleFragment", "File created successfully: ${file.absolutePath}")
                     L.d("MoodleFragment", "File size: ${file.length()} bytes")
+                    saveDownloadMetadata(courseFolder, entry.entryName, actualFileName)
 
                     entry.status = "completed"
                     entry.progress = 100
                     CourseDownloadQueue.getInstance().updateEntry(entry)
-
-                    activity?.runOnUiThread {
-                        updateCourseDownloadsCounter()
-                    }
+                    onDownloadComplete(entry)
                 } else {
                     L.e("MoodleFragment", "File was not created or is empty!")
                     entry.status = "failed"
                     entry.errorMessage = "File not created or is empty"
                     CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
                 }
 
             } else {
@@ -15240,6 +15575,7 @@ class MoodleFragment : Fragment() {
                 entry.status = "failed"
                 entry.errorMessage = "HTTP Error: $responseCode"
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
             }
 
         } catch (e: Exception) {
@@ -15247,6 +15583,31 @@ class MoodleFragment : Fragment() {
             entry.status = "failed"
             entry.errorMessage = e.message ?: "Unknown error"
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
+        }
+    }
+
+    private fun saveDownloadMetadata(courseFolder: File, entryName: String, actualFileName: String) {
+        try {
+            val metadataFile = File(courseFolder, ".metadata.json")
+
+            val metadata = if (metadataFile.exists()) {
+                try {
+                    JSONObject(metadataFile.readText())
+                } catch (e: Exception) {
+                    JSONObject()
+                }
+            } else {
+                JSONObject()
+            }
+
+            metadata.put(entryName, actualFileName)
+
+            metadataFile.writeText(metadata.toString(2))
+
+            L.d("MoodleFragment", "Saved metadata: $entryName -> $actualFileName")
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error saving metadata", e)
         }
     }
 
@@ -15333,6 +15694,7 @@ class MoodleFragment : Fragment() {
                 entry.status = "completed"
                 entry.progress = 100
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
 
                 activity?.runOnUiThread {
                     updateCourseDownloadsCounter()
@@ -15342,6 +15704,7 @@ class MoodleFragment : Fragment() {
                 entry.status = "failed"
                 entry.errorMessage = "File not created"
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
             }
 
         } catch (e: Exception) {
@@ -15349,6 +15712,7 @@ class MoodleFragment : Fragment() {
             entry.status = "failed"
             entry.errorMessage = e.message ?: "Unknown error"
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
         }
     }
 
@@ -15533,6 +15897,7 @@ class MoodleFragment : Fragment() {
                 entry.status = "completed"
                 entry.progress = 100
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
 
                 activity?.runOnUiThread {
                     updateCourseDownloadsCounter()
@@ -15542,6 +15907,7 @@ class MoodleFragment : Fragment() {
                 entry.status = "failed"
                 entry.errorMessage = "File not created"
                 CourseDownloadQueue.getInstance().updateEntry(entry)
+                onDownloadComplete(entry)
             }
 
         } catch (e: Exception) {
@@ -15549,6 +15915,7 @@ class MoodleFragment : Fragment() {
             entry.status = "failed"
             entry.errorMessage = e.message ?: "Unknown error"
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
         }
     }
 
@@ -15757,6 +16124,7 @@ class MoodleFragment : Fragment() {
                     val progress = ((index + 1) * 100 / totalFiles)
                     entry.progress = progress
                     CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
 
                 } catch (e: Exception) {
                     L.e("MoodleFragment", "Exception downloading file: ${file.name}", e)
@@ -15774,6 +16142,7 @@ class MoodleFragment : Fragment() {
                 entry.errorMessage = "All files failed to download"
             }
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
 
             activity?.runOnUiThread {
                 updateCourseDownloadsCounter()
@@ -15784,6 +16153,7 @@ class MoodleFragment : Fragment() {
             entry.status = "failed"
             entry.errorMessage = e.message ?: "Unknown error"
             CourseDownloadQueue.getInstance().updateEntry(entry)
+            onDownloadComplete(entry)
         }
     }
 
@@ -15811,14 +16181,6 @@ class MoodleFragment : Fragment() {
                     visibility = View.GONE
                 }
             }
-        }
-    }
-
-    private fun getDisplayPath(): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "Android/data/${requireContext().packageName}/files/HKS_Moodle_Downloads"
-        } else {
-            "Documents/HKS_Moodle_Downloads"
         }
     }
 
