@@ -39,7 +39,6 @@ import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.pdf.PdfRenderer
 import android.net.ConnectivityManager
@@ -50,9 +49,8 @@ import android.provider.Settings
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.BackgroundColorSpan
 import android.text.style.RelativeSizeSpan
-import android.text.style.StrikethroughSpan
-import android.text.style.UnderlineSpan
 import android.util.Base64
 import android.util.TypedValue
 import android.view.Gravity
@@ -354,13 +352,13 @@ class MoodleFragment : Fragment() {
     private var isTextViewerMode = false
     private lateinit var textViewerContainer: FrameLayout
     private lateinit var textContentScrollView: ScrollView
-    private lateinit var lineNumberScrollView: ScrollView
     private lateinit var textViewerContent: TextView
-    private lateinit var lineNumbersContainer: LinearLayout
     private var textSearchDialog: AlertDialog? = null
-    private var searchResults = listOf<Int>()
-    private var currentSearchIndex = 0
-    private var originalBackgroundColor: Int = 0
+    private var textViewerSearchBarVisible = false
+    private var textSearchQuery = ""
+    private var textSearchResults = emptyList<Int>()
+    private var currentTextSearchIndex = -1
+    private lateinit var textSearchHeader: LinearLayout
 
     // dark mode injection
     private var isDarkModeInjected = false
@@ -617,9 +615,8 @@ class MoodleFragment : Fragment() {
         pdfKebabMenu = root.findViewById(R.id.pdfKebabMenu)
         textViewerContainer = root.findViewById(R.id.textViewerContainer)
         textContentScrollView = root.findViewById(R.id.textContentScrollView)
-        lineNumberScrollView = root.findViewById(R.id.lineNumberScrollView)
         textViewerContent = root.findViewById(R.id.textViewerContent)
-        lineNumbersContainer = root.findViewById(R.id.lineNumbersContainer)
+        textSearchHeader = root.findViewById(R.id.textSearchHeader)
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -1566,9 +1563,22 @@ class MoodleFragment : Fragment() {
                 val dialog = AlertDialog.Builder(requireContext())
                     .setTitle(getString(R.string.moodle_auto_login_title))
                     .setView(dialogView)
-                    .setPositiveButton(getString(R.string.moodle_continue)) { _, _ ->
-                        val username = etUsername.text.toString()
-                        val password = etPassword.text.toString()
+                    .setPositiveButton(getString(R.string.moodle_continue)) { dialogInterface, _ ->
+                        val username = etUsername.text.toString().trim()
+                        val password = etPassword.text.toString().trim()
+
+                        if (username.isEmpty() || password.isEmpty()) {
+                            Toast.makeText(requireContext(), "Please enter both username and password", Toast.LENGTH_SHORT).show()
+                            isLoginDialogShown = false
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                if (isFragmentActive && isAdded) {
+                                    showLoginDialog()
+                                }
+                            }, 300)
+                            return@setPositiveButton
+                        }
+
+                        L.d("MoodleFragment", "Dialog submitted - Username: $username, Password length: ${password.length}")
 
                         consecutiveLoginFailures = 0
                         hasLoginFailed = false
@@ -1596,17 +1606,35 @@ class MoodleFragment : Fragment() {
                             }
                         }
 
-                        if (username.isNotEmpty() && password.isNotEmpty()) {
-                            fillLoginForm(username, password)
-                        }
+                        dialogInterface.dismiss()
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            L.d("MoodleFragment", "Dialog dismissed, now filling login form with user-entered credentials")
+                            if (isFragmentActive && isAdded) {
+                                fillLoginForm(username, password)
+                            } else {
+                                L.e("MoodleFragment", "Fragment not active after dialog dismiss")
+                            }
+                        }, 500)
                     }
                     .setNegativeButton(getString(R.string.moodle_cancel)) { _, _ ->
                         isLoginDialogShown = false
                         loginRetryCount = 0
                         consecutiveLoginFailures = 0
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isFragmentActive && isAdded) {
+                                val dontShowDialog = sharedPrefs.getBoolean("moodle_dont_show_login_dialog", false)
+                                if (!dontShowDialog) {
+                                    injectDialogButtonOnLoginPage()
+                                }
+                            }
+                        }, 500)
                     }
                     .setOnDismissListener {
-                        isLoginDialogShown = false
+                        if (!isLoginInProgress) {
+                            isLoginDialogShown = false
+                        }
                     }
                     .show()
 
@@ -3254,6 +3282,18 @@ class MoodleFragment : Fragment() {
         val tab = tabs[index]
 
         if (isTextViewerMode) {
+            if (textViewerSearchBarVisible) {
+                textViewerSearchBarVisible = false
+                textSearchHeader.visibility = View.GONE
+
+                val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+                etTextSearch?.setText("")
+            }
+            clearTextSearchHighlights()
+            textSearchQuery = ""
+            textSearchResults = emptyList()
+            currentTextSearchIndex = -1
+
             isTextViewerMode = false
             textViewerContainer.visibility = View.GONE
             textViewerManager = null
@@ -5085,6 +5125,25 @@ class MoodleFragment : Fragment() {
         }
 
         backPressTime = currentTime
+
+        if (isTextViewerMode) {
+            switchToPdfViewer()
+            return true
+        }
+
+        if (isPdfTab(currentTabIndex) && !tabs[currentTabIndex].isDefault) {
+            val defaultTabIndex = tabs.indexOfFirst { it.isDefault }
+            if (defaultTabIndex != -1) {
+                switchToTab(defaultTabIndex)
+            } else {
+                val targetIndex = (currentTabIndex - 1).coerceAtLeast(0)
+                closeTab(currentTabIndex)
+                if (tabs.isNotEmpty() && targetIndex < tabs.size) {
+                    switchToTab(targetIndex)
+                }
+            }
+            return true
+        }
 
         if (webView.canGoBack() && backPressCount == 1) {
             webView.goBack()
@@ -8852,9 +8911,14 @@ class MoodleFragment : Fragment() {
             return
         }
 
-        val currentPage = (pdfViewerManager?.getCurrentPage() ?: 0) + 1
-        val totalPages = pdfViewerManager?.getPageCount() ?: 0
-        pdfPageCounter.text = getString(R.string.moodle_pdf_page_indicator, currentPage, totalPages)
+        if (isTextViewerMode) {
+            val totalPages = textViewerManager?.getTotalPages() ?: 1
+            pdfPageCounter.text = getString(R.string.moodle_pdf_page_indicator, currentTextViewerPage, totalPages)
+        } else {
+            val currentPage = (pdfViewerManager?.getCurrentPage() ?: 0) + 1
+            val totalPages = pdfViewerManager?.getPageCount() ?: 0
+            pdfPageCounter.text = getString(R.string.moodle_pdf_page_indicator, currentPage, totalPages)
+        }
     }
 
     private fun isPdfTab(index: Int): Boolean {
@@ -8867,17 +8931,19 @@ class MoodleFragment : Fragment() {
         popup.menu.add(0, 1, 0, getString(R.string.moodle_pdf_navigate_to_page)).setIcon(R.drawable.ic_navigate)
         popup.menu.add(0, 2, 0, getString(R.string.moodle_pdf_copy_current_page)).setIcon(R.drawable.ic_copy_text)
 
-        val scrollText = if (pdfViewerManager?.scrollModeEnabled == true) {
-            getString(R.string.moodle_pdf_enable_swipe_mode)
-        } else {
-            getString(R.string.moodle_pdf_enable_scroll_mode)
+        if (!isTextViewerMode) {
+            val scrollText = if (pdfViewerManager?.scrollModeEnabled == true) {
+                getString(R.string.moodle_pdf_enable_swipe_mode)
+            } else {
+                getString(R.string.moodle_pdf_enable_scroll_mode)
+            }
+            val scrollIcon = if (pdfViewerManager?.scrollModeEnabled == true) {
+                R.drawable.ic_scroll_horizontal
+            } else {
+                R.drawable.ic_scroll_vertical
+            }
+            popup.menu.add(0, 3, 0, scrollText).setIcon(scrollIcon)
         }
-        val scrollIcon = if (pdfViewerManager?.scrollModeEnabled == true) {
-            R.drawable.ic_scroll_horizontal
-        } else {
-            R.drawable.ic_scroll_vertical
-        }
-        popup.menu.add(0, 3, 0, scrollText).setIcon(scrollIcon)
 
         try {
             val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
@@ -8889,8 +8955,18 @@ class MoodleFragment : Fragment() {
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showNavigateToPageDialog()
-                2 -> copyCurrentPageText()
-                3 -> togglePdfScrollMode()
+                2 -> {
+                    if (isTextViewerMode) {
+                        copyCurrentTextViewerPage()
+                    } else {
+                        copyCurrentPageText()
+                    }
+                }
+                3 -> {
+                    if (!isTextViewerMode) {
+                        togglePdfScrollMode()
+                    }
+                }
             }
             true
         }
@@ -9480,7 +9556,14 @@ class MoodleFragment : Fragment() {
 
         if (isTextViewerMode) {
             popup.menu.add(0, 1, 0, getString(R.string.text_viewer_switch_to_pdf)).setIcon(R.drawable.ic_pdf_viewer)
-            popup.menu.add(0, 2, 0, getString(R.string.text_viewer_search)).setIcon(R.drawable.ic_search)
+
+            val searchIcon = if (textViewerSearchBarVisible) {
+                R.drawable.ic_search_off
+            } else {
+                R.drawable.ic_search
+            }
+            popup.menu.add(0, 2, 0, getString(R.string.text_viewer_search)).setIcon(searchIcon)
+
             popup.menu.add(0, 3, 0, getString(R.string.text_viewer_preferences)).setIcon(R.drawable.ic_gear)
 
             val darkModeText = if (textViewerManager?.getBackgroundColor() == Color.rgb(30, 30, 30)) {
@@ -9519,7 +9602,7 @@ class MoodleFragment : Fragment() {
             if (isTextViewerMode) {
                 when (item.itemId) {
                     1 -> switchToPdfViewer()
-                    2 -> showTextSearchDialog()
+                    2 -> toggleTextViewerSearchBar()
                     3 -> showTextViewerPreferences()
                     4 -> toggleTextViewerDarkMode()
                 }
@@ -9894,27 +9977,7 @@ class MoodleFragment : Fragment() {
 
     //region **TEXT_VIEWER**
 
-    private fun toggleTextViewerDarkMode() {
-        val currentDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
-        val newDarkMode = !currentDarkMode
-
-        textViewerManager?.setDarkMode(newDarkMode)
-
-        sharedPrefs.edit {
-            putBoolean("text_viewer_dark_mode", newDarkMode)
-        }
-
-        textViewerManager?.let { manager ->
-            applyTextViewerPreferences()
-            val displayWidth = textContentScrollView.width
-            val formattedText = manager.getFormattedText(displayWidth)
-            textViewerContent.text = formattedText
-            generateLineNumbers()
-
-            val bgColor = manager.getBackgroundColor()
-            textViewerContainer.setBackgroundColor(bgColor)
-        }
-    }
+    private var currentTextViewerPage = 1
 
     private fun switchToTextViewer() {
         val pdfState = pdfViewerManager?.getCurrentState()
@@ -9932,7 +9995,7 @@ class MoodleFragment : Fragment() {
 
         backgroundExecutor.execute {
             try {
-                textViewerManager = TextViewerManager(requireContext())
+                textViewerManager = TextViewerManager(requireContext(), sharedPrefs)  // Pass sharedPrefs
 
                 val savedDarkMode = sharedPrefs.getBoolean("text_viewer_dark_mode",
                     pdfViewerManager?.forceDarkMode ?: isDarkTheme)
@@ -9940,7 +10003,6 @@ class MoodleFragment : Fragment() {
                 if (textViewerManager?.parsePdfToText(pdfFile, savedDarkMode) == true) {
                     activity?.runOnUiThread {
                         loadingDialog.dismiss()
-                        saveOriginalBackground()
                         displayTextViewer()
                     }
                 } else {
@@ -9959,16 +10021,14 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun saveOriginalBackground() {
-        originalBackgroundColor = (view?.findViewById<View>(android.R.id.content)?.background as? ColorDrawable)?.color
-            ?: requireContext().getThemeColor(R.attr.homeworkFragmentBackgroundColor)
-    }
-
     private fun displayTextViewer() {
         isTextViewerMode = true
+        currentTextViewerPage = 1
 
         pdfContainer.visibility = View.GONE
         textViewerContainer.visibility = View.VISIBLE
+
+        setupTextViewerSearchListeners()
 
         applyTextViewerPreferences()
 
@@ -9976,33 +10036,27 @@ class MoodleFragment : Fragment() {
         val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
         textViewerContent.text = formattedText
 
-        generateLineNumbers()
-
-        textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            lineNumberScrollView.scrollTo(0, scrollY)
-        }
+        setupTextViewerPageTracking()
 
         updatePdfControls()
     }
 
-    private fun generateLineNumbers() {
-        lineNumbersContainer.removeAllViews()
-        val totalLines = textViewerManager?.getTotalLines() ?: 0
-        val fontSize = textViewerManager?.getFontSize() ?: 14
-        val lineHeight = (fontSize * 1.2f * resources.displayMetrics.density).toInt()
+    private fun setupTextViewerPageTracking() {
+        textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            val totalPages = textViewerManager?.getTotalPages() ?: 1
+            val contentHeight = textViewerContent.height
+            val scrollViewHeight = textContentScrollView.height
 
-        for (i in 1..totalLines) {
-            val lineNumber = TextView(requireContext()).apply {
-                text = i.toString()
-                textSize = (fontSize - 2).toFloat()
-                setTextColor(requireContext().getThemeColor(R.attr.textSecondaryColor))
-                alpha = 0.6f
-                gravity = Gravity.END
-                setPadding(4, 0, 8, 0)
-                minWidth = (40 * resources.displayMetrics.density).toInt()
-                height = lineHeight
+            if (contentHeight > 0) {
+                val scrollProgress = scrollY.toFloat() / (contentHeight - scrollViewHeight).coerceAtLeast(1)
+                val calculatedPage = (scrollProgress * totalPages).toInt() + 1
+                val newPage = calculatedPage.coerceIn(1, totalPages)
+
+                if (newPage != currentTextViewerPage) {
+                    currentTextViewerPage = newPage
+                    updatePdfControls()
+                }
             }
-            lineNumbersContainer.addView(lineNumber)
         }
     }
 
@@ -10018,19 +10072,8 @@ class MoodleFragment : Fragment() {
             textViewerContent.typeface = fontFamily
             textViewerContent.setBackgroundColor(bgColor)
 
-            lineNumbersContainer.setBackgroundColor(bgColor)
-            for (i in 0 until lineNumbersContainer.childCount) {
-                val lineNumberView = lineNumbersContainer.getChildAt(i) as? TextView
-                lineNumberView?.apply {
-                    textSize = (fontSize - 2).toFloat()
-                    setTextColor(fontColor)
-                    alpha = 0.6f
-                }
-            }
-
             textViewerContainer.setBackgroundColor(bgColor)
             textContentScrollView.setBackgroundColor(bgColor)
-            lineNumberScrollView.setBackgroundColor(bgColor)
         }
     }
 
@@ -10038,6 +10081,18 @@ class MoodleFragment : Fragment() {
         isTextViewerMode = false
         textViewerContainer.visibility = View.GONE
         pdfContainer.visibility = View.VISIBLE
+
+        if (textViewerSearchBarVisible) {
+            textViewerSearchBarVisible = false
+            textSearchHeader.visibility = View.GONE
+
+            val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+            etTextSearch?.setText("")
+        }
+        clearTextSearchHighlights()
+        textSearchQuery = ""
+        textSearchResults = emptyList()
+        currentTextSearchIndex = -1
 
         val textViewerDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
         val pdfDarkMode = pdfViewerManager?.forceDarkMode ?: isDarkTheme
@@ -10059,93 +10114,299 @@ class MoodleFragment : Fragment() {
         updatePdfControls()
     }
 
-    private fun showTextSearchDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_text_search, null)
-        val etSearchQuery = dialogView.findViewById<EditText>(R.id.etSearchQuery)
-        val btnClearSearchQuery = dialogView.findViewById<ImageButton>(R.id.btnClearSearchQuery)
-        val tvSearchResults = dialogView.findViewById<TextView>(R.id.tvSearchResults)
-        val btnPreviousResult = dialogView.findViewById<ImageButton>(R.id.btnPreviousResult)
-        val btnNextResult = dialogView.findViewById<ImageButton>(R.id.btnNextResult)
+    private fun toggleTextViewerSearchBar() {
+        textViewerSearchBarVisible = !textViewerSearchBarVisible
 
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.text_viewer_search))
-            .setView(dialogView)
-            .setNegativeButton(getString(R.string.moodle_close), null)
-            .create()
+        val animationsEnabled = Settings.Global.getFloat(
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f
+        ) != 0.0f
 
-        btnClearSearchQuery.setOnClickListener {
-            etSearchQuery.setText("")
-            searchResults = emptyList()
-            currentSearchIndex = 0
-            tvSearchResults.text = getString(R.string.text_viewer_no_results)
-            btnPreviousResult.isEnabled = false
-            btnNextResult.isEnabled = false
+        val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+
+        if (animationsEnabled) {
+            if (textViewerSearchBarVisible) {
+                textSearchHeader.visibility = View.VISIBLE
+
+                textSearchHeader.measure(
+                    View.MeasureSpec.makeMeasureSpec(textSearchHeader.parent.let { (it as View).width }, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val targetHeight = textSearchHeader.measuredHeight
+
+                val layoutParams = textSearchHeader.layoutParams
+                layoutParams.height = 0
+                textSearchHeader.layoutParams = layoutParams
+
+                ValueAnimator.ofInt(0, targetHeight).apply {
+                    duration = 250
+                    interpolator = DecelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        textSearchHeader.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        textSearchHeader.layoutParams = layoutParams
+                        val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+                        etTextSearch.requestFocus()
+                        imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+                    }
+
+                    start()
+                }
+            } else {
+                val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+                imm.hideSoftInputFromWindow(etTextSearch.windowToken, 0)
+
+                val currentHeight = textSearchHeader.height
+                val layoutParams = textSearchHeader.layoutParams
+
+                ValueAnimator.ofInt(currentHeight, 0).apply {
+                    duration = 200
+                    interpolator = AccelerateInterpolator()
+
+                    addUpdateListener { animator ->
+                        val animatedHeight = animator.animatedValue as Int
+                        layoutParams.height = animatedHeight
+                        textSearchHeader.layoutParams = layoutParams
+                    }
+
+                    doOnEnd {
+                        textSearchHeader.visibility = View.GONE
+                        layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        textSearchHeader.layoutParams = layoutParams
+                        etTextSearch.clearFocus()
+                        etTextSearch.setText("")
+
+                        clearTextSearchHighlights()
+                    }
+
+                    start()
+                }
+            }
+        } else {
+            val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+
+            if (textViewerSearchBarVisible) {
+                textSearchHeader.visibility = View.VISIBLE
+                etTextSearch.requestFocus()
+                imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+            } else {
+                imm.hideSoftInputFromWindow(etTextSearch.windowToken, 0)
+                textSearchHeader.visibility = View.GONE
+                etTextSearch.clearFocus()
+                etTextSearch.setText("")
+                clearTextSearchHighlights()
+            }
+
+            val layoutParams = textSearchHeader.layoutParams
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            textSearchHeader.layoutParams = layoutParams
+        }
+    }
+
+    private fun setupTextViewerSearchListeners() {
+        val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+        val btnClearTextSearch = textSearchHeader.findViewById<ImageButton>(R.id.btnClearTextSearch)
+        val tvSearchResultsCount = textSearchHeader.findViewById<TextView>(R.id.tvSearchResultsCount)
+        val btnPrevTextResult = textSearchHeader.findViewById<ImageButton>(R.id.btnPrevTextResult)
+        val btnNextTextResult = textSearchHeader.findViewById<ImageButton>(R.id.btnNextTextResult)
+
+        // Update button icon based on search query
+        val updateClearButton = {
+            if (etTextSearch.text.isEmpty()) {
+                btnClearTextSearch.setImageResource(R.drawable.ic_search_off)
+                btnClearTextSearch.contentDescription = getString(R.string.moodle_close_search)
+            } else {
+                btnClearTextSearch.setImageResource(R.drawable.ic_cancel)
+                btnClearTextSearch.contentDescription = getString(R.string.moodle_clear_search)
+            }
         }
 
-        etSearchQuery.addTextChangedListener(object : TextWatcher {
+        updateClearButton()
+
+        btnClearTextSearch.setOnClickListener {
+            if (etTextSearch.text.isEmpty()) {
+                toggleTextViewerSearchBar()
+            } else {
+                etTextSearch.setText("")
+                textSearchResults = emptyList()
+                currentTextSearchIndex = -1
+                tvSearchResultsCount.visibility = View.GONE
+                btnPrevTextResult.visibility = View.GONE
+                btnNextTextResult.visibility = View.GONE
+                clearTextSearchHighlights()
+            }
+        }
+
+        etTextSearch.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
+                updateClearButton()
+
                 val query = s.toString()
-                if (query.isNotEmpty()) {
-                    searchResults = textViewerManager?.searchText(query) ?: emptyList()
-                    currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
-                    updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                    if (searchResults.isNotEmpty()) {
-                        highlightSearchResult(searchResults[0])
-                    }
+                textSearchQuery = query
+
+                if (query.isEmpty()) {
+                    textSearchResults = emptyList()
+                    currentTextSearchIndex = -1
+                    tvSearchResultsCount.visibility = View.GONE
+                    btnPrevTextResult.visibility = View.GONE
+                    btnNextTextResult.visibility = View.GONE
+                    clearTextSearchHighlights()
+                    return
+                }
+
+                textSearchResults = textViewerManager?.searchText(query) ?: emptyList()
+
+                if (textSearchResults.isNotEmpty()) {
+                    currentTextSearchIndex = 0
+                    updateTextSearchUI(tvSearchResultsCount, btnPrevTextResult, btnNextTextResult)
+                    highlightAndScrollToSearchResult(textSearchResults[0], query)
                 } else {
-                    searchResults = emptyList()
-                    currentSearchIndex = 0
-                    tvSearchResults.text = getString(R.string.text_viewer_no_results)
-                    btnPreviousResult.isEnabled = false
-                    btnNextResult.isEnabled = false
+                    currentTextSearchIndex = -1
+                    tvSearchResultsCount.text = getString(R.string.text_viewer_no_results)
+                    tvSearchResultsCount.visibility = View.VISIBLE
+                    btnPrevTextResult.visibility = View.GONE
+                    btnNextTextResult.visibility = View.GONE
+                    clearTextSearchHighlights()
                 }
             }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        btnPreviousResult.setOnClickListener {
-            if (currentSearchIndex > 0) {
-                currentSearchIndex--
-                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                highlightSearchResult(searchResults[currentSearchIndex])
+        btnPrevTextResult.setOnClickListener {
+            if (currentTextSearchIndex > 0) {
+                currentTextSearchIndex--
+                updateTextSearchUI(tvSearchResultsCount, btnPrevTextResult, btnNextTextResult)
+                highlightAndScrollToSearchResult(textSearchResults[currentTextSearchIndex], textSearchQuery)
             }
         }
 
-        btnNextResult.setOnClickListener {
-            if (currentSearchIndex < searchResults.size - 1) {
-                currentSearchIndex++
-                updateSearchResults(tvSearchResults, btnPreviousResult, btnNextResult)
-                highlightSearchResult(searchResults[currentSearchIndex])
+        btnNextTextResult.setOnClickListener {
+            if (currentTextSearchIndex < textSearchResults.size - 1) {
+                currentTextSearchIndex++
+                updateTextSearchUI(tvSearchResultsCount, btnPrevTextResult, btnNextTextResult)
+                highlightAndScrollToSearchResult(textSearchResults[currentTextSearchIndex], textSearchQuery)
             }
         }
-
-        textSearchDialog = dialog
-        dialog.show()
-
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
-    private fun updateSearchResults(tvResults: TextView, btnPrev: ImageButton, btnNext: ImageButton) {
-        if (searchResults.isEmpty()) {
-            tvResults.text = getString(R.string.text_viewer_no_results)
-            btnPrev.isEnabled = false
-            btnNext.isEnabled = false
+    private fun updateTextSearchUI(
+        tvCount: TextView,
+        btnPrev: ImageButton,
+        btnNext: ImageButton
+    ) {
+        if (textSearchResults.isEmpty()) {
+            tvCount.visibility = View.GONE
+            btnPrev.visibility = View.GONE
+            btnNext.visibility = View.GONE
         } else {
-            tvResults.text = getString(R.string.text_viewer_search_results, currentSearchIndex + 1, searchResults.size)
-            btnPrev.isEnabled = currentSearchIndex > 0
-            btnNext.isEnabled = currentSearchIndex < searchResults.size - 1
+            tvCount.text = "${currentTextSearchIndex + 1}/${textSearchResults.size}"
+            tvCount.visibility = View.VISIBLE
+            btnPrev.visibility = View.VISIBLE
+            btnNext.visibility = View.VISIBLE
+            btnPrev.isEnabled = currentTextSearchIndex > 0
+            btnNext.isEnabled = currentTextSearchIndex < textSearchResults.size - 1
         }
     }
 
-    private fun highlightSearchResult(position: Int) {
+    private fun highlightAndScrollToSearchResult(position: Int, query: String) {
         textContentScrollView.post {
+            val currentText = textViewerContent.text.toString()
+            val spannable = SpannableStringBuilder(currentText)
+
+            val existingSpans = spannable.getSpans(0, spannable.length, BackgroundColorSpan::class.java)
+            existingSpans.forEach { spannable.removeSpan(it) }
+
+            var index = 0
+            val highlightColor = if (isDarkTheme) {
+                Color.argb(100, 255, 235, 59) // yellow
+            } else {
+                Color.argb(100, 255, 193, 7) // orange
+            }
+
+            val currentHighlightColor = if (isDarkTheme) {
+                Color.argb(180, 76, 175, 80) // green
+            } else {
+                Color.argb(180, 139, 195, 74) // light green
+            }
+
+            while (index < currentText.length) {
+                index = currentText.indexOf(query, index, ignoreCase = true)
+                if (index == -1) break
+
+                val color = if (index == position) currentHighlightColor else highlightColor
+                spannable.setSpan(
+                    BackgroundColorSpan(color),
+                    index,
+                    index + query.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                index += query.length
+            }
+
+            textViewerContent.text = spannable
+
             val layout = textViewerContent.layout
             if (layout != null) {
                 val line = layout.getLineForOffset(position)
                 val y = layout.getLineTop(line)
-                textContentScrollView.smoothScrollTo(0, y - 100)
+                val scrollViewHeight = textContentScrollView.height
+                val scrollY = (y - scrollViewHeight / 3).coerceAtLeast(0)
+                textContentScrollView.smoothScrollTo(0, scrollY)
+            }
+        }
+    }
+
+    private fun clearTextSearchHighlights() {
+        val currentText = textViewerContent.text
+        if (currentText is SpannableStringBuilder) {
+            val existingSpans = currentText.getSpans(0, currentText.length, BackgroundColorSpan::class.java)
+            existingSpans.forEach { currentText.removeSpan(it) }
+        }
+    }
+
+    private fun toggleTextViewerDarkMode() {
+        val currentDarkMode = textViewerManager?.getDarkMode() ?: isDarkTheme
+        val newDarkMode = !currentDarkMode
+
+        textViewerManager?.setDarkMode(newDarkMode)
+
+        sharedPrefs.edit {
+            putBoolean("text_viewer_dark_mode", newDarkMode)
+        }
+
+        val pdfState = pdfViewerManager?.getCurrentState()
+        val pdfFile = pdfState?.file
+
+        if (pdfFile != null && pdfFile.exists()) {
+            val loadingDialog = AlertDialog.Builder(requireContext())
+                .setMessage(getString(R.string.moodle_applying_theme))
+                .setCancelable(false)
+                .show()
+
+            backgroundExecutor.execute {
+                try {
+                    textViewerManager?.parsePdfToText(pdfFile, newDarkMode)
+
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                        applyTextViewerPreferences()
+                        val displayWidth = textContentScrollView.width
+                        val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
+                        textViewerContent.text = formattedText
+                    }
+                } catch (e: Exception) {
+                    L.e("MoodleFragment", "Error toggling dark mode", e)
+                    activity?.runOnUiThread {
+                        loadingDialog.dismiss()
+                    }
+                }
             }
         }
     }
@@ -10232,51 +10493,29 @@ class MoodleFragment : Fragment() {
             val normalText = getString(R.string.text_viewer_preview_normal)
             val boldText = getString(R.string.text_viewer_preview_bold)
             val italicText = getString(R.string.text_viewer_preview_italic)
-            val underlineText = getString(R.string.text_viewer_preview_underline)
-            val strikeText = getString(R.string.text_viewer_preview_strike)
 
             if (!disableFormat) {
-                // title
                 val titleStart = previewSpannable.length
-                previewSpannable.append(titleText).append("\n")
+                previewSpannable.append(titleText).append("\n\n")
                 previewSpannable.setSpan(StyleSpan(Typeface.BOLD), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 previewSpannable.setSpan(RelativeSizeSpan(1.4f), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
-                // normal text
                 previewSpannable.append(normalText).append(" ")
 
-                // bold
                 val boldStart = previewSpannable.length
                 previewSpannable.append(boldText)
                 previewSpannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
                 previewSpannable.append(" ")
 
-                // italic
                 val italicStart = previewSpannable.length
                 previewSpannable.append(italicText)
                 previewSpannable.setSpan(StyleSpan(Typeface.ITALIC), italicStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-
-                previewSpannable.append(" ")
-
-                // underline
-                val underlineStart = previewSpannable.length
-                previewSpannable.append(underlineText)
-                previewSpannable.setSpan(UnderlineSpan(), underlineStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-
-                previewSpannable.append(".\n\n")
-
-                // strikethrough
-                val strikeStart = previewSpannable.length
-                previewSpannable.append(strikeText)
-                previewSpannable.setSpan(StrikethroughSpan(), strikeStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             } else {
-                previewSpannable.append(titleText).append("\n")
+                previewSpannable.append(titleText).append("\n\n")
                 previewSpannable.append(normalText).append(" ")
                 previewSpannable.append(boldText).append(" ")
-                previewSpannable.append(italicText).append(" ")
-                previewSpannable.append(underlineText).append(".\n\n")
-                previewSpannable.append(strikeText)
+                previewSpannable.append(italicText)
             }
 
             previewSpannable
@@ -10385,19 +10624,12 @@ class MoodleFragment : Fragment() {
                     putBoolean("text_viewer_disable_formatting", checkBoxDisableFormatting.isChecked)
                     putInt("${fontColorKey}_index", spinnerFontColor.selectedItemPosition)
                     putInt("${bgColorKey}_index", spinnerBgColor.selectedItemPosition)
-                    apply()
                 }
 
-                textViewerManager?.setDarkMode(currentDarkMode)
                 applyTextViewerPreferences()
-
                 val displayWidth = textContentScrollView.width
                 val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
                 textViewerContent.text = formattedText
-                generateLineNumbers()
-
-                val bgColor = textViewerManager?.getBackgroundColor() ?: Color.WHITE
-                textViewerContainer.setBackgroundColor(bgColor)
             }
             .setNegativeButton(getString(R.string.moodle_cancel), null)
             .create()
@@ -10407,6 +10639,19 @@ class MoodleFragment : Fragment() {
         val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun copyCurrentTextViewerPage() {
+        val pageText = textViewerContent.text.toString()
+
+        if (pageText.isNotEmpty()) {
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText(getString(R.string.moodle_text_viewer_page), pageText)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(requireContext(), getString(R.string.text_viewer_text_copied), Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.text_viewer_no_text), Toast.LENGTH_SHORT).show()
+        }
     }
 
     //endregion
@@ -14877,9 +15122,10 @@ class MoodleFragment : Fragment() {
         val downloadedKeys = mutableSetOf<String>()
         val currentCourse = webView.title ?: return downloadedKeys
 
-        val cleanCourseName = sanitizeFileName(currentCourse)
+        val cleanedCourseName = cleanCourseName(currentCourse)
+        val sanitizedCourseName = sanitizeFileName(cleanedCourseName)
 
-        L.d("MoodleFragment", "Checking downloads for course: $cleanCourseName")
+        L.d("MoodleFragment", "Checking downloads for course: $sanitizedCourseName")
 
         if (!downloadsDirectory.exists()) {
             return downloadedKeys
@@ -14890,8 +15136,8 @@ class MoodleFragment : Fragment() {
         courseFolders?.forEach { courseFolder ->
             val folderName = courseFolder.name
 
-            if (folderName == cleanCourseName ||
-                folderName.contains(cleanCourseName, ignoreCase = true)) {
+            if (folderName == sanitizedCourseName ||
+                folderName.contains(sanitizedCourseName, ignoreCase = true)) {
 
                 L.d("MoodleFragment", "Found matching course folder: $folderName")
 
@@ -15009,9 +15255,25 @@ class MoodleFragment : Fragment() {
         }
     }
 
+    private fun cleanCourseName(courseName: String): String {
+        var cleaned = courseName
+
+        if (cleaned.startsWith("Kurs: ")) {
+            cleaned = cleaned.removePrefix("Kurs: ")
+        }
+
+        if (cleaned.endsWith(" | Heinrich-Kleyer-Schule: Moodle")) {
+            cleaned = cleaned.removeSuffix(" | Heinrich-Kleyer-Schule: Moodle")
+        }
+
+        return cleaned.trim()
+    }
+
     private fun queueCourseEntriesForDownload(entries: List<CourseEntry>) {
         val downloadQueue = CourseDownloadQueue.getInstance()
         val currentCourse = webView.title ?: "Unknown Course"
+
+        val cleanedCourseName = cleanCourseName(currentCourse)
 
         entries.forEach { entry ->
             val fileName = when {
@@ -15033,7 +15295,7 @@ class MoodleFragment : Fragment() {
             }
 
             downloadQueue.addToQueue(
-                courseName = currentCourse,
+                courseName = cleanedCourseName,
                 entryName = entry.name,
                 url = entry.url,
                 fileName = fileName,
@@ -15594,7 +15856,7 @@ class MoodleFragment : Fragment() {
             val metadata = if (metadataFile.exists()) {
                 try {
                     JSONObject(metadataFile.readText())
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     JSONObject()
                 }
             } else {

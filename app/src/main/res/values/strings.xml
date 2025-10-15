@@ -1705,7 +1705,6 @@
     <string name="text_viewer_color_white">Weiß</string>
     <string name="text_viewer_color_light_blue">Hellblau</string>
     <string name="text_viewer_color_light_green">Hellgrün</string>
-    <string name="moodle_save">Speichern</string>
     <string name="text_viewer_bg_color">Hintergrundfarbe</string>
     <string name="text_viewer_bg_dark">Dunkelgrau</string>
     <string name="text_viewer_bg_darker">Dunkleres Grau</string>
@@ -1719,6 +1718,8 @@
     <string name="text_viewer_preview_italic">kursiv</string>
     <string name="text_viewer_preview_underline">unterstrichen</string>
     <string name="text_viewer_preview_strike">Durchgestrichener Text</string>
+    <string name="text_viewer_text_copied">Text in Zwischenablage kopiert</string>
+    <string name="text_viewer_no_text">Kein Text zum Kopieren</string>
     <!-- course_entry_download -->
     <string name="moodle_select_entries_to_download">Einträge zum Herunterladen auswählen</string>
     <string name="moodle_select_all">Alle auswählen</string>
@@ -1797,7 +1798,7 @@
     <string name="moodle_open_files_app">Dateien-App öffnen</string>
     <string name="moodle_navigate_to_folder_instruction">Navigiere zu: Interner Speicher → Android → data → %s → files → HKS_Moodle_Downloads</string>
     <string name="moodle_no_file_manager_found">Kein Dateimanager gefunden</string>
-    <string name="moodle_open_with_file_manager_instruction">Du kannst auf diesen Ordner mit jeder Dateimanager-App zugreifen, indem du zum oben angezeigten Pfad navigierst.</string>
+    <string name="moodle_open_with_file_manager_instruction">Du kannst auf diesen Ordner mit einer Dateimanager-App zugreifen, indem du zum oben angezeigten Pfad navigierst.</string>
     <string name="moodle_download_location_info">Download-Speicherort-Info</string>
     <string name="moodle_about_downloads">Über Downloads</string>
     <string name="moodle_download_location_explanation">Heruntergeladene Dateien werden im privaten Speicherordner der App gespeichert. Dies stellt sicher, dass die App auf allen Android-Versionen die Berechtigung hat, Dateien zu speichern.</string>
@@ -1824,5 +1825,8 @@
     <string name="moodle_cda_entries">Einträge</string>
     <string name="moodle_cda_entries_singular">Eintrag</string>
     <string name="moodle_no_downloads">Noch keine Downloads.\nLade Kursmaterialien von Moodle herunter, um sie hier zu sehen.</string>
+    <string name="moodle_close_search">Suche schließen</string>
+    <string name="moodle_text_viewer_page">Text-Viewer-Seite</string>
+    <string name="moodle_save">Speichern</string>
 
 </resources>

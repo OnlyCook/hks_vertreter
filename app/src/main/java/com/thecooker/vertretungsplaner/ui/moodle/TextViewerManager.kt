@@ -15,62 +15,51 @@ import java.io.File
 import java.io.FileInputStream
 import kotlin.math.abs
 
-class TextViewerManager(private val context: Context) {
-
-    data class TextPage(
-        val pageNumber: Int,
-        val textElements: List<TextElement>,
-        val hasHeader: Boolean = false,
-        val hasFooter: Boolean = false
-    )
+class TextViewerManager(private val context: Context, sharedPreferences: SharedPreferences) {
 
     data class TextElement(
         val text: String,
         val x: Float,
         val y: Float,
         val width: Float,
-        val height: Float,
         val fontSize: Float,
         val isBold: Boolean = false,
         val isItalic: Boolean = false,
-        val isUnderlined: Boolean = false,
-        val isStrikethrough: Boolean = false,
-        val isImage: Boolean = false,
-        val elementType: ElementType = ElementType.NORMAL
+        val pageNumber: Int = 1
     )
 
-    enum class ElementType {
-        NORMAL, HEADER, FOOTER, TITLE, TABLE_CELL, LIST_ITEM, IMAGE
-    }
+    data class ParsedPage(
+        val pageNumber: Int,
+        val elements: List<TextElement>,
+        val pageHeight: Float
+    )
 
-    private var pages = listOf<TextPage>()
-    private var sharedPrefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+    private var pages = listOf<ParsedPage>()
+    private var sharedPrefs: SharedPreferences = sharedPreferences
     private var isDarkMode = false
-    private var baseFontSize = 12f
-    private val pageHeight = mutableMapOf<Int, Float>()
+    private var averageFontSize = 12f
 
     fun parsePdfToText(pdfFile: File, darkMode: Boolean): Boolean {
         isDarkMode = darkMode
         return try {
             val fileInputStream = FileInputStream(pdfFile)
             val reader = PdfReader(fileInputStream)
-            val pagesList = mutableListOf<TextPage>()
+            val pagesList = mutableListOf<ParsedPage>()
 
             for (pageNum in 1..reader.numberOfPages) {
                 val elements = extractPageElements(reader, pageNum)
+                val pageSize = reader.getPageSize(pageNum)
 
                 if (pageNum == 1 && elements.isNotEmpty()) {
-                    baseFontSize = elements.filter { !it.isImage }
+                    // Calculate average font size from most common size
+                    averageFontSize = elements
                         .map { it.fontSize }
                         .groupingBy { it }
                         .eachCount()
                         .maxByOrNull { it.value }?.key ?: 12f
                 }
 
-                val sortedElements = sortAndGroupElements(elements, pageNum)
-                val (hasHeader, hasFooter) = detectHeaderFooter(sortedElements, pageNum)
-
-                pagesList.add(TextPage(pageNum, sortedElements, hasHeader, hasFooter))
+                pagesList.add(ParsedPage(pageNum, elements, pageSize.height))
             }
 
             reader.close()
@@ -78,7 +67,7 @@ class TextViewerManager(private val context: Context) {
             pages = pagesList
             true
         } catch (e: Exception) {
-            L.e("TextViewerManager", "Error parsing PDF to text", e)
+            L.e("TextViewerManager", "Error parsing PDF", e)
             false
         }
     }
@@ -86,281 +75,338 @@ class TextViewerManager(private val context: Context) {
     private fun extractPageElements(reader: PdfReader, pageNum: Int): List<TextElement> {
         val elements = mutableListOf<TextElement>()
 
-        try {
-            val strategy = object : SimpleTextExtractionStrategy() {
-                val textElements = mutableListOf<TextElement>()
+        val strategy = object : SimpleTextExtractionStrategy() {
+            val textElements = mutableListOf<TextElement>()
 
-                override fun renderText(renderInfo: TextRenderInfo) {
-                    val text = renderInfo.text
-                    if (text.isNullOrBlank()) return
+            override fun renderText(renderInfo: TextRenderInfo) {
+                val text = renderInfo.text
+                if (text.isNullOrBlank()) return
 
-                    val baseline = renderInfo.baseline
-                    val ascentLine = renderInfo.ascentLine
+                val baseline = renderInfo.baseline
+                val ascentLine = renderInfo.ascentLine
 
-                    val x = baseline.startPoint.get(Vector.I1)
-                    val y = baseline.startPoint.get(Vector.I2)
-                    val width = baseline.length
+                val x = baseline.startPoint.get(Vector.I1)
+                val y = baseline.startPoint.get(Vector.I2)
+                val width = baseline.length
 
-                    val fontSize = try {
-                        ascentLine.startPoint.get(Vector.I2) - baseline.startPoint.get(Vector.I2)
-                    } catch (_: Exception) {
-                        12f
-                    }
-
-                    val font = renderInfo.font
-                    val fontName = font?.postscriptFontName?.lowercase() ?: ""
-
-                    val isBold = fontName.contains("bold") || fontName.contains("black") ||
-                            fontName.contains("heavy") || fontName.contains("semibold") ||
-                            fontName.contains("demi")
-                    val isItalic = fontName.contains("italic") || fontName.contains("oblique") ||
-                            fontName.contains("slanted")
-
-                    textElements.add(TextElement(
-                        text = text,
-                        x = x,
-                        y = y,
-                        width = width,
-                        height = fontSize,
-                        fontSize = fontSize,
-                        isBold = isBold,
-                        isItalic = isItalic
-                    ))
+                val fontSize = try {
+                    ascentLine.startPoint.get(Vector.I2) - baseline.startPoint.get(Vector.I2)
+                } catch (_: Exception) {
+                    12f
                 }
 
-                fun getElements(): List<TextElement> = textElements
+                val font = renderInfo.font
+                val fontName = font?.postscriptFontName?.lowercase() ?: ""
+
+                val isBold = fontName.contains("bold") || fontName.contains("black") ||
+                        fontName.contains("heavy") || fontName.contains("semibold")
+                val isItalic = fontName.contains("italic") || fontName.contains("oblique")
+
+                textElements.add(TextElement(
+                    text = text,
+                    x = x,
+                    y = y,
+                    width = width,
+                    fontSize = fontSize,
+                    isBold = isBold,
+                    isItalic = isItalic,
+                    pageNumber = pageNum
+                ))
             }
-
-            PdfTextExtractor.getTextFromPage(reader, pageNum, strategy)
-            elements.addAll(strategy.getElements())
-
-            val page = reader.getPageSize(pageNum)
-            pageHeight[pageNum] = page.height
-
-        } catch (e: Exception) {
-            L.e("TextViewerManager", "Error extracting page elements", e)
         }
+
+        PdfTextExtractor.getTextFromPage(reader, pageNum, strategy)
+        elements.addAll(strategy.textElements)
 
         return elements
     }
 
-    private fun sortAndGroupElements(elements: List<TextElement>, pageNum: Int): List<TextElement> {
-        if (elements.isEmpty()) return emptyList()
-
-        val sorted = elements.sortedWith(compareBy(
-            { -it.y },
-            { it.x }
-        ))
-
-        val grouped = mutableListOf<TextElement>()
-        var currentLineElements = mutableListOf<TextElement>()
-        var currentLineY = sorted.firstOrNull()?.y ?: 0f
-        val lineThreshold = 4f
-
-        for (element in sorted) {
-            if (abs(element.y - currentLineY) <= lineThreshold) {
-                currentLineElements.add(element)
-            } else {
-                if (currentLineElements.isNotEmpty()) {
-                    grouped.addAll(mergeLineElements(currentLineElements, pageNum))
-                }
-                currentLineElements = mutableListOf(element)
-                currentLineY = element.y
-            }
-        }
-
-        if (currentLineElements.isNotEmpty()) {
-            grouped.addAll(mergeLineElements(currentLineElements, pageNum))
-        }
-
-        return grouped
-    }
-
-    private fun mergeLineElements(lineElements: List<TextElement>, pageNum: Int = 0): List<TextElement> {
-        if (lineElements.isEmpty()) return emptyList()
-
-        val sorted = lineElements.sortedBy { it.x }
-        val merged = mutableListOf<TextElement>()
-
-        var currentElement: TextElement? = null
-
-        val nonImageElements = sorted.filter { !it.isImage }
-        if (nonImageElements.isEmpty()) return sorted
-
-        val avgFontSize = nonImageElements.map { it.fontSize }.average().toFloat()
-        val charWidth = avgFontSize * 0.5f
-
-        for (element in sorted) {
-            if (element.isImage) {
-                currentElement?.let { merged.add(it) }
-                merged.add(element)
-                currentElement = null
-            } else if (currentElement == null) {
-                currentElement = element
-            } else {
-                val gap = element.x - (currentElement.x + currentElement.width)
-                val formattingMatches = currentElement.fontSize == element.fontSize &&
-                        currentElement.isBold == element.isBold &&
-                        currentElement.isItalic == element.isItalic
-
-                when {
-                    // elements are very close or overlapping slightly -> always merge
-                    gap < 0.2f && formattingMatches -> {
-                        currentElement = currentElement.copy(
-                            text = currentElement.text + element.text,
-                            width = element.x + element.width - currentElement.x
-                        )
-                    }
-                    // small gap (0.2-1.5) with matching formatting -> likely same word: merge with space
-                    gap in 0.2f..1.5f && formattingMatches -> {
-                        currentElement = currentElement.copy(
-                            text = currentElement.text + " " + element.text,
-                            width = element.x + element.width - currentElement.x
-                        )
-                    }
-                    // normal word gap (1.5-6) with matching formatting -> merge with space
-                    gap in 1.5f..6f && formattingMatches -> {
-                        currentElement = currentElement.copy(
-                            text = currentElement.text + " " + element.text,
-                            width = element.x + element.width - currentElement.x
-                        )
-                    }
-                    else -> {
-                        merged.add(currentElement)
-                        currentElement = element
-                    }
-                }
-            }
-        }
-
-        currentElement?.let { merged.add(it) }
-        return merged
-    }
-
-    private fun detectHeaderFooter(elements: List<TextElement>, pageNum: Int): Pair<Boolean, Boolean> {
-        if (elements.isEmpty()) return Pair(false, false)
-
-        val height = pageHeight[pageNum] ?: 800f
-        val headerThreshold = height * 0.90f // top 10%
-        val footerThreshold = height * 0.10f // bottom 10%
-
-        var hasHeader = false
-        var hasFooter = false
-
-        for (element in elements) {
-            if (!element.isImage) {
-                if (element.y > headerThreshold) {
-                    hasHeader = true
-                }
-                if (element.y < footerThreshold) {
-                    hasFooter = true
-                }
-            }
-        }
-
-        return Pair(hasHeader, hasFooter)
-    }
-
-    fun getFormattedText(maxLineWidth: Int): SpannableStringBuilder {
+    fun getFormattedText(displayWidth: Int): SpannableStringBuilder {
         val fullText = SpannableStringBuilder()
-        val disableFormatting = sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
+        val disableFormatting = getDisableFormatting()
 
-        for ((pageIndex, page) in pages.withIndex()) {
-            if (pageIndex > 0) {
-                addPageSeparator(fullText, page.pageNumber)
+        for ((index, page) in pages.withIndex()) {
+            if (index > 0) {
+                addPageDivider(fullText, page.pageNumber)
             }
 
-            val nonHeaderFooterElements = page.textElements.filter { element ->
-                when (element.elementType) {
-                    ElementType.HEADER -> pageIndex == 0
-                    ElementType.FOOTER -> false
-                    else -> true
-                }
-            }
-
-            for ((elementIndex, element) in nonHeaderFooterElements.withIndex()) {
-                val elementText = element.text.trim()
-
-                val isLineNumberMarker = elementText.matches(Regex("\\[\\d+.*?\\]"))
-
-                if (isLineNumberMarker) {
-                    addFormattedElement(fullText, element, disableFormatting)
-                } else {
-                    addFormattedElement(fullText, element, disableFormatting)
-
-                    if (elementIndex < nonHeaderFooterElements.size - 1) {
-                        fullText.append("\n")
-                    }
-                }
-            }
-
-            if (pageIndex < pages.size - 1) {
-                fullText.append("\n")
-            }
+            val lines = groupElementsIntoLines(page.elements)
+            processLines(fullText, lines, disableFormatting)
         }
 
         return fullText
     }
 
-    private fun addPageSeparator(text: SpannableStringBuilder, pageNumber: Int) {
+    private fun groupElementsIntoLines(elements: List<TextElement>): List<List<TextElement>> {
+        if (elements.isEmpty()) return emptyList()
+
+        val sorted = elements.sortedWith(compareBy({ -it.y }, { it.x }))
+        val lines = mutableListOf<List<TextElement>>()
+        var currentLine = mutableListOf<TextElement>()
+        var currentY = sorted.first().y
+        val lineThreshold = 3f
+
+        for (element in sorted) {
+            if (abs(element.y - currentY) <= lineThreshold) {
+                currentLine.add(element)
+            } else {
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine.sortedBy { it.x })
+                }
+                currentLine = mutableListOf(element)
+                currentY = element.y
+            }
+        }
+
+        if (currentLine.isNotEmpty()) {
+            lines.add(currentLine.sortedBy { it.x })
+        }
+
+        return lines
+    }
+
+    private fun processLines(text: SpannableStringBuilder, lines: List<List<TextElement>>, disableFormatting: Boolean) {
+        for ((lineIndex, line) in lines.withIndex()) {
+            // Detect line type
+            val lineType = detectLineType(line)
+
+            // Merge elements in line
+            val mergedText = mergeLineElements(line)
+
+            // Add content based on type
+            when (lineType) {
+                LineType.HEADING -> addHeading(text, mergedText, disableFormatting)
+                LineType.LIST_ITEM -> addListItem(text, mergedText, disableFormatting)
+                LineType.IMAGE -> addImagePlaceholder(text)
+                LineType.TABLE_ROW -> addTableRow(text, line, disableFormatting)
+                LineType.NORMAL -> addNormalText(text, mergedText, disableFormatting)
+            }
+
+            // Add newline if not last line
+            if (lineIndex < lines.size - 1) {
+                text.append("\n")
+            }
+        }
+    }
+
+    private enum class LineType {
+        NORMAL, HEADING, LIST_ITEM, IMAGE, TABLE_ROW
+    }
+
+    private fun detectLineType(line: List<TextElement>): LineType {
+        if (line.isEmpty()) return LineType.NORMAL
+
+        val firstElement = line.first()
+        val lineText = line.joinToString(" ") { it.text }.trim()
+
+        // Check for image markers (if your PDF has them)
+        if (lineText.contains("Image") && lineText.length < 20) {
+            return LineType.IMAGE
+        }
+
+        // Check for headings (larger font)
+        if (firstElement.fontSize > averageFontSize * 1.3f) {
+            return LineType.HEADING
+        }
+
+        // Check for list items
+        val listPattern = Regex("^\\s*([•\\-*○►]|\\d+[.)]|[a-z][.)]|[A-Z][.)])\\s+")
+        if (listPattern.containsMatchIn(lineText)) {
+            return LineType.LIST_ITEM
+        }
+
+        // Check for table rows (multiple elements with spacing)
+        if (line.size >= 3 && hasTableStructure(line)) {
+            return LineType.TABLE_ROW
+        }
+
+        return LineType.NORMAL
+    }
+
+    private fun hasTableStructure(line: List<TextElement>): Boolean {
+        if (line.size < 3) return false
+
+        // Check if elements are evenly spaced (table columns)
+        val gaps = mutableListOf<Float>()
+        for (i in 0 until line.size - 1) {
+            val gap = line[i + 1].x - (line[i].x + line[i].width)
+            gaps.add(gap)
+        }
+
+        // If gaps are relatively consistent, it might be a table
+        val avgGap = gaps.average()
+        val variance = gaps.map { abs(it - avgGap) }.average()
+
+        return variance < avgGap * 0.5 && avgGap > 10f
+    }
+
+    private fun mergeLineElements(line: List<TextElement>): List<TextElement> {
+        if (line.isEmpty()) return emptyList()
+
+        val merged = mutableListOf<TextElement>()
+        var current: TextElement? = null
+
+        for (element in line) {
+            if (current == null) {
+                current = element
+            } else {
+                val gap = element.x - (current.x + current.width)
+                val sameFormatting = current.fontSize == element.fontSize &&
+                        current.isBold == element.isBold &&
+                        current.isItalic == element.isItalic
+
+                when {
+                    // Very close - merge without space
+                    gap < 1f && sameFormatting -> {
+                        current = current.copy(
+                            text = current.text + element.text,
+                            width = element.x + element.width - current.x
+                        )
+                    }
+                    // Normal word spacing - merge with space
+                    gap < 8f && sameFormatting -> {
+                        current = current.copy(
+                            text = current.text + " " + element.text,
+                            width = element.x + element.width - current.x
+                        )
+                    }
+                    // Large gap or different formatting - separate elements
+                    else -> {
+                        merged.add(current)
+                        current = element
+                    }
+                }
+            }
+        }
+
+        current?.let { merged.add(it) }
+        return merged
+    }
+
+    private fun addHeading(text: SpannableStringBuilder, elements: List<TextElement>, disableFormatting: Boolean) {
+        val start = text.length
+        elements.forEach { text.append(it.text) }
+
+        if (!disableFormatting) {
+            text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val sizeRatio = (elements.firstOrNull()?.fontSize ?: averageFontSize) / averageFontSize
+            text.setSpan(RelativeSizeSpan(sizeRatio), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+            // Add some spacing after headings
+            text.append("\n")
+        }
+    }
+
+    private fun addListItem(text: SpannableStringBuilder, elements: List<TextElement>, disableFormatting: Boolean) {
+        val start = text.length
+        val fullText = elements.joinToString("") { it.text }
+
+        // Add indentation for nested lists
+        val indentLevel = countLeadingSpaces(fullText) / 4
+        text.append("  ".repeat(indentLevel))
+
+        val contentStart = text.length
+        text.append(fullText.trim())
+
+        if (!disableFormatting) {
+            // Apply bullet span
+            text.setSpan(BulletSpan(20), contentStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+            // Apply formatting to elements
+            var offset = contentStart
+            for (element in elements) {
+                val elementText = element.text
+                if (element.isBold) {
+                    text.setSpan(StyleSpan(Typeface.BOLD), offset, offset + elementText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                if (element.isItalic) {
+                    text.setSpan(StyleSpan(Typeface.ITALIC), offset, offset + elementText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                offset += elementText.length
+            }
+        }
+    }
+
+    private fun countLeadingSpaces(text: String): Int {
+        return text.takeWhile { it == ' ' }.length
+    }
+
+    private fun addImagePlaceholder(text: SpannableStringBuilder) {
+        val start = text.length
+        text.append("📷 [Image]")
+        text.setSpan(ForegroundColorSpan(Color.GRAY), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(StyleSpan(Typeface.ITALIC), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun addTableRow(text: SpannableStringBuilder, line: List<TextElement>, disableFormatting: Boolean) {
+        val start = text.length
+
+        // For simple tables, preserve spacing
+        var lastX = 0f
+        for (element in line) {
+            val gap = element.x - lastX
+            val spaces = (gap / 10f).toInt().coerceIn(0, 20)
+            text.append(" ".repeat(spaces))
+            text.append(element.text)
+            lastX = element.x + element.width
+
+            if (!disableFormatting) {
+                val elementStart = text.length - element.text.length
+                if (element.isBold) {
+                    text.setSpan(StyleSpan(Typeface.BOLD), elementStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                if (element.isItalic) {
+                    text.setSpan(StyleSpan(Typeface.ITALIC), elementStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+        }
+
+        // Add subtle background for table rows
+        if (!disableFormatting) {
+            val bgColor = if (isDarkMode) {
+                Color.argb(20, 255, 255, 255)
+            } else {
+                Color.argb(20, 0, 0, 0)
+            }
+            text.setSpan(BackgroundColorSpan(bgColor), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun addNormalText(text: SpannableStringBuilder, elements: List<TextElement>, disableFormatting: Boolean) {
+        for (element in elements) {
+            val start = text.length
+            text.append(element.text)
+
+            if (!disableFormatting) {
+                if (element.isBold) {
+                    text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                if (element.isItalic) {
+                    text.setSpan(StyleSpan(Typeface.ITALIC), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+        }
+    }
+
+    private fun addPageDivider(text: SpannableStringBuilder, pageNumber: Int) {
         text.append("\n")
-        val separator = "━".repeat(50)
-        val sepStart = text.length
-        text.append(separator).append("\n")
-        text.setSpan(ForegroundColorSpan(Color.GRAY), sepStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val divider = "━".repeat(40)
+        val dividerStart = text.length
+        text.append(divider).append("\n")
+        text.setSpan(ForegroundColorSpan(Color.GRAY), dividerStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(RelativeSizeSpan(0.8f), dividerStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
         val pageMarker = "Page $pageNumber"
         val pageStart = text.length
         text.append(pageMarker).append("\n")
         text.setSpan(StyleSpan(Typeface.ITALIC), pageStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         text.setSpan(ForegroundColorSpan(Color.GRAY), pageStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(RelativeSizeSpan(0.9f), pageStart, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
-        val sepStart2 = text.length
-        text.append(separator).append("\n\n")
-        text.setSpan(ForegroundColorSpan(Color.GRAY), sepStart2, sepStart2 + separator.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-    }
-
-    private fun addFormattedElement(text: SpannableStringBuilder, element: TextElement, disableFormatting: Boolean) {
-        val start = text.length
-
-        if (element.isImage) {
-            text.append("📷 [Image]")
-            if (!disableFormatting) {
-                text.setSpan(ForegroundColorSpan(Color.GRAY), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                text.setSpan(StyleSpan(Typeface.ITALIC), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            return
-        }
-
-        text.append(element.text)
-
-        if (!disableFormatting) {
-            if (element.isBold) {
-                text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            if (element.isItalic) {
-                text.setSpan(StyleSpan(Typeface.ITALIC), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            if (element.isUnderlined) {
-                text.setSpan(UnderlineSpan(), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            if (element.isStrikethrough) {
-                text.setSpan(StrikethroughSpan(), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-
-            if (element.elementType == ElementType.TITLE || element.fontSize > baseFontSize * 1.3f) {
-                val sizeRatio = (element.fontSize / baseFontSize).coerceIn(1f, 2f)
-                text.setSpan(RelativeSizeSpan(sizeRatio), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-        }
-    }
-
-    fun getTotalLines(): Int {
-        var total = 0
-        for (page in pages) {
-            total += page.textElements.filter { !it.isImage }.size
-        }
-        return total.coerceAtLeast(1)
+        val dividerStart2 = text.length
+        text.append(divider).append("\n\n")
+        text.setSpan(ForegroundColorSpan(Color.GRAY), dividerStart2, dividerStart2 + divider.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(RelativeSizeSpan(0.8f), dividerStart2, dividerStart2 + divider.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     fun searchText(query: String): List<Int> {
@@ -373,13 +419,14 @@ class TextViewerManager(private val context: Context) {
         while (index < fullText.length) {
             index = fullText.indexOf(query, index, ignoreCase = true)
             if (index == -1) break
-
             results.add(index)
             index += query.length
         }
 
         return results
     }
+
+    fun getTotalPages(): Int = pages.size
 
     fun getFontSize(): Int {
         return sharedPrefs.getInt("text_viewer_font_size", 14)
@@ -404,6 +451,10 @@ class TextViewerManager(private val context: Context) {
             "sans-serif" -> Typeface.SANS_SERIF
             else -> Typeface.MONOSPACE
         }
+    }
+
+    fun getDisableFormatting(): Boolean {
+        return sharedPrefs.getBoolean("text_viewer_disable_formatting", false)
     }
 
     fun setDarkMode(darkMode: Boolean) {

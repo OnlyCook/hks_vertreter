@@ -1703,7 +1703,6 @@
     <string name="text_viewer_color_white">White</string>
     <string name="text_viewer_color_light_blue">Light Blue</string>
     <string name="text_viewer_color_light_green">Light Green</string>
-    <string name="moodle_save">Save</string>
     <string name="text_viewer_bg_color">Background Color</string>
     <string name="text_viewer_bg_dark">Dark Gray</string>
     <string name="text_viewer_bg_darker">Darker Gray</string>
@@ -1717,6 +1716,8 @@
     <string name="text_viewer_preview_italic">italic</string>
     <string name="text_viewer_preview_underline">underlined</string>
     <string name="text_viewer_preview_strike">Strikethrough text</string>
+    <string name="text_viewer_text_copied">Text copied to clipboard</string>
+    <string name="text_viewer_no_text">No text to copy</string>
     <!-- course_entry_download -->
     <string name="moodle_select_entries_to_download">Select entries to download</string>
     <string name="moodle_select_all">Select All</string>
@@ -1795,7 +1796,7 @@
     <string name="moodle_open_files_app">Open Files App</string>
     <string name="moodle_navigate_to_folder_instruction">Navigate to: Internal storage → Android → data → %s → files → HKS_Moodle_Downloads</string>
     <string name="moodle_no_file_manager_found">No file manager found</string>
-    <string name="moodle_open_with_file_manager_instruction">You can access this folder using any file manager app by navigating to the path shown above.</string>
+    <string name="moodle_open_with_file_manager_instruction">You can access this folder using a file manager app by navigating to the path shown above.</string>
     <string name="moodle_download_location_info">Download Location Info</string>
     <string name="moodle_about_downloads">About Downloads</string>
     <string name="moodle_download_location_explanation">Downloaded files are stored in the app\'s private storage folder. This ensures the app has permission to save files on all Android versions.</string>
@@ -1822,5 +1823,8 @@
     <string name="moodle_cda_entries">Entries</string>
     <string name="moodle_cda_entries_singular">Entry</string>
     <string name="moodle_no_downloads">No downloads yet.\nDownload course materials from Moodle to see them here.</string>
+    <string name="moodle_close_search">Close search</string>
+    <string name="moodle_text_viewer_page">Text Viewer Page</string>
+    <string name="moodle_save">Save</string>
 
 </resources>

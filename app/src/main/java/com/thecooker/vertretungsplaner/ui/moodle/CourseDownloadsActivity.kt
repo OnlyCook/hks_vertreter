@@ -293,7 +293,7 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
             Toast.makeText(
                 this,
-                getString(R.string.moodle_navigate_to_folder_instruction),
+                getString(R.string.moodle_navigate_to_folder_instruction, packageName),
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Exception) {
@@ -304,7 +304,7 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
                     startActivity(intent)
                     Toast.makeText(
                         this,
-                        getString(R.string.moodle_navigate_to_folder_instruction),
+                        getString(R.string.moodle_navigate_to_folder_instruction, packageName),
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
@@ -557,13 +557,8 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
             }
 
             if (entries.isNotEmpty()) {
-                val cleanCourseName = courseFolder.name
-                    .removePrefix("Kurs_ ")
-                    .removeSuffix(" _ Heinrich-Kleyer-Schule_ Moodle")
-                    .trim()
-
                 val course = DownloadedCourse(
-                    name = cleanCourseName,
+                    name = courseFolder.name,
                     entries = entries,
                     path = courseFolder.absolutePath
                 )

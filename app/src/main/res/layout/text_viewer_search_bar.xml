@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/textSearchHeaderLayout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:background="?attr/homeworkFragmentBackgroundColor"
+    android:gravity="center_vertical"
+    android:elevation="2dp">
+
+    <RelativeLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1">
+
+        <EditText
+            android:id="@+id/etTextSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/text_viewer_search_hint"
+            android:inputType="text"
+            android:padding="10dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="40dp"
+            android:background="@drawable/subtle_search_background"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:drawablePadding="8dp"
+            android:textSize="14sp"
+            android:textColor="?attr/textPrimaryColor"
+            android:textColorHint="?attr/textSecondaryColor"
+            android:maxLines="1"
+            android:imeOptions="actionSearch" />
+
+        <ImageButton
+            android:id="@+id/btnClearTextSearch"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_cancel"
+            android:contentDescription="@string/moodle_clear_search"
+            android:scaleType="centerInside" />
+    </RelativeLayout>
+
+    <TextView
+        android:id="@+id/tvSearchResultsCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="?attr/textPrimaryColor"
+        android:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/btnPrevTextResult"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="4dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_arrow_back"
+        android:contentDescription="@string/moodle_back"
+        android:scaleType="centerInside"
+        android:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/btnNextTextResult"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="4dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_arrow_forward"
+        android:contentDescription="@string/moodle_forward"
+        android:scaleType="centerInside"
+        android:visibility="gone" />
+</LinearLayout>
