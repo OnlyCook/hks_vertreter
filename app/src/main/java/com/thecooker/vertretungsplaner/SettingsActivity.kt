@@ -51,6 +51,9 @@ import com.thecooker.vertretungsplaner.utils.SectionSelectionCallback
 import com.thecooker.vertretungsplaner.utils.SectionSelectionDialog
 import android.text.TextWatcher
 import android.text.Editable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.WindowManager
@@ -4301,8 +4304,64 @@ open class SettingsActivity : BaseActivity() {
         val checkboxResetTimetableFetch = dialogView.findViewById<CheckBox>(R.id.checkboxResetTimetableFetch)
         val checkboxResetProgramName = dialogView.findViewById<CheckBox>(R.id.checkboxResetProgramName)
         val checkboxResetTimetableEntry = dialogView.findViewById<CheckBox>(R.id.checkboxResetTimetableEntry)
+        val checkboxResetMainCourseUrl = dialogView.findViewById<CheckBox>(R.id.checkboxResetMainCourseUrl)
         val btnClear = dialogView.findViewById<Button>(R.id.btnClear)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        val skipExamDialog = sharedPreferences.getBoolean("skip_moodle_fetch_dialog", false)
+        val fetchExamFromMoodle = sharedPreferences.getBoolean("fetch_from_moodle_preference", false)
+        val skipTimetableDialog = sharedPreferences.getBoolean("skip_moodle_timetable_fetch_dialog", false)
+        val fetchTimetableFromMoodle = sharedPreferences.getBoolean("fetch_timetable_from_moodle_preference", false)
+        val savedProgramName = sharedPreferences.getString("saved_program_course_name", "") ?: ""
+        val savedTimetableEntry = sharedPreferences.getString("saved_timetable_entry_name", "") ?: ""
+        val mainCourseUrl = sharedPreferences.getString("moodle_main_course_url", "") ?: ""
+
+        updateCheckboxLabel(
+            checkboxResetExamFetch,
+            getString(R.string.settings_reset_exam_fetch_preference),
+            listOfNotNull(
+                if (skipExamDialog) getString(R.string.settings_reset_label_dialog_skipped) else null,
+                if (fetchExamFromMoodle) getString(R.string.settings_reset_label_fetch_from_moodle) else null
+            )
+        )
+
+        updateCheckboxLabel(
+            checkboxResetTimetableFetch,
+            getString(R.string.settings_reset_timetable_fetch_preference),
+            listOfNotNull(
+                if (skipTimetableDialog) getString(R.string.settings_reset_label_dialog_skipped) else null,
+                if (fetchTimetableFromMoodle) getString(R.string.settings_reset_label_fetch_from_moodle) else null
+            )
+        )
+
+        updateCheckboxLabel(
+            checkboxResetProgramName,
+            getString(R.string.settings_reset_saved_program_name),
+            if (savedProgramName.isNotEmpty()) listOf(
+                getString(R.string.settings_reset_label_saved_value, savedProgramName)
+            ) else emptyList()
+        )
+
+        updateCheckboxLabel(
+            checkboxResetTimetableEntry,
+            getString(R.string.settings_reset_saved_timetable_entry),
+            if (savedTimetableEntry.isNotEmpty()) listOf(
+                getString(R.string.settings_reset_label_saved_value, savedTimetableEntry)
+            ) else emptyList()
+        )
+
+        updateCheckboxLabel(
+            checkboxResetMainCourseUrl,
+            getString(R.string.settings_reset_main_course_url),
+            if (mainCourseUrl.isNotEmpty()) {
+                val courseId = Regex("id=(\\d+)$").find(mainCourseUrl)?.groupValues?.get(1)
+                if (courseId != null) {
+                    listOf(getString(R.string.settings_reset_label_saved_course_url_with_id, courseId))
+                } else {
+                    listOf(getString(R.string.settings_reset_label_saved_value, mainCourseUrl))
+                }
+            } else emptyList()
+        )
 
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
@@ -4319,7 +4378,8 @@ open class SettingsActivity : BaseActivity() {
             checkboxResetExamFetch,
             checkboxResetTimetableFetch,
             checkboxResetProgramName,
-            checkboxResetTimetableEntry
+            checkboxResetTimetableEntry,
+            checkboxResetMainCourseUrl
         )
 
         val updateButtonState = {
@@ -4355,6 +4415,11 @@ open class SettingsActivity : BaseActivity() {
                 prefsToRemove.add("saved_timetable_entry_name")
             }
 
+            if (checkboxResetMainCourseUrl.isChecked) {
+                prefsToRemove.add("moodle_main_course_url")
+                prefsToRemove.add("moodle_main_course_program_name")
+            }
+
             if (prefsToRemove.isNotEmpty()) {
                 sharedPreferences.edit {
                     prefsToRemove.forEach { key ->
@@ -4367,6 +4432,7 @@ open class SettingsActivity : BaseActivity() {
                 if (checkboxResetTimetableFetch.isChecked) resetItems.add(getString(R.string.settings_reset_timetable_fetch_preference))
                 if (checkboxResetProgramName.isChecked) resetItems.add(getString(R.string.settings_reset_saved_program_name))
                 if (checkboxResetTimetableEntry.isChecked) resetItems.add(getString(R.string.settings_reset_saved_timetable_entry))
+                if (checkboxResetMainCourseUrl.isChecked) resetItems.add(getString(R.string.settings_reset_main_course_url))
 
                 Toast.makeText(
                     this,
@@ -4383,6 +4449,41 @@ open class SettingsActivity : BaseActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun updateCheckboxLabel(
+        checkbox: CheckBox,
+        baseLabel: String,
+        savedValues: List<String>
+    ) {
+        if (savedValues.isEmpty()) {
+            val combinedText = "$baseLabel\n${getString(R.string.settings_reset_label_not_configured)}"
+            val spannable = SpannableString(combinedText)
+            val startIndex = baseLabel.length + 1
+            spannable.setSpan(
+                ForegroundColorSpan(ContextCompat.getColor(this, android.R.color.darker_gray)),
+                startIndex,
+                combinedText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            checkbox.text = spannable
+            checkbox.isEnabled = false
+            checkbox.alpha = 0.6f
+        } else {
+            val statusText = savedValues.joinToString(", ")
+            val combinedText = "$baseLabel\n$statusText"
+            val spannable = SpannableString(combinedText)
+            val startIndex = baseLabel.length + 1
+            spannable.setSpan(
+                ForegroundColorSpan(ContextCompat.getColor(this, android.R.color.darker_gray)),
+                startIndex,
+                combinedText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            checkbox.text = spannable
+            checkbox.isEnabled = true
+            checkbox.alpha = 1.0f
+        }
     }
 
     private fun setupMoodleDarkModeSettings() {

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- search bar -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp">
+
+        <EditText
+            android:id="@+id/searchBarCalendar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/moodle_calendar_search_hint"
+            android:inputType="text"
+            android:padding="12dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="40dp"
+            android:background="@drawable/subtle_search_background"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:drawablePadding="8dp"
+            android:textSize="16sp"
+            android:textColorHint="?attr/textSecondaryColor" />
+
+        <ImageButton
+            android:id="@+id/btnClearSearchCalendar"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_cancel"
+            android:contentDescription="@string/moodle_clear_search"
+            android:visibility="gone"
+            android:scaleType="centerInside" />
+    </RelativeLayout>
+
+    <!-- calendar entries list -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewCalendar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="100dp"
+            android:maxHeight="450dp"
+            android:scrollbars="vertical"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            android:fadeScrollbars="false"
+            android:scrollbarStyle="outsideOverlay" />
+
+        <!-- no entries message -->
+        <TextView
+            android:id="@+id/tvNoCalendarEntries"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/moodle_no_calendar_entries"
+            android:textSize="16sp"
+            android:textColor="?attr/textSecondaryColor"
+            android:gravity="center"
+            android:padding="32dp"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+</LinearLayout>

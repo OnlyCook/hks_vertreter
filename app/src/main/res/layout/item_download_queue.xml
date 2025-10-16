@@ -46,6 +46,29 @@
                 android:ellipsize="end"
                 android:layout_marginTop="2dp" />
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:id="@+id/tvDownloadSize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 MB / 0 MB"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tvDownloadSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 KB/s"
+                    android:textSize="11sp"
+                    android:layout_marginStart="8dp"
+                    android:visibility="gone" />
+            </LinearLayout>
         </LinearLayout>
 
         <TextView
@@ -56,6 +79,15 @@
             android:textSize="12sp"
             android:layout_marginStart="8dp" />
 
+        <ImageButton
+            android:id="@+id/btnCancelDownload"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@drawable/ic_cancel"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/moodle_cancel"
+            android:layout_marginStart="8dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ProgressBar

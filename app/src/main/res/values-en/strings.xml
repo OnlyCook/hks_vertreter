@@ -628,6 +628,12 @@
     <string name="act_set_moodle_dark_mode_desc">Whether Dark Mode CSS should be injected (this may increase loading times)</string>
     <string name="set_act_moodle_dark_mode_enabled">Moodle dark mode enabled</string>
     <string name="set_act_moodle_dark_mode_disabled">Moodle dark mode disabled</string>
+    <string name="set_act_search_results_not_loaded">Search results not loaded</string>
+    <string name="settings_reset_label_dialog_skipped">Dialog skipped</string>
+    <string name="settings_reset_label_fetch_from_moodle">Fetch from Moodle</string>
+    <string name="settings_reset_label_saved_value">Saved: %1$s</string>
+    <string name="settings_reset_label_not_configured">Not configured</string>
+    <string name="settings_reset_label_saved_course_url_with_id">URL saved with course ID = %1$s</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1781,11 +1787,26 @@
     <string name="moodle_completed_cleared">Completed downloads cleared</string>
     <string name="moodle_retrying_failed">Retrying failed downloads</string>
     <string name="moodle_nothing_selected">Nothing selected</string>
-    <string name="moodle_delete_courses_confirm">Delete %d course(s)?</string>
-    <string name="moodle_delete_entries_confirm">Delete %d file(s)?</string>
-    <string name="moodle_delete_items_confirm">Delete %d course(s) and %d file(s)?</string>
+    <plurals name="moodle_delete_courses_confirm">
+        <item quantity="one">Delete %d course?</item>
+        <item quantity="other">Delete %d courses?</item>
+    </plurals>
+
+    <plurals name="moodle_delete_entries_confirm">
+        <item quantity="one">Delete %d file?</item>
+        <item quantity="other">Delete %d files?</item>
+    </plurals>
+
+    <plurals name="moodle_delete_items_confirm">
+        <item quantity="one">Delete %d course and %d file?</item>
+        <item quantity="other">Delete %d courses and %d files?</item>
+    </plurals>
+
+    <plurals name="moodle_items_deleted">
+        <item quantity="one">%d item deleted</item>
+        <item quantity="other">%d items deleted</item>
+    </plurals>
     <string name="moodle_confirm_deletion">Confirm Deletion</string>
-    <string name="moodle_items_deleted">%d item(s) deleted</string>
     <string name="moodle_folder_location">Downloads folder: %s</string>
     <string name="moodle_select_file_manager">Select File Manager</string>
     <string name="moodle_downloads_location">Your downloads are stored in:</string>
@@ -1826,5 +1847,30 @@
     <string name="moodle_close_search">Close search</string>
     <string name="moodle_text_viewer_page">Text Viewer Page</string>
     <string name="moodle_save">Save</string>
+    <string name="moodle_queue_summary_detailed">Total: %1$d | Completed: %2$d | Downloading: %3$d | Pending: %4$d | Failed: %5$d</string>
+    <string name="moodle_cancel_all">Cancel All</string>
+    <string name="moodle_downloads_cancelled">Downloads cancelled</string>
+    <string name="moodle_status_cancelled">Cancelled</string>
+    <!-- moodle calendar entry dialog -->
+    <string name="moodle_show_calendar_entries">Show calendar entries</string>
+    <string name="moodle_calendar_entries">Moodle Calendar Entries</string>
+    <string name="moodle_calendar_search_hint">Search calendar…</string>
+    <string name="moodle_no_calendar_entries">No calendar entries found</string>
+    <string name="moodle_search_entry">Search for entry</string>
+    <string name="moodle_calendar_yesterday">Yesterday</string>
+    <string name="moodle_calendar_overdue">Overdue by %d days</string>
+    <string name="moodle_calendar_today">Today</string>
+    <string name="moodle_calendar_tomorrow">Tomorrow</string>
+    <string name="moodle_calendar_in_days">In %d days</string>
+    <string name="moodle_calendar_entry_search_failed">Could not extract entry information</string>
+    <string name="moodle_opening_cached_entry">Opening Entry</string>
+    <string name="moodle_cached_url_invalid_searching">Cached link invalid, searching again…</string>
+    <string name="moodle_session_expired_retry_search">Session expired, please log in</string>
+    <string name="moodle_opened_entry">Opened: %s</string>
+    <string name="moodle_entry_found">Found entry</string>
+    <string name="settings_reset_main_course_url">Clear saved main course URL</string>
+    <string name="moodle_verifying_course">Verifying course…</string>
+    <string name="moodle_cache_invalid_retrying">Cached URL invalid, retrying…</string>
+    <string name="moodle_navigating_to_course">Navigating to course…</string>
 
 </resources>

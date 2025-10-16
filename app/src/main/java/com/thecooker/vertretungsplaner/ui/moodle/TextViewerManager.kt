@@ -7,7 +7,6 @@ import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.*
-import androidx.preference.PreferenceManager
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.*
 import com.thecooker.vertretungsplaner.L
@@ -38,6 +37,14 @@ class TextViewerManager(private val context: Context, sharedPreferences: SharedP
     private var sharedPrefs: SharedPreferences = sharedPreferences
     private var isDarkMode = false
     private var averageFontSize = 12f
+
+    data class PageBounds(
+        val pageNumber: Int,
+        val startCharIndex: Int,
+        val endCharIndex: Int
+    )
+
+    private var pageBounds = listOf<PageBounds>()
 
     fun parsePdfToText(pdfFile: File, darkMode: Boolean): Boolean {
         isDarkMode = darkMode
@@ -463,5 +470,45 @@ class TextViewerManager(private val context: Context, sharedPreferences: SharedP
 
     fun getDarkMode(): Boolean {
         return isDarkMode
+    }
+
+    fun calculatePageBounds() {
+        val bounds = mutableListOf<PageBounds>()
+        var charIndex = 0
+
+        for ((index, page) in pages.withIndex()) {
+            val startChar = charIndex
+
+            if (index > 0) {
+                charIndex += 85 // around page divider length
+            }
+
+            val lines = groupElementsIntoLines(page.elements)
+            for (line in lines) {
+                charIndex += line.sumOf { it.text.length }
+                charIndex += 1 // newline
+            }
+
+            bounds.add(PageBounds(
+                pageNumber = index + 1,
+                startCharIndex = startChar,
+                endCharIndex = charIndex
+            ))
+        }
+
+        pageBounds = bounds
+    }
+
+    fun getPageAtCharPosition(charPosition: Int): Int {
+        for (bounds in pageBounds) {
+            if (charPosition >= bounds.startCharIndex && charPosition < bounds.endCharIndex) {
+                return bounds.pageNumber
+            }
+        }
+        return pageBounds.lastOrNull()?.pageNumber ?: 1
+    }
+
+    fun getCharPositionForPage(pageNumber: Int): Int {
+        return pageBounds.find { it.pageNumber == pageNumber }?.startCharIndex ?: 0
     }
 }

@@ -628,6 +628,12 @@
     <string name="act_set_moodle_dark_mode_desc">Ob Dark-Mode-CSS injiziert werden soll (kann Ladezeiten erhöhen)</string>
     <string name="set_act_moodle_dark_mode_enabled">Moodle Dark Mode aktiviert</string>
     <string name="set_act_moodle_dark_mode_disabled">Moodle Dark Mode deaktiviert</string>
+    <string name="set_act_search_results_not_loaded">Suchergebnisse nicht geladen</string>
+    <string name="settings_reset_label_dialog_skipped">Dialog übersprungen</string>
+    <string name="settings_reset_label_fetch_from_moodle">Von Moodle abrufen</string>
+    <string name="settings_reset_label_saved_value">Gespeichert: %1$s</string>
+    <string name="settings_reset_label_not_configured">Nicht konfiguriert</string>
+    <string name="settings_reset_label_saved_course_url_with_id">URL mit Kurs-ID = %1$s gespeichert</string>
 
     <!-- SUBJECTSELECTIONACTIVITY.KT -->
     <string name="sub_sel_alt_rooms">%s (+%d alt.)</string>
@@ -1783,11 +1789,26 @@
     <string name="moodle_completed_cleared">Abgeschlossene Downloads gelöscht</string>
     <string name="moodle_retrying_failed">Fehlgeschlagene Downloads werden wiederholt</string>
     <string name="moodle_nothing_selected">Nichts ausgewählt</string>
-    <string name="moodle_delete_courses_confirm">%d Kurs(e) löschen?</string>
-    <string name="moodle_delete_entries_confirm">%d Datei(en) löschen?</string>
-    <string name="moodle_delete_items_confirm">%d Kurs(e) und %d Datei(en) löschen?</string>
+    <plurals name="moodle_delete_courses_confirm">
+        <item quantity="one">%d Kurs löschen?</item>
+        <item quantity="other">%d Kurse löschen?</item>
+    </plurals>
+
+    <plurals name="moodle_delete_entries_confirm">
+        <item quantity="one">%d Datei löschen?</item>
+        <item quantity="other">%d Dateien löschen?</item>
+    </plurals>
+
+    <plurals name="moodle_delete_items_confirm">
+        <item quantity="one">%d Kurs und %d Datei löschen?</item>
+        <item quantity="other">%d Kurse und %d Dateien löschen?</item>
+    </plurals>
+
+    <plurals name="moodle_items_deleted">
+        <item quantity="one">%d Element gelöscht</item>
+        <item quantity="other">%d Elemente gelöscht</item>
+    </plurals>
     <string name="moodle_confirm_deletion">Löschen bestätigen</string>
-    <string name="moodle_items_deleted">%d Element(e) gelöscht</string>
     <string name="moodle_folder_location">Downloads-Ordner: %s</string>
     <string name="moodle_select_file_manager">Dateimanager auswählen</string>
     <string name="moodle_downloads_location">Deine Downloads werden gespeichert in:</string>
@@ -1828,5 +1849,30 @@
     <string name="moodle_close_search">Suche schließen</string>
     <string name="moodle_text_viewer_page">Text-Viewer-Seite</string>
     <string name="moodle_save">Speichern</string>
+    <string name="moodle_queue_summary_detailed">Gesamt: %1$d | Abgeschlossen: %2$d | Wird heruntergeladen: %3$d | Ausstehend: %4$d | Fehlgeschlagen: %5$d</string>
+    <string name="moodle_cancel_all">Alle abbrechen</string>
+    <string name="moodle_downloads_cancelled">Downloads abgebrochen</string>
+    <string name="moodle_status_cancelled">Abgebrochen</string>
+    <!-- moodle calendar entry dialog -->
+    <string name="moodle_show_calendar_entries">Kalendereinträge anzeigen</string>
+    <string name="moodle_calendar_entries">Moodle-Kalendereinträge</string>
+    <string name="moodle_calendar_search_hint">Kalender durchsuchen…</string>
+    <string name="moodle_no_calendar_entries">Keine Kalendereinträge gefunden</string>
+    <string name="moodle_search_entry">Nach Eintrag suchen</string>
+    <string name="moodle_calendar_yesterday">Gestern</string>
+    <string name="moodle_calendar_overdue">Überfällig seit %d Tagen</string>
+    <string name="moodle_calendar_today">Heute</string>
+    <string name="moodle_calendar_tomorrow">Morgen</string>
+    <string name="moodle_calendar_in_days">In %d Tagen</string>
+    <string name="moodle_calendar_entry_search_failed">Eintragsinformationen konnten nicht extrahiert werden</string>
+    <string name="moodle_opening_cached_entry">Eintrag wird geöffnet</string>
+    <string name="moodle_cached_url_invalid_searching">Zwischengespeicherter Link ungültig, suche erneut…</string>
+    <string name="moodle_session_expired_retry_search">Sitzung abgelaufen, bitte melde dich an</string>
+    <string name="moodle_opened_entry">Geöffnet: %s</string>
+    <string name="moodle_entry_found">Eintrag gefunden</string>
+    <string name="settings_reset_main_course_url">Gespeicherte Hauptkurs-URL löschen</string>
+    <string name="moodle_verifying_course">Überprüfe Kurs…</string>
+    <string name="moodle_cache_invalid_retrying">Zwischengespeicherte URL ungültig, versuche erneut…</string>
+    <string name="moodle_navigating_to_course">Navigiere zu Kurs…</string>
 
 </resources>

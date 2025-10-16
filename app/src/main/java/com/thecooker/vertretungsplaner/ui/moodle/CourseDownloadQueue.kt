@@ -5,12 +5,14 @@ import android.os.Looper
 import com.thecooker.vertretungsplaner.L
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 
 class CourseDownloadQueue private constructor() {
 
     private val queue = ConcurrentLinkedQueue<DownloadQueueEntry>()
     private val entryMap = ConcurrentHashMap<String, DownloadQueueEntry>()
     private val listeners = mutableListOf<QueueListener>()
+    private val activeDownloads = ConcurrentHashMap<String, AtomicBoolean>() // Track active downloads
 
     data class DownloadQueueEntry(
         val id: String = java.util.UUID.randomUUID().toString(),
@@ -26,7 +28,12 @@ class CourseDownloadQueue private constructor() {
         var progress: Int = 0,
         var status: String = "pending",
         var errorMessage: String = "",
-        var actualFileName: String? = null
+        var actualFileName: String? = null,
+        var downloadedBytes: Long = 0,
+        var totalBytes: Long = 0,
+        var downloadSpeed: Long = 0,
+        var startTime: Long = 0,
+        @Volatile var isCancelled: Boolean = false
     )
 
     data class FolderFile(
@@ -94,10 +101,10 @@ class CourseDownloadQueue private constructor() {
     fun getAllEntries(): List<DownloadQueueEntry> = queue.toList()
 
     fun getPendingEntries(): List<DownloadQueueEntry> =
-        queue.filter { it.status == "pending" }
+        queue.filter { it.status == "pending" && !it.isCancelled }
 
     fun getDownloadingEntries(): List<DownloadQueueEntry> =
-        queue.filter { it.status == "downloading" }
+        queue.filter { it.status == "downloading" && !it.isCancelled && activeDownloads.containsKey(it.id) }
 
     fun getCompletedEntries(): List<DownloadQueueEntry> =
         queue.filter { it.status == "completed" }
@@ -108,6 +115,7 @@ class CourseDownloadQueue private constructor() {
     fun removeEntry(entry: DownloadQueueEntry) {
         queue.remove(entry)
         entryMap.remove(entry.id)
+        activeDownloads.remove(entry.id)
         L.d("CourseDownloadQueue", "Removed from queue: ${entry.entryName}")
         notifyQueueChanged()
     }
@@ -117,8 +125,61 @@ class CourseDownloadQueue private constructor() {
             existing.progress = entry.progress
             existing.status = entry.status
             existing.errorMessage = entry.errorMessage
+            existing.downloadedBytes = entry.downloadedBytes
+            existing.totalBytes = entry.totalBytes
+            existing.downloadSpeed = entry.downloadSpeed
+            existing.isCancelled = entry.isCancelled
             notifyEntryChanged(existing)
         }
+    }
+
+    fun markDownloadStarted(entry: DownloadQueueEntry) {
+        activeDownloads[entry.id] = AtomicBoolean(true)
+        entry.status = "downloading"
+        updateEntry(entry)
+        L.d("CourseDownloadQueue", "Download started: ${entry.entryName}")
+    }
+
+    fun markDownloadFinished(entry: DownloadQueueEntry) {
+        activeDownloads.remove(entry.id)
+        updateEntry(entry)
+        L.d("CourseDownloadQueue", "Download finished: ${entry.entryName} - Status: ${entry.status}")
+    }
+
+    fun isDownloading(entry: DownloadQueueEntry): Boolean {
+        return activeDownloads.containsKey(entry.id)
+    }
+
+    fun cancelEntry(entry: DownloadQueueEntry) {
+        L.d("CourseDownloadQueue", "Cancelling entry: ${entry.entryName}")
+        entry.isCancelled = true
+
+        if (entry.status == "downloading") {
+            activeDownloads[entry.id]?.set(false)
+        } else {
+            entry.status = "cancelled"
+            entry.errorMessage = "Cancelled by user"
+        }
+
+        updateEntry(entry)
+        notifyQueueChanged()
+    }
+
+    fun cancelAll() {
+        L.d("CourseDownloadQueue", "Cancelling all downloads")
+        queue.filter { it.status == "pending" || it.status == "downloading" }.forEach { entry ->
+            entry.isCancelled = true
+
+            if (entry.status == "downloading") {
+                activeDownloads[entry.id]?.set(false)
+            } else {
+                entry.status = "cancelled"
+                entry.errorMessage = "Cancelled by user"
+            }
+
+            notifyEntryChanged(entry)
+        }
+        notifyQueueChanged()
     }
 
     fun clearCompleted() {
@@ -126,6 +187,7 @@ class CourseDownloadQueue private constructor() {
         completed.forEach {
             queue.remove(it)
             entryMap.remove(it.id)
+            activeDownloads.remove(it.id)
         }
         L.d("CourseDownloadQueue", "Cleared ${completed.size} completed entries")
         notifyQueueChanged()
@@ -136,6 +198,7 @@ class CourseDownloadQueue private constructor() {
         failed.forEach {
             queue.remove(it)
             entryMap.remove(it.id)
+            activeDownloads.remove(it.id)
         }
         L.d("CourseDownloadQueue", "Cleared ${failed.size} failed entries")
         notifyQueueChanged()
@@ -146,6 +209,10 @@ class CourseDownloadQueue private constructor() {
             entry.status = "pending"
             entry.progress = 0
             entry.errorMessage = ""
+            entry.isCancelled = false
+            entry.downloadedBytes = 0
+            entry.totalBytes = 0
+            entry.downloadSpeed = 0
             notifyEntryChanged(entry)
         }
         notifyQueueChanged()
@@ -153,11 +220,49 @@ class CourseDownloadQueue private constructor() {
 
     fun getQueueSize(): Int = queue.size
 
-    fun getPendingSize(): Int = queue.count { it.status == "pending" || it.status == "downloading" }
+    fun getPendingSize(): Int = queue.count {
+        (it.status == "pending" || it.status == "downloading") && !it.isCancelled
+    }
+
+    fun getQueueStats(): QueueStats {
+        val activeEntries = queue.filter { !it.isCancelled }
+        val totalBytes = activeEntries.sumOf { it.totalBytes }
+        val downloadedBytes = activeEntries.sumOf { it.downloadedBytes }
+        val totalSpeed = activeEntries.filter { it.status == "downloading" && activeDownloads.containsKey(it.id) }
+            .sumOf { it.downloadSpeed }
+
+        val remainingBytes = totalBytes - downloadedBytes
+        val estimatedSeconds = if (totalSpeed > 0) remainingBytes / totalSpeed else 0
+
+        return QueueStats(
+            totalEntries = activeEntries.size,
+            pendingEntries = activeEntries.count { it.status == "pending" },
+            downloadingEntries = activeEntries.count { it.status == "downloading" && activeDownloads.containsKey(it.id) },
+            completedEntries = activeEntries.count { it.status == "completed" },
+            failedEntries = activeEntries.count { it.status == "failed" },
+            totalBytes = totalBytes,
+            downloadedBytes = downloadedBytes,
+            totalSpeed = totalSpeed,
+            estimatedTimeRemaining = estimatedSeconds
+        )
+    }
+
+    data class QueueStats(
+        val totalEntries: Int,
+        val pendingEntries: Int,
+        val downloadingEntries: Int,
+        val completedEntries: Int,
+        val failedEntries: Int,
+        val totalBytes: Long,
+        val downloadedBytes: Long,
+        val totalSpeed: Long,
+        val estimatedTimeRemaining: Long
+    )
 
     fun clear() {
         queue.clear()
         entryMap.clear()
+        activeDownloads.clear()
         L.d("CourseDownloadQueue", "Queue cleared")
         notifyQueueChanged()
     }

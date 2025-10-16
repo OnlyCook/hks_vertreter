@@ -13,6 +13,15 @@ import java.text.ParseException
 // singleton class to manage calendar data
 class CalendarDataManager private constructor(context: Context) {
 
+    data class CachedEntryUrl(
+        val entryId: String,
+        val url: String,
+        val lastAccessTime: Long,
+        val summary: String
+    )
+
+    private var cachedEntryUrls = mutableMapOf<String, CachedEntryUrl>()
+
     companion object {
         @Volatile
         private var INSTANCE: CalendarDataManager? = null
@@ -51,6 +60,7 @@ class CalendarDataManager private constructor(context: Context) {
 
     init {
         loadCalendarData()
+        loadCachedUrls()
     }
 
     fun clearCalendarData() {
@@ -178,6 +188,9 @@ class CalendarDataManager private constructor(context: Context) {
             Log.d(TAG, "Parsed UIDs from calendar: ${uids.joinToString(", ")}")
             Log.d(TAG, "Total events with UIDs: ${uids.size} / ${events.size}")
 
+            val oldMoodleEntryIds = getCurrentMoodleEntryIds()
+            Log.d(TAG, "Old Moodle entry IDs (${oldMoodleEntryIds.size}): ${oldMoodleEntryIds.joinToString(", ")}")
+
             val existingData = getAllCalendarDays().filter { !it.specialNote.contains("Moodle:") }
             calendarData.clear()
 
@@ -186,6 +199,8 @@ class CalendarDataManager private constructor(context: Context) {
             }
 
             var importedCount = 0
+            val newMoodleEntryIds = mutableSetOf<String>()
+
             for (event in events) {
                 try {
                     val dayOfWeek = SimpleDateFormat("EEEE", Locale.GERMANY).format(event.date)
@@ -202,6 +217,10 @@ class CalendarDataManager private constructor(context: Context) {
                         isSpecialDay = true,
                         specialNote = "Moodle: ${event.summary}${if (event.uid.isNotEmpty()) " (ID: ${event.uid})" else ""}"
                     )
+
+                    if (event.uid.isNotEmpty()) {
+                        newMoodleEntryIds.add(event.uid)
+                    }
 
                     val dateKey = dayInfo.getDateKey()
                     val existing = calendarData[dateKey]
@@ -232,13 +251,19 @@ class CalendarDataManager private constructor(context: Context) {
             }
 
             saveCalendarData()
+
+            val removedEntryIds = oldMoodleEntryIds - newMoodleEntryIds
+            Log.d(TAG, "New Moodle entry IDs (${newMoodleEntryIds.size}): ${newMoodleEntryIds.joinToString(", ")}")
+            Log.d(TAG, "Removed entry IDs (${removedEntryIds.size}): ${removedEntryIds.joinToString(", ")}")
+
+            clearStaleUrlCaches(removedEntryIds)
+
             Log.d(TAG, "Successfully imported $importedCount / ${events.size} Moodle calendar events")
 
         } catch (e: Exception) {
             Log.e(TAG, "Error importing Moodle calendar data", e)
         }
     }
-
 
     private data class MoodleCalendarEvent(
         val date: Date,
@@ -409,5 +434,106 @@ class CalendarDataManager private constructor(context: Context) {
             }
 
         return uidToSummaries.mapValues { it.value.distinct() }
+    }
+
+    fun saveCachedUrl(entryId: String, url: String, summary: String) {
+        if (entryId.isEmpty() || url.isEmpty()) {
+            Log.w(TAG, "Cannot save empty entryId or url")
+            return
+        }
+
+        cachedEntryUrls[entryId] = CachedEntryUrl(
+            entryId = entryId,
+            url = url,
+            lastAccessTime = System.currentTimeMillis(),
+            summary = summary
+        )
+        saveCachedUrls()
+        Log.d(TAG, "Cached URL for entry: $entryId -> $url")
+    }
+
+    fun getCachedUrl(entryId: String): String? {
+        val cached = cachedEntryUrls[entryId]
+        if (cached != null) {
+            cachedEntryUrls[entryId] = cached.copy(lastAccessTime = System.currentTimeMillis())
+            saveCachedUrls()
+            Log.d(TAG, "Retrieved cached URL for entry: $entryId")
+        }
+        return cached?.url
+    }
+
+    fun clearStaleUrlCaches(removedEntryIds: Set<String>) {
+        if (removedEntryIds.isEmpty()) {
+            Log.d(TAG, "No entries removed, keeping all cached URLs")
+            return
+        }
+
+        val removedCaches = mutableListOf<String>()
+        removedEntryIds.forEach { entryId ->
+            if (cachedEntryUrls.containsKey(entryId)) {
+                cachedEntryUrls.remove(entryId)
+                removedCaches.add(entryId)
+            }
+        }
+
+        if (removedCaches.isNotEmpty()) {
+            saveCachedUrls()
+            Log.d(TAG, "Cleared ${removedCaches.size} cached URLs for removed entries: ${removedCaches.joinToString(", ")}")
+        } else {
+            Log.d(TAG, "No cached URLs needed to be cleared")
+        }
+    }
+
+    fun getCurrentMoodleEntryIds(): Set<String> {
+        return calendarData.values
+            .filter { it.specialNote.contains("Moodle:") }
+            .mapNotNull { entry ->
+                val uidPattern = """\(ID: ([^)]+)\)""".toRegex()
+                uidPattern.find(entry.specialNote)?.groupValues?.get(1)
+            }
+            .toSet()
+    }
+
+    private fun saveCachedUrls() {
+        try {
+            val json = Gson().toJson(cachedEntryUrls)
+            sharedPreferences.edit {
+                putString("moodle_cached_urls", json)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving cached URLs", e)
+        }
+    }
+
+    private fun loadCachedUrls() {
+        try {
+            val json = sharedPreferences.getString("moodle_cached_urls", "{}")
+            val type = object : TypeToken<MutableMap<String, CachedEntryUrl>>() {}.type
+            val loadedData: MutableMap<String, CachedEntryUrl> = Gson().fromJson(json, type) ?: mutableMapOf()
+            cachedEntryUrls.clear()
+            cachedEntryUrls.putAll(loadedData)
+            Log.d(TAG, "Loaded ${cachedEntryUrls.size} cached URLs")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading cached URLs", e)
+            cachedEntryUrls.clear()
+        }
+    }
+
+    fun clearAllCachedUrls() {
+        cachedEntryUrls.clear()
+        saveCachedUrls()
+        Log.d(TAG, "Cleared all cached URLs")
+    }
+
+    fun getCachedUrlsInfo(): String {
+        return buildString {
+            appendLine("Cached URLs (${cachedEntryUrls.size}):")
+            cachedEntryUrls.forEach { (id, cache) ->
+                appendLine("  - ID: $id")
+                appendLine("    Summary: ${cache.summary}")
+                appendLine("    URL: ${cache.url}")
+                appendLine("    Last access: ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMANY).format(Date(cache.lastAccessTime))}")
+            }
+        }
     }
 }

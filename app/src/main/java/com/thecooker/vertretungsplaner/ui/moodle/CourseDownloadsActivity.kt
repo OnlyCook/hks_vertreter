@@ -8,6 +8,8 @@ import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.TypedValue
@@ -32,12 +34,14 @@ import com.thecooker.vertretungsplaner.L
 import com.thecooker.vertretungsplaner.R
 import java.io.File
 import androidx.core.net.toUri
+import android.widget.ProgressBar
 
 open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.QueueListener {
 
     private lateinit var tvEmptyState: TextView
     private lateinit var recyclerView: RecyclerView
     private lateinit var searchEditText: EditText
+    private lateinit var btnClearSearch: ImageButton
     private lateinit var btnEditMode: ImageButton
     private lateinit var btnMenuCourseDownloads: Button
     private lateinit var editModeControls: LinearLayout
@@ -119,6 +123,7 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
     private fun initViews() {
         recyclerView = findViewById(R.id.courseDownloadsRecyclerView)
         searchEditText = findViewById(R.id.searchBarCourseDownloads)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
         btnEditMode = findViewById(R.id.btnEditMode)
         btnMenuCourseDownloads = findViewById(R.id.btnMenuCourseDownloads)
         editModeControls = findViewById(R.id.editModeControls)
@@ -136,6 +141,9 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
         btnEditMode.setOnClickListener { toggleEditMode() }
         btnCancel.setOnClickListener { toggleEditMode() }
         btnDelete.setOnClickListener { deleteSelectedItems() }
+        btnClearSearch.setOnClickListener {
+            searchEditText.text.clear()
+        }
     }
 
     private fun setupRecyclerView() {
@@ -154,7 +162,9 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                filterCourses(s.toString())
+                val query = s.toString()
+                btnClearSearch.visibility = if (query.isEmpty()) View.GONE else View.VISIBLE
+                filterCourses(query)
             }
         })
     }
@@ -413,14 +423,73 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_download_queue, null)
         val queueRecyclerView = dialogView.findViewById<RecyclerView>(R.id.queueRecyclerView)
+        val tvQueueSummary = dialogView.findViewById<TextView>(R.id.tvQueueSummary)
+        val tvTotalSize = dialogView.findViewById<TextView>(R.id.tvTotalSize)
+        val tvDownloadSpeed = dialogView.findViewById<TextView>(R.id.tvDownloadSpeed)
+        val tvTimeRemaining = dialogView.findViewById<TextView>(R.id.tvTimeRemaining)
+        val progressBarTotal = dialogView.findViewById<ProgressBar>(R.id.progressBarTotal)
 
         val displayMetrics = resources.displayMetrics
         val maxHeight = (displayMetrics.heightPixels * 0.5).toInt()
         queueRecyclerView.layoutParams.height = maxHeight
 
-        val queueAdapter = DownloadQueueAdapter(queueEntries.toMutableList())
+        val queueAdapter = DownloadQueueAdapter(
+            queueEntries.toMutableList(),
+            onCancelClick = { entry ->
+                CourseDownloadQueue.getInstance().cancelEntry(entry)
+            }
+        )
         queueRecyclerView.layoutManager = LinearLayoutManager(this)
         queueRecyclerView.adapter = queueAdapter
+
+        val handler = Handler(Looper.getMainLooper())
+        val updateRunnable = object : Runnable {
+            override fun run() {
+                val stats = CourseDownloadQueue.getInstance().getQueueStats()
+                val entries = CourseDownloadQueue.getInstance().getAllEntries()
+
+                queueAdapter.updateEntries(entries)
+
+                tvQueueSummary.text = getString(
+                    R.string.moodle_queue_summary_detailed,
+                    stats.totalEntries,
+                    stats.completedEntries,
+                    stats.downloadingEntries,
+                    stats.pendingEntries,
+                    stats.failedEntries
+                )
+
+                val downloadedMB = stats.downloadedBytes / (1024.0 * 1024.0)
+                val totalMB = stats.totalBytes / (1024.0 * 1024.0)
+                if (stats.totalBytes > 0) {
+                    "%.2f MB / %.2f MB".format(downloadedMB, totalMB).also { tvTotalSize.text = it }
+                    tvTotalSize.visibility = View.VISIBLE
+
+                    val overallProgress = ((stats.downloadedBytes.toDouble() / stats.totalBytes.toDouble()) * 100).toInt()
+                    progressBarTotal.progress = overallProgress
+                    progressBarTotal.visibility = View.VISIBLE
+                } else {
+                    tvTotalSize.visibility = View.GONE
+                    progressBarTotal.visibility = View.GONE
+                }
+
+                if (stats.totalSpeed > 0) {
+                    tvDownloadSpeed.text = formatSpeed(stats.totalSpeed)
+                    tvDownloadSpeed.visibility = View.VISIBLE
+                } else {
+                    tvDownloadSpeed.visibility = View.GONE
+                }
+
+                if (stats.estimatedTimeRemaining > 0) {
+                    tvTimeRemaining.text = formatTime(stats.estimatedTimeRemaining)
+                    tvTimeRemaining.visibility = View.VISIBLE
+                } else {
+                    tvTimeRemaining.visibility = View.GONE
+                }
+
+                handler.postDelayed(this, 500) // update every 500ms
+            }
+        }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.moodle_download_queue))
@@ -428,18 +497,46 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
             .setPositiveButton(getString(R.string.moodle_close), null)
             .setNeutralButton(getString(R.string.moodle_clear_completed)) { _, _ ->
                 CourseDownloadQueue.getInstance().clearCompleted()
-                Toast.makeText(this, getString(R.string.moodle_completed_cleared), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton(getString(R.string.moodle_retry_failed)) { _, _ ->
-                CourseDownloadQueue.getInstance().retryFailed()
-                Toast.makeText(this, getString(R.string.moodle_retrying_failed), Toast.LENGTH_SHORT).show()
+            .setNegativeButton(getString(R.string.moodle_cancel_all)) { _, _ ->
+                CourseDownloadQueue.getInstance().cancelAll()
+                Toast.makeText(this, getString(R.string.moodle_downloads_cancelled), Toast.LENGTH_SHORT).show()
+            }
+            .setOnDismissListener {
+                handler.removeCallbacks(updateRunnable)
             }
             .show()
+
+        handler.post(updateRunnable)
 
         val buttonColor = getThemeColor(R.attr.dialogSectionButtonColor)
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(buttonColor)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun formatSpeed(bytesPerSecond: Long): String {
+        return when {
+            bytesPerSecond >= 1024 * 1024 -> "%.2f MB/s".format(bytesPerSecond / (1024.0 * 1024.0))
+            bytesPerSecond >= 1024 -> "%.2f KB/s".format(bytesPerSecond / 1024.0)
+            else -> "$bytesPerSecond B/s"
+        }
+    }
+
+    private fun formatTime(seconds: Long): String {
+        return when {
+            seconds >= 3600 -> {
+                val hours = seconds / 3600
+                val minutes = (seconds % 3600) / 60
+                "${hours}h ${minutes}m"
+            }
+            seconds >= 60 -> {
+                val minutes = seconds / 60
+                val secs = seconds % 60
+                "${minutes}m ${secs}s"
+            }
+            else -> "${seconds}s"
+        }
     }
 
     private fun toggleEditMode() {
@@ -588,17 +685,57 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
     private fun filterCourses(query: String) {
         filteredCourses = if (query.isEmpty()) {
-            downloadedCourses.toMutableList()
+            downloadedCourses.map { course ->
+                course.copy(
+                    entries = course.entries.toMutableList(),
+                    isExpanded = false
+                )
+            }.toMutableList()
         } else {
-            downloadedCourses.filter { course ->
-                course.name.contains(query, ignoreCase = true) ||
-                        course.entries.any { entry ->
-                            entry.name.contains(query, ignoreCase = true) ||
-                                    entry.fileName.contains(query, ignoreCase = true)
+            downloadedCourses.mapNotNull { course ->
+                val courseNameMatches = course.name.contains(query, ignoreCase = true)
+
+                val matchingEntries = course.entries.mapNotNull { entry ->
+                    val entryMatches = entry.name.contains(query, ignoreCase = true) ||
+                            entry.fileName.contains(query, ignoreCase = true)
+
+                    if (entry.isFolder) {
+                        val matchingFolderFiles = entry.folderFiles.filter { file ->
+                            file.name.contains(query, ignoreCase = true) ||
+                                    file.fileName.contains(query, ignoreCase = true)
                         }
+
+                        when {
+                            entryMatches -> entry.copy(
+                                folderFiles = entry.folderFiles.toMutableList(),
+                                isExpanded = true
+                            )
+                            matchingFolderFiles.isNotEmpty() -> entry.copy(
+                                folderFiles = matchingFolderFiles.toMutableList(),
+                                isExpanded = true
+                            )
+                            else -> null
+                        }
+                    } else {
+                        if (entryMatches) entry else null
+                    }
+                }
+
+                when {
+                    courseNameMatches -> course.copy(
+                        entries = course.entries.toMutableList(),
+                        isExpanded = true
+                    )
+                    matchingEntries.isNotEmpty() -> course.copy(
+                        entries = matchingEntries.toMutableList(),
+                        isExpanded = true
+                    )
+                    else -> null
+                }
             }.toMutableList()
         }
         adapter.updateCourses(filteredCourses)
+        updateCourseCount()
         updateSelectedCount()
     }
 
@@ -622,11 +759,11 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
         val message = when {
             selectedCourses.isNotEmpty() && selectedEntries.isEmpty() ->
-                getString(R.string.moodle_delete_courses_confirm, selectedCourses.size)
+                resources.getQuantityString(R.plurals.moodle_delete_courses_confirm, selectedCourses.size, selectedCourses.size)
             selectedCourses.isEmpty() ->
-                getString(R.string.moodle_delete_entries_confirm, selectedEntries.size)
+                resources.getQuantityString(R.plurals.moodle_delete_entries_confirm, selectedEntries.size, selectedEntries.size)
             else ->
-                getString(R.string.moodle_delete_items_confirm, selectedCourses.size, selectedEntries.size)
+                resources.getQuantityString(R.plurals.moodle_delete_items_confirm, selectedCourses.size + selectedEntries.size, selectedCourses.size, selectedEntries.size)
         }
 
         val dialog = AlertDialog.Builder(this)
@@ -673,36 +810,36 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
         toggleEditMode()
 
-        Toast.makeText(
-            this,
-            getString(R.string.moodle_items_deleted, deletedCount),
-            Toast.LENGTH_SHORT
-        ).show()
+        val message = resources.getQuantityString(R.plurals.moodle_items_deleted, deletedCount, deletedCount)
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateCourseCount() {
-        val totalEntries = downloadedCourses.flatMap { it.entries }.size
-        tvCourseCount.text = downloadedCourses.size.toString()
+        val totalEntries = filteredCourses.flatMap { it.entries }.size
+        tvCourseCount.text = filteredCourses.size.toString()
         tvEntryCount.text = totalEntries.toString()
 
-        val isEmpty = downloadedCourses.isEmpty()
+        val isEmpty = filteredCourses.isEmpty()
         tvEmptyState.visibility = if (isEmpty) View.VISIBLE else View.GONE
         recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
-        findViewById<LinearLayout>(R.id.courseCountLayout).visibility = if (isEmpty) View.GONE else View.VISIBLE
+
+        findViewById<LinearLayout>(R.id.courseCountLayout).visibility =
+            if (isEmpty || isEditMode) View.GONE else View.VISIBLE
+
         btnEditMode.isEnabled = !isEmpty
     }
 
     private fun updateSelectedCount() {
-        val selectedCourses = downloadedCourses.count { it.isSelected }
+        val selectedCourses = filteredCourses.count { it.isSelected }
 
-        val selectedEntries = downloadedCourses.flatMap { course ->
+        val selectedEntries = filteredCourses.flatMap { course ->
             course.entries.filter { it.isSelected }
         }.size
 
-        val totalEntries = downloadedCourses.flatMap { it.entries }.size
+        val totalEntries = filteredCourses.flatMap { it.entries }.size
 
         tvSelectedCourseCount.text = selectedCourses.toString()
-        tvTotalCourseCount.text = downloadedCourses.size.toString()
+        tvTotalCourseCount.text = filteredCourses.size.toString()
         tvSelectedEntryCount.text = selectedEntries.toString()
         tvTotalEntryCount.text = totalEntries.toString()
     }

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/calendarEntryContainer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:layout_marginVertical="4dp"
+    android:layout_marginHorizontal="4dp"
+    android:background="@drawable/rounded_background"
+    android:elevation="2dp"
+    android:clipToPadding="false"
+    android:clipChildren="false">
+
+    <!-- content area -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_gravity="center_vertical">
+
+        <!-- date and time info -->
+        <TextView
+            android:id="@+id/textCalendarInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="?attr/examItemFontColor"
+            android:padding="4dp"
+            android:ellipsize="end"
+            android:maxLines="2" />
+
+        <!-- entry content -->
+        <TextView
+            android:id="@+id/textCalendarContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:padding="4dp"
+            android:ellipsize="end"
+            android:maxLines="3" />
+    </LinearLayout>
+
+    <!-- search button -->
+    <ImageButton
+        android:id="@+id/btnSearchEntry"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_output"
+        android:backgroundTint="?attr/colorPrimary"
+        android:tint="@color/white"
+        android:layout_marginEnd="8dp"
+        android:layout_gravity="center_vertical"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/moodle_search_entry"
+        style="@style/Widget.AppCompat.Button" />
+
+</LinearLayout>

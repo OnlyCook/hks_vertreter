@@ -35,6 +35,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -49,7 +50,9 @@ import android.provider.Settings
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextPaint
 import android.text.style.BackgroundColorSpan
+import android.text.style.MetricAffectingSpan
 import android.text.style.RelativeSizeSpan
 import android.util.Base64
 import android.util.TypedValue
@@ -69,12 +72,10 @@ import androidx.core.content.FileProvider
 import java.net.URLDecoder
 import androidx.core.net.toUri
 import com.thecooker.vertretungsplaner.data.CalendarDataManager
-import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 import androidx.core.view.isGone
@@ -85,7 +86,6 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.gms.maps.model.StyleSpan
 import com.itextpdf.text.BaseColor
 import com.itextpdf.text.Chunk
 import com.itextpdf.text.Document
@@ -123,6 +123,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sign
 import kotlin.math.sqrt
 
 class MoodleFragment : Fragment() {
@@ -191,13 +192,6 @@ class MoodleFragment : Fragment() {
     private var wasOnLoginPage = false
     private var calendarDataManager: CalendarDataManager? = null
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private data class CalendarEvent(
-        val date: Date,
-        val summary: String,
-        val description: String,
-        val category: String,
-        val courseId: String = ""
-    )
 
     // search dialog
     private var searchProgressDialog: AlertDialog? = null
@@ -292,6 +286,8 @@ class MoodleFragment : Fragment() {
     private val UNLOAD_THROTTLE_MS = 500L
     private var isNavigating = false
     private var ignoreScrollUpdates = false
+    private val loadingScheduler = mutableMapOf<Int, Long>()
+    private var lastLoadingBatch = emptySet<Int>()
 
     // pdf viewer swipe indicator
     private var pdfSwipeIndicator: TextView? = null
@@ -399,6 +395,15 @@ class MoodleFragment : Fragment() {
             }
             return File(baseDir, "HKS_Moodle_Downloads")
         }
+
+    // moodle calendar dialog
+    private var calendarEntriesDialog: AlertDialog? = null
+    private var calendarEntriesAdapter: MoodleCalendarAdapter? = null
+    private val calendarEntries = mutableListOf<CalendarDataManager.CalendarDayInfo>()
+
+    // moodle fetch url caching
+    private var cachedMainCourseUrl: String? = null
+    private val MAIN_COURSE_CACHE_KEY = "moodle_main_course_url"
 
     //region **SETUP**
 
@@ -512,6 +517,8 @@ class MoodleFragment : Fragment() {
         initViews(root)
         setupSharedPreferences()
         calendarDataManager = CalendarDataManager.getInstance(requireContext())
+
+        loadCachedMainCourseUrl()
 
         detectCurrentTheme()
 
@@ -1084,6 +1091,11 @@ class MoodleFragment : Fragment() {
 
         btnForward.setOnClickListener {
             showTabOverlay()
+        }
+
+        btnForward.setOnLongClickListener {
+            showCalendarEntriesMenu()
+            true
         }
 
         btnClearSearch.setOnClickListener {
@@ -7115,37 +7127,18 @@ class MoodleFragment : Fragment() {
 
     private fun parseAndSaveCalendarData(calendarContent: String) {
         try {
-            val events = parseICalendarContent(calendarContent)
-
             calendarDataManager?.let { manager ->
-                manager.clearMoodleCalendarData()
-
-                for (event in events) {
-                    val dayInfo = CalendarDataManager.CalendarDayInfo(
-                        date = event.date,
-                        dayOfWeek = SimpleDateFormat("EEEE", Locale.GERMANY).format(event.date),
-                        month = SimpleDateFormat("MM", Locale.GERMANY).format(event.date).toInt(),
-                        year = SimpleDateFormat("yyyy", Locale.GERMANY).format(event.date).toInt(),
-                        content = "Kurs: ${event.category}\nAufgabe: ${event.summary}\n\n${event.description}",
-                        exams = emptyList(),
-                        isSpecialDay = true,
-                        specialNote = "Moodle: ${event.summary} (ID: ${event.courseId})"
-                    )
-                    manager.addCalendarDay(dayInfo)
-                }
-
-                manager.saveCalendarData()
+                manager.importMoodleCalendarData(calendarContent)
 
                 if (isFragmentActive && isAdded) {
                     activity?.runOnUiThread {
                         context?.let {
-                            //Toast.makeText(it, getString(R.string.moodle_calendar_refresh_success, events.size), Toast.LENGTH_SHORT).show()
-                            L.d("MoodleFragment", "TOAST - Calendar data refresh successfully")
+                            L.d("MoodleFragment", "Calendar data refresh successful")
+                            L.d("MoodleFragment", manager.
+                            getCachedUrlsInfo())
                         }
                     }
                 }
-
-                L.d("MoodleFragment", "Successfully imported ${events.size} calendar events")
             }
         } catch (e: Exception) {
             L.e("MoodleFragment", "Error parsing calendar data", e)
@@ -7157,107 +7150,6 @@ class MoodleFragment : Fragment() {
                 }
             }
         }
-    }
-
-    private fun parseICalendarContent(content: String): List<CalendarEvent> {
-        val events = mutableListOf<CalendarEvent>()
-        val lines = content.split("\n")
-
-        var currentEvent: MutableMap<String, String>? = null
-        var currentKey = ""
-
-        for (line in lines) {
-            val trimmedLine = line.trim()
-
-            when {
-                trimmedLine == "BEGIN:VEVENT" -> {
-                    currentEvent = mutableMapOf()
-                }
-                trimmedLine == "END:VEVENT" -> {
-                    currentEvent?.let { event ->
-                        try {
-                            val dtend = event["DTEND"] ?: event["DTSTART"] ?: return@let
-                            val summary = event["SUMMARY"] ?: return@let
-                            val description = event["DESCRIPTION"] ?: ""
-                            val categories = event["CATEGORIES"] ?: ""
-                            val uid = event["UID"] ?: ""
-
-                            val date = parseICalendarDate(dtend)
-                            if (date != null) {
-                                val cleanedSummary = summary.removeSuffix(" ist fällig.").removeSuffix("ist fällig.")
-
-                                val courseId = uid.removePrefix("UID:").substringBefore("@moodle.kleyer.eu")
-
-                                events.add(CalendarEvent(
-                                    date = date,
-                                    summary = cleanICalendarText(cleanedSummary),
-                                    description = cleanICalendarText(description),
-                                    category = cleanICalendarText(categories),
-                                    courseId = courseId
-                                ))
-                            }
-                        } catch (e: Exception) {
-                            L.w("MoodleFragment", "Error parsing calendar event", e)
-                        }
-                    }
-                    currentEvent = null
-                }
-                currentEvent != null && trimmedLine.isNotEmpty() -> {
-                    if (trimmedLine.startsWith(" ") || trimmedLine.startsWith("\t")) {
-                        if (currentKey.isNotEmpty() && currentEvent.containsKey(currentKey)) {
-                            currentEvent[currentKey] = currentEvent[currentKey] + trimmedLine.trim()
-                        }
-                    } else {
-                        val colonIndex = trimmedLine.indexOf(':')
-                        if (colonIndex > 0) {
-                            val key = trimmedLine.substring(0, colonIndex).split(';')[0] // Remove parameters
-                            val value = trimmedLine.substring(colonIndex + 1)
-                            currentEvent[key] = value
-                            currentKey = key
-                        }
-                    }
-                }
-            }
-        }
-
-        return events
-    }
-
-    private fun parseICalendarDate(dateString: String): Date? {
-        return try {
-            // format: 20251023T215900Z (gmt)
-            val cleanDateString = dateString.replace("Z", "").replace("T", "")
-            val gmtFormat = SimpleDateFormat("yyyyMMddHHmmss", Locale.GERMANY)
-            gmtFormat.timeZone = TimeZone.getTimeZone("GMT")
-
-            val gmtDate = gmtFormat.parse(cleanDateString)
-
-            // convert to cest
-            val germanTimeZone = TimeZone.getTimeZone("Europe/Berlin")
-            val calendar = Calendar.getInstance(germanTimeZone)
-            if (gmtDate != null) {
-                calendar.time = gmtDate
-            }
-
-            return calendar.time
-        } catch (_: ParseException) {
-            try {
-                // try alt format: 20251023
-                val format = SimpleDateFormat("yyyyMMdd", Locale.GERMANY)
-                format.parse(dateString.substring(0, 8))
-            } catch (e2: ParseException) {
-                L.e("MoodleFragment", "Error parsing date: $dateString", e2)
-                null
-            }
-        }
-    }
-
-    private fun cleanICalendarText(text: String): String {
-        return text.replace("\\n", "\n")
-            .replace("\\,", ",")
-            .replace("\\;", ";")
-            .replace("\\\\", "\\")
-            .trim()
     }
 
     //endregion
@@ -7342,9 +7234,15 @@ class MoodleFragment : Fragment() {
             return
         }
 
-        val searchQuery = extractSearchableCourseName(category)
+        val cachedUrl = calendarDataManager?.getCachedUrl(entryId)
+        if (cachedUrl != null) {
+            L.d("MoodleFragment", "Found cached URL for entry $entryId: $cachedUrl")
+            navigateUsingCachedUrl(cachedUrl, summary, entryId)
+            return
+        }
 
-        L.d("MoodleFragment", "Extracted search query: '$searchQuery' from category: '$category'")
+        val searchQuery = extractSearchableCourseName(category)
+        L.d("MoodleFragment", "No cached URL, performing full search with query: '$searchQuery'")
 
         searchCancelled = false
         searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
@@ -7366,6 +7264,111 @@ class MoodleFragment : Fragment() {
         } else {
             continueSearchAfterLogin(searchQuery, summary, entryId)
         }
+    }
+
+    private fun navigateUsingCachedUrl(url: String, summary: String, entryId: String) {
+        searchCancelled = false
+        searchProgressDialog = AlertDialog.Builder(requireContext())
+            .setView(layoutInflater.inflate(R.layout.dialog_moodle_search_progress, null).apply {
+                findViewById<TextView>(R.id.tvSearchTitle)?.text = getString(R.string.moodle_opening_cached_entry)
+                findViewById<TextView>(R.id.tvSearchStatus)?.text = getString(R.string.moodle_loading_page)
+                findViewById<ProgressBar>(R.id.progressBar)?.progress = 50
+                findViewById<Button>(R.id.btnCancel)?.setOnClickListener {
+                    searchCancelled = true
+                    searchProgressDialog?.dismiss()
+                }
+            })
+            .setCancelable(false)
+            .create()
+
+        searchProgressDialog?.show()
+
+        L.d("MoodleFragment", "Navigating to cached URL: $url")
+
+        loadUrlInBackground(url)
+
+        waitForCachedPageLoad(url, entryId, summary)
+    }
+
+    private fun waitForCachedPageLoad(
+        expectedUrl: String,
+        entryId: String,
+        summary: String,
+        maxAttempts: Int = 20,
+        attempt: Int = 0
+    ) {
+        if (searchCancelled) {
+            hideSearchProgressDialog()
+            return
+        }
+
+        if (attempt >= maxAttempts) {
+            L.w("MoodleFragment", "Cached page load timeout, URL may be invalid")
+            hideSearchProgressDialog()
+
+            calendarDataManager?.saveCachedUrl(entryId, "", "")
+
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.moodle_cached_url_invalid_searching),
+                Toast.LENGTH_SHORT
+            ).show()
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                val category = extractCategoryFromSummary(summary)
+                searchForMoodleEntry(category, summary, entryId)
+            }, 500)
+            return
+        }
+
+        val jsCode = """
+        (function() {
+            return document.readyState === 'complete' && 
+                   document.querySelector('body') !== null &&
+                   !document.querySelector('.loading, .spinner');
+        })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                val currentUrl = webView.url ?: ""
+
+                if (currentUrl.contains("login/index.php")) {
+                    L.w("MoodleFragment", "Cached URL led to login page, clearing cache")
+                    hideSearchProgressDialog()
+
+                    calendarDataManager?.saveCachedUrl(entryId, "", "")
+
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_session_expired_retry_search),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@evaluateJavascript
+                }
+
+                L.d("MoodleFragment", "Cached page loaded successfully")
+                updateSearchProgress(100, getString(R.string.moodle_entry_found))
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    hideSearchProgressDialog()
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.moodle_opened_entry, summary),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }, 300)
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForCachedPageLoad(expectedUrl, entryId, summary, maxAttempts, attempt + 1)
+                }, 300)
+            }
+        }
+    }
+
+    private fun extractCategoryFromSummary(summary: String): String {
+        val words = summary.split(" ").filter { it.isNotBlank() }
+        return if (words.isNotEmpty()) words.first() else summary
     }
 
     private fun extractSearchableCourseName(category: String): String {
@@ -7752,7 +7755,7 @@ class MoodleFragment : Fragment() {
                             if (searchCancelled) return@postDelayed
                             waitForCoursePageLoad {
                                 if (!searchCancelled) {
-                                    searchForSpecificEntry(summary)
+                                    searchForSpecificEntry(summary, entryId)
                                 }
                             }
                         }, 1000)
@@ -7848,14 +7851,14 @@ class MoodleFragment : Fragment() {
         }
     }
 
-    private fun searchForSpecificEntry(summary: String) {
+    private fun searchForSpecificEntry(summary: String, entryId: String = "") {
         if (searchCancelled) return
 
         val cleanSummary = summary.removeSuffix("ist fällig.")
             .removeSuffix(" ist fällig.").trim()
         updateSearchProgress(90, getString(R.string.moodle_looking_for, cleanSummary))
 
-        L.d("MoodleFragment", "Searching for specific entry: $cleanSummary")
+        L.d("MoodleFragment", "Searching for specific entry: $cleanSummary (ID: $entryId)")
 
         val jsCode = """
         (function() {
@@ -7904,6 +7907,12 @@ class MoodleFragment : Fragment() {
             val entryUrl = result.replace("\"", "")
             if (entryUrl != "false" && (entryUrl.contains("mod/") || entryUrl.contains("view.php"))) {
                 L.d("MoodleFragment", "Found and navigating to entry: $entryUrl")
+
+                if (entryId.isNotEmpty()) {
+                    calendarDataManager?.saveCachedUrl(entryId, entryUrl, cleanSummary)
+                    L.d("MoodleFragment", "Cached URL for future use: $entryId -> $entryUrl")
+                }
+
                 Toast.makeText(requireContext(), getString(R.string.moodle_found_entry, cleanSummary), Toast.LENGTH_SHORT).show()
             } else {
                 L.w("MoodleFragment", "Specific entry not found on course page")
@@ -8410,13 +8419,15 @@ class MoodleFragment : Fragment() {
         var tapCount = 0
 
         // zoom specific state
-        var zoomStartDistance: Float
+        var zoomStartDistance = 0f
         var isMultiTouchZoom = false
         var lastZoomDistance = 0f
         var zoomVelocity = 0f
         var lastZoomTime = 0L
-        val ZOOM_SMOOTHING_FACTOR = 0.15f // lower -> smoother but slower response
-        val MIN_ZOOM_VELOCITY = 0.001f // min velocity to register zoom
+        val ZOOM_SMOOTHING_FACTOR = 0.2f
+        val MIN_ZOOM_VELOCITY = 0.0001f
+        val ZOOM_THRESHOLD = 5f
+        val MAX_ZOOM_RATIO_PER_FRAME = 1.15f // prevent huge jumps
 
         // swipe state
         var isPanning = false
@@ -8426,7 +8437,6 @@ class MoodleFragment : Fragment() {
         val swipeThreshold = 100f
         val tapMovementThreshold = 30f
         val doubleTapTimeout = 300L
-        val zoomThreshold = 10f
 
         pdfSinglePageView.setOnTouchListener { view, event ->
             when (event.action and MotionEvent.ACTION_MASK) {
@@ -8471,33 +8481,44 @@ class MoodleFragment : Fragment() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    if (isMultiTouchZoom && event.pointerCount >= 2) {
+                    if (isMultiTouchZoom && event.pointerCount >= 2 && initialPointerCount == 2) {
                         val x0 = event.getX(0)
                         val y0 = event.getY(0)
                         val x1 = event.getX(1)
                         val y1 = event.getY(1)
 
                         val currentDistance = sqrt((x1 - x0).pow(2) + (y1 - y0).pow(2))
-                        val distanceDelta = currentDistance - lastZoomDistance
+                        val distanceDelta = abs(currentDistance - lastZoomDistance)
 
-                        if (abs(distanceDelta) > zoomThreshold) {
+                        if (distanceDelta > ZOOM_THRESHOLD && currentDistance > 0 && lastZoomDistance > 0) {
                             val currentTime = System.currentTimeMillis()
-                            val timeDelta = (currentTime - lastZoomTime).coerceAtLeast(1)
+                            val timeDelta = (currentTime - lastZoomTime).coerceAtLeast(16L) // Min 16ms (60fps)
 
                             val rawRatio = currentDistance / lastZoomDistance
 
-                            val newVelocity = (rawRatio - 1f) / timeDelta
+                            val clampedRatio = rawRatio.coerceIn(1f / MAX_ZOOM_RATIO_PER_FRAME, MAX_ZOOM_RATIO_PER_FRAME)
+
+                            val newVelocity = (clampedRatio - 1f) / timeDelta
 
                             zoomVelocity = if (abs(newVelocity) > MIN_ZOOM_VELOCITY) {
-                                zoomVelocity * (1f - ZOOM_SMOOTHING_FACTOR) + newVelocity * ZOOM_SMOOTHING_FACTOR
+                                val oldVelocitySign = zoomVelocity.sign
+                                val newVelocitySign = newVelocity.sign
+
+                                val dampening = if (oldVelocitySign != newVelocitySign && oldVelocitySign != 0f) {
+                                    0.1f
+                                } else {
+                                    1f - ZOOM_SMOOTHING_FACTOR
+                                }
+
+                                zoomVelocity * dampening + newVelocity * ZOOM_SMOOTHING_FACTOR
                             } else {
-                                zoomVelocity * 0.8f
+                                zoomVelocity * 0.85f
                             }
 
-                            val smoothedRatio = 1f + (zoomVelocity * timeDelta).coerceIn(-0.1f, 0.1f)
+                            val smoothedRatio = 1f + (zoomVelocity * timeDelta).coerceIn(-0.08f, 0.08f)
                             val newScale = (pdfScaleFactor * smoothedRatio).coerceIn(MIN_ZOOM, MAX_ZOOM)
 
-                            if (abs(newScale - pdfScaleFactor) > 0.01f) {
+                            if (abs(newScale - pdfScaleFactor) > 0.005f) {
                                 pdfScaleFactor = newScale
                                 pdfSinglePageView.scaleX = pdfScaleFactor
                                 pdfSinglePageView.scaleY = pdfScaleFactor
@@ -8505,15 +8526,15 @@ class MoodleFragment : Fragment() {
                                 lastZoomDistance = currentDistance
                                 lastZoomTime = currentTime
 
-                                val centerX = (x0 + x1) / 2f
-                                val centerY = (y0 + y1) / 2f
-
                                 if (pdfScaleFactor > 1.2f) {
                                     val containerWidth = (pdfSinglePageView.parent as View).width.toFloat()
                                     val containerHeight = (pdfSinglePageView.parent as View).height.toFloat()
 
-                                    val panX = (centerX - containerWidth / 2f) * 0.3f
-                                    val panY = (centerY - containerHeight / 2f) * 0.3f
+                                    val centerX = (x0 + x1) / 2f
+                                    val centerY = (y0 + y1) / 2f
+
+                                    val panX = (centerX - containerWidth / 2f) * 0.25f
+                                    val panY = (centerY - containerHeight / 2f) * 0.25f
 
                                     pdfSinglePageView.translationX = panX
                                     pdfSinglePageView.translationY = panY
@@ -8525,6 +8546,7 @@ class MoodleFragment : Fragment() {
                         return@setOnTouchListener true
                     }
 
+                    // pan (single finger)
                     if (!isMultiTouchZoom && event.pointerCount == 1 && !isCurrentlyZooming) {
                         val deltaX = event.x - startX
                         val deltaY = event.y - startY
@@ -8575,10 +8597,10 @@ class MoodleFragment : Fragment() {
                 }
 
                 MotionEvent.ACTION_POINTER_UP -> {
-                    if (event.pointerCount == 2) {
+                    if (event.pointerCount <= 2) {
                         isMultiTouchZoom = false
-                        isCurrentlyZooming = false
                         zoomVelocity = 0f
+                        lastZoomDistance = 0f
 
                         if (pdfScaleFactor in 0.95f..1.05f) {
                             animateToScale(1f)
@@ -8595,6 +8617,7 @@ class MoodleFragment : Fragment() {
                     val deltaY = event.y - startY
                     val totalMovement = sqrt(deltaX * deltaX + deltaY * deltaY)
 
+                    // double tap to stop zoom
                     if (!hasMoved && totalMovement < tapMovementThreshold && initialPointerCount == 1 && !isCurrentlyZooming && !isMultiTouchZoom) {
                         if (upTime - lastTapTime < doubleTapTimeout) {
                             tapCount++
@@ -8607,6 +8630,8 @@ class MoodleFragment : Fragment() {
                                 hidePdfSwipeIndicator()
                                 isPdfSwiping = false
                                 isPanning = false
+                                isCurrentlyZooming = false
+                                isMultiTouchZoom = false
                                 return@setOnTouchListener true
                             }
                         } else {
@@ -8644,6 +8669,8 @@ class MoodleFragment : Fragment() {
                     initialPointerCount = 0
                     isMultiTouchZoom = false
                     isCurrentlyZooming = false
+                    zoomVelocity = 0f
+                    lastZoomDistance = 0f
                     true
                 }
 
@@ -8759,9 +8786,11 @@ class MoodleFragment : Fragment() {
     private fun loadVisiblePages() {
         val scrollY = pdfScrollContainer.scrollY
         val height = pdfScrollContainer.height
+        val viewportTop = scrollY
+        val viewportBottom = scrollY + height
 
         val currentlyVisiblePages = mutableSetOf<Int>()
-        val pagesToLoad = mutableListOf<Pair<Int, Int>>()
+        val pagesToLoad = mutableListOf<Triple<Int, Float, Boolean>>() // page, priority, isInViewport
 
         for (i in 0 until pdfPagesContainer.childCount) {
             val child = pdfPagesContainer.getChildAt(i)
@@ -8769,41 +8798,62 @@ class MoodleFragment : Fragment() {
             val childBottom = child.bottom
             val pageNumber = child.tag as? Int ?: continue
 
-            val isInViewport = childBottom > scrollY && childTop < scrollY + height
-            val isNearby = childBottom > scrollY - height * 1.5 && childTop < scrollY + height * 2.5
+            val isInViewport = childBottom > viewportTop && childTop < viewportBottom
+            val isNearby = childBottom > viewportTop - height * 2 && childTop < viewportBottom + height * 2
 
             if (isInViewport) {
                 currentlyVisiblePages.add(pageNumber)
             }
 
             val imageView = child as? ImageView ?: continue
+            val hasContent = imageView.drawable != null
+            val isCached = pdfViewerManager?.getCachedPage(pageNumber) != null
 
-            if (isNearby && imageView.drawable == null) {
-                val distanceFromViewport = when {
-                    childTop > scrollY + height -> childTop - (scrollY + height)
-                    childBottom < scrollY -> scrollY - childBottom
-                    else -> 0
+            if (!hasContent && isNearby) {
+                val pageCenter = (childTop + childBottom) / 2f
+                val viewportCenter = (viewportTop + viewportBottom) / 2f
+                val distanceFromCenter = abs(pageCenter - viewportCenter)
+
+                val priority = if (isInViewport) {
+                    -1000f - distanceFromCenter
+                } else {
+                    distanceFromCenter
                 }
-                pagesToLoad.add(Pair(pageNumber, distanceFromViewport))
+
+                pagesToLoad.add(Triple(pageNumber, priority, isInViewport))
             }
         }
 
         pdfViewerManager?.updateDisplayedPages(currentlyVisiblePages)
 
-        pagesToLoad.sortedBy { it.second }.take(5).forEach { (pageNumber, _) ->
-            loadPageInBackground(pageNumber)
+        val sortedPages = pagesToLoad.sortedBy { it.second }
+
+        val maxPagesToLoad = if (isScrolling) 3 else 6
+
+        val newLoadingBatch = sortedPages.take(maxPagesToLoad).map { it.first }.toSet()
+
+        newLoadingBatch.forEach { pageNumber ->
+            if (pageNumber !in lastLoadingBatch) {
+                loadingScheduler[pageNumber] = System.currentTimeMillis()
+                loadPageInBackground(pageNumber)
+            }
         }
+
+        lastLoadingBatch = newLoadingBatch
+
+        L.d("MoodleFragment", "Loading ${newLoadingBatch.size} pages, scroll state: $isScrolling")
     }
 
     private fun loadPageInBackground(pageNumber: Int) {
         backgroundExecutor.execute {
             try {
+                Thread.sleep(50)
+
                 val bitmap = pdfViewerManager?.renderPage(pageNumber, forceRender = false)
 
                 if (bitmap != null && !bitmap.isRecycled) {
                     activity?.runOnUiThread {
-                        if (bitmap.isRecycled) {
-                            L.w("MoodleFragment", "Bitmap for page $pageNumber was recycled before UI update")
+                        if (!isAdded || context == null || bitmap.isRecycled) {
                             return@runOnUiThread
                         }
 
@@ -8815,11 +8865,15 @@ class MoodleFragment : Fragment() {
                                 imageView.setImageBitmap(bitmap)
                                 imageView.setBackgroundColor(Color.TRANSPARENT)
                                 imageView.minimumHeight = 0
+
                                 val layoutParams = imageView.layoutParams
                                 layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                                 imageView.layoutParams = layoutParams
+
+                                loadingScheduler.remove(pageNumber)
+                                L.d("MoodleFragment", "Page $pageNumber loaded successfully")
                             } catch (e: Exception) {
-                                L.e("MoodleFragment", "Failed to set bitmap on ImageView", e)
+                                L.e("MoodleFragment", "Failed to set bitmap on ImageView for page $pageNumber", e)
                             }
                         }
                     }
@@ -8835,6 +8889,8 @@ class MoodleFragment : Fragment() {
 
         val scrollY = pdfScrollContainer.scrollY
         val height = pdfScrollContainer.height
+        val viewportTop = scrollY
+        val viewportBottom = scrollY + height
 
         val pagesToUnload = mutableListOf<Int>()
 
@@ -8845,40 +8901,36 @@ class MoodleFragment : Fragment() {
             val pageNumber = child.tag as? Int ?: continue
 
             val imageView = child as? ImageView ?: continue
-
-            val isFarAway = (childBottom < scrollY - height * 1.5) || (childTop > scrollY + height * 2.5)
             val hasContent = imageView.drawable != null
+
+            val isFarAway = (childBottom < viewportTop - height * 2) || (childTop > viewportBottom + height * 2)
 
             if (isFarAway && hasContent) {
                 pagesToUnload.add(pageNumber)
             }
         }
 
-        if (pagesToUnload.isNotEmpty()) {
-            L.d("MoodleFragment", "Unloading ${pagesToUnload.size} distant pages")
-        }
-
         pagesToUnload.forEach { pageNumber ->
             val child = pdfPagesContainer.getChildAt(pageNumber)
             val imageView = child as? ImageView ?: return@forEach
-
-            val currentHeight = imageView.height
 
             val drawable = imageView.drawable as? BitmapDrawable
             val bitmap = drawable?.bitmap
 
             imageView.setImageDrawable(null)
+            imageView.setBackgroundColor(Color.LTGRAY)
+
+            pdfViewerManager?.removeCachedPage(pageNumber)
 
             if (bitmap != null && !bitmap.isRecycled) {
                 try {
                     bitmap.recycle()
                 } catch (e: Exception) {
-                    L.e("MoodleFragment", "Error recycling bitmap", e)
+                    L.e("MoodleFragment", "Error recycling bitmap for page $pageNumber", e)
                 }
             }
 
-            imageView.setBackgroundColor(Color.LTGRAY)
-
+            val currentHeight = imageView.height
             if (currentHeight > 0) {
                 imageView.minimumHeight = currentHeight
                 val layoutParams = imageView.layoutParams
@@ -8887,6 +8939,12 @@ class MoodleFragment : Fragment() {
             } else {
                 imageView.minimumHeight = (800 * resources.displayMetrics.density).toInt()
             }
+
+            loadingScheduler.remove(pageNumber)
+        }
+
+        if (pagesToUnload.isNotEmpty()) {
+            L.d("MoodleFragment", "Unloaded ${pagesToUnload.size} distant pages")
         }
     }
 
@@ -8978,27 +9036,51 @@ class MoodleFragment : Fragment() {
         val tvInfo = dialogView.findViewById<TextView>(R.id.tvInputInfo)
         val editText = dialogView.findViewById<EditText>(R.id.editTextSingleInput)
 
-        val pageCount = pdfViewerManager?.getPageCount() ?: 0
-        tvInfo.text = getString(R.string.moodle_pdf_navigate_info, pageCount)
-        editText.hint = getString(R.string.moodle_pdf_page_number_hint)
+        if (isTextViewerMode) {
+            val pageCount = textViewerManager?.getTotalPages() ?: 0
+            tvInfo.text = getString(R.string.moodle_pdf_navigate_info, pageCount)
+            editText.hint = getString(R.string.moodle_pdf_page_number_hint)
 
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.moodle_pdf_navigate_to_page))
-            .setView(dialogView)
-            .setPositiveButton(getString(R.string.moodle_go)) { _, _ ->
-                val pageNum = editText.text.toString().toIntOrNull()
-                if (pageNum != null && pageNum > 0 && pageNum <= pageCount) {
-                    navigateToPdfPage(pageNum - 1)
-                } else {
-                    Toast.makeText(requireContext(), getString(R.string.moodle_pdf_invalid_page), Toast.LENGTH_SHORT).show()
+            val dialog = AlertDialog.Builder(requireContext())
+                .setTitle(getString(R.string.moodle_pdf_navigate_to_page))
+                .setView(dialogView)
+                .setPositiveButton(getString(R.string.moodle_go)) { _, _ ->
+                    val pageNum = editText.text.toString().toIntOrNull()
+                    if (pageNum != null && pageNum > 0 && pageNum <= pageCount) {
+                        navigateToTextViewerPage(pageNum)
+                    } else {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_pdf_invalid_page), Toast.LENGTH_SHORT).show()
+                    }
                 }
-            }
-            .setNegativeButton(getString(R.string.moodle_cancel), null)
-            .show()
+                .setNegativeButton(getString(R.string.moodle_cancel), null)
+                .show()
 
-        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        } else {
+            val pageCount = pdfViewerManager?.getPageCount() ?: 0
+            tvInfo.text = getString(R.string.moodle_pdf_navigate_info, pageCount)
+            editText.hint = getString(R.string.moodle_pdf_page_number_hint)
+
+            val dialog = AlertDialog.Builder(requireContext())
+                .setTitle(getString(R.string.moodle_pdf_navigate_to_page))
+                .setView(dialogView)
+                .setPositiveButton(getString(R.string.moodle_go)) { _, _ ->
+                    val pageNum = editText.text.toString().toIntOrNull()
+                    if (pageNum != null && pageNum > 0 && pageNum <= pageCount) {
+                        navigateToPdfPage(pageNum - 1)
+                    } else {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_pdf_invalid_page), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton(getString(R.string.moodle_cancel), null)
+                .show()
+
+            val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(buttonColor)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+        }
     }
 
     private fun navigateToPdfPage(targetPage: Int) {
@@ -10036,21 +10118,25 @@ class MoodleFragment : Fragment() {
         val formattedText = textViewerManager?.getFormattedText(displayWidth) ?: SpannableStringBuilder("")
         textViewerContent.text = formattedText
 
-        setupTextViewerPageTracking()
+        textViewerContent.post {
+            textViewerManager?.calculatePageBounds()
+            setupTextViewerPageTracking()
+        }
 
         updatePdfControls()
     }
 
     private fun setupTextViewerPageTracking() {
         textContentScrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            val totalPages = textViewerManager?.getTotalPages() ?: 1
-            val contentHeight = textViewerContent.height
-            val scrollViewHeight = textContentScrollView.height
+            val layout = textViewerContent.layout
+            if (layout != null) {
+                val scrollViewHeight = textContentScrollView.height
 
-            if (contentHeight > 0) {
-                val scrollProgress = scrollY.toFloat() / (contentHeight - scrollViewHeight).coerceAtLeast(1)
-                val calculatedPage = (scrollProgress * totalPages).toInt() + 1
-                val newPage = calculatedPage.coerceIn(1, totalPages)
+                val centerY = scrollY + (scrollViewHeight / 2)
+                val line = layout.getLineForVertical(centerY)
+                val charOffset = layout.getOffsetForHorizontal(line, 0f)
+
+                val newPage = textViewerManager?.getPageAtCharPosition(charOffset) ?: 1
 
                 if (newPage != currentTextViewerPage) {
                     currentTextViewerPage = newPage
@@ -10123,6 +10209,7 @@ class MoodleFragment : Fragment() {
         ) != 0.0f
 
         val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
 
         if (animationsEnabled) {
             if (textViewerSearchBarVisible) {
@@ -10151,16 +10238,17 @@ class MoodleFragment : Fragment() {
                     doOnEnd {
                         layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                         textSearchHeader.layoutParams = layoutParams
-                        val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
                         etTextSearch.requestFocus()
-                        imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+                        etTextSearch.postDelayed({
+                            imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+                        }, 100)
                     }
 
                     start()
                 }
             } else {
-                val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
                 imm.hideSoftInputFromWindow(etTextSearch.windowToken, 0)
+                etTextSearch.clearFocus()
 
                 val currentHeight = textSearchHeader.height
                 val layoutParams = textSearchHeader.layoutParams
@@ -10179,9 +10267,7 @@ class MoodleFragment : Fragment() {
                         textSearchHeader.visibility = View.GONE
                         layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                         textSearchHeader.layoutParams = layoutParams
-                        etTextSearch.clearFocus()
                         etTextSearch.setText("")
-
                         clearTextSearchHighlights()
                     }
 
@@ -10189,16 +10275,16 @@ class MoodleFragment : Fragment() {
                 }
             }
         } else {
-            val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
-
             if (textViewerSearchBarVisible) {
                 textSearchHeader.visibility = View.VISIBLE
                 etTextSearch.requestFocus()
-                imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+                etTextSearch.postDelayed({
+                    imm.showSoftInput(etTextSearch, InputMethodManager.SHOW_IMPLICIT)
+                }, 100)
             } else {
                 imm.hideSoftInputFromWindow(etTextSearch.windowToken, 0)
-                textSearchHeader.visibility = View.GONE
                 etTextSearch.clearFocus()
+                textSearchHeader.visibility = View.GONE
                 etTextSearch.setText("")
                 clearTextSearchHighlights()
             }
@@ -10216,7 +10302,6 @@ class MoodleFragment : Fragment() {
         val btnPrevTextResult = textSearchHeader.findViewById<ImageButton>(R.id.btnPrevTextResult)
         val btnNextTextResult = textSearchHeader.findViewById<ImageButton>(R.id.btnNextTextResult)
 
-        // Update button icon based on search query
         val updateClearButton = {
             if (etTextSearch.text.isEmpty()) {
                 btnClearTextSearch.setImageResource(R.drawable.ic_search_off)
@@ -10231,6 +10316,8 @@ class MoodleFragment : Fragment() {
 
         btnClearTextSearch.setOnClickListener {
             if (etTextSearch.text.isEmpty()) {
+                val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(etTextSearch.windowToken, 0)
                 toggleTextViewerSearchBar()
             } else {
                 etTextSearch.setText("")
@@ -10300,19 +10387,17 @@ class MoodleFragment : Fragment() {
         tvCount: TextView,
         btnPrev: ImageButton,
         btnNext: ImageButton
-    ) {
-        if (textSearchResults.isEmpty()) {
-            tvCount.visibility = View.GONE
-            btnPrev.visibility = View.GONE
-            btnNext.visibility = View.GONE
-        } else {
-            tvCount.text = "${currentTextSearchIndex + 1}/${textSearchResults.size}"
-            tvCount.visibility = View.VISIBLE
-            btnPrev.visibility = View.VISIBLE
-            btnNext.visibility = View.VISIBLE
-            btnPrev.isEnabled = currentTextSearchIndex > 0
-            btnNext.isEnabled = currentTextSearchIndex < textSearchResults.size - 1
-        }
+    ) = if (textSearchResults.isEmpty()) {
+        tvCount.visibility = View.GONE
+        btnPrev.visibility = View.GONE
+        btnNext.visibility = View.GONE
+    } else {
+        "${currentTextSearchIndex + 1}/${textSearchResults.size}".also { tvCount.text = it }
+        tvCount.visibility = View.VISIBLE
+        btnPrev.visibility = View.VISIBLE
+        btnNext.visibility = View.VISIBLE
+        btnPrev.isEnabled = currentTextSearchIndex > 0
+        btnNext.isEnabled = currentTextSearchIndex < textSearchResults.size - 1
     }
 
     private fun highlightAndScrollToSearchResult(position: Int, query: String) {
@@ -10486,42 +10571,75 @@ class MoodleFragment : Fragment() {
 
         checkBoxDisableFormatting.isChecked = disableFormatting
 
-        val createPreview: (Boolean) -> SpannableStringBuilder = { disableFormat ->
-            val previewSpannable = SpannableStringBuilder()
+        val createPreview: (Boolean, Int) -> CharSequence = { disableFormat, fontFamilyPosition ->
+            if (disableFormat) {
+                val titleText = getString(R.string.text_viewer_preview_title)
+                val normalText = getString(R.string.text_viewer_preview_normal)
+                val boldText = getString(R.string.text_viewer_preview_bold)
+                val italicText = getString(R.string.text_viewer_preview_italic)
 
-            val titleText = getString(R.string.text_viewer_preview_title)
-            val normalText = getString(R.string.text_viewer_preview_normal)
-            val boldText = getString(R.string.text_viewer_preview_bold)
-            val italicText = getString(R.string.text_viewer_preview_italic)
+                "$titleText\n\n$normalText $boldText $italicText"
+            } else {
+                val previewSpannable = SpannableStringBuilder()
 
-            if (!disableFormat) {
+                val titleText = getString(R.string.text_viewer_preview_title)
+                val normalText = getString(R.string.text_viewer_preview_normal)
+                val boldText = getString(R.string.text_viewer_preview_bold)
+                val italicText = getString(R.string.text_viewer_preview_italic)
+
+                val baseTypeface = when (fontFamilyPosition) {
+                    1 -> Typeface.SERIF
+                    2 -> Typeface.SANS_SERIF
+                    else -> Typeface.MONOSPACE
+                }
+
                 val titleStart = previewSpannable.length
                 previewSpannable.append(titleText).append("\n\n")
-                previewSpannable.setSpan(StyleSpan(Typeface.BOLD), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                previewSpannable.setSpan(RelativeSizeSpan(1.4f), titleStart, titleStart + titleText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                previewSpannable.setSpan(
+                    CustomTypefaceSpan(Typeface.create(baseTypeface, Typeface.BOLD)),
+                    titleStart,
+                    titleStart + titleText.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                previewSpannable.setSpan(
+                    RelativeSizeSpan(1.4f),
+                    titleStart,
+                    titleStart + titleText.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
 
+                val normalStart = previewSpannable.length
                 previewSpannable.append(normalText).append(" ")
+                previewSpannable.setSpan(
+                    CustomTypefaceSpan(Typeface.create(baseTypeface, Typeface.NORMAL)),
+                    normalStart,
+                    previewSpannable.length - 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
 
                 val boldStart = previewSpannable.length
-                previewSpannable.append(boldText)
-                previewSpannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-
-                previewSpannable.append(" ")
+                previewSpannable.append(boldText).append(" ")
+                previewSpannable.setSpan(
+                    CustomTypefaceSpan(Typeface.create(baseTypeface, Typeface.BOLD)),
+                    boldStart,
+                    previewSpannable.length - 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
 
                 val italicStart = previewSpannable.length
                 previewSpannable.append(italicText)
-                previewSpannable.setSpan(StyleSpan(Typeface.ITALIC), italicStart, previewSpannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            } else {
-                previewSpannable.append(titleText).append("\n\n")
-                previewSpannable.append(normalText).append(" ")
-                previewSpannable.append(boldText).append(" ")
-                previewSpannable.append(italicText)
-            }
+                previewSpannable.setSpan(
+                    CustomTypefaceSpan(Typeface.create(baseTypeface, Typeface.ITALIC)),
+                    italicStart,
+                    previewSpannable.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
 
-            previewSpannable
+                previewSpannable
+            }
         }
 
-        tvPreviewText.text = createPreview(disableFormatting)
+        tvPreviewText.setText(createPreview(disableFormatting, spinnerFontFamily.selectedItemPosition), TextView.BufferType.SPANNABLE)
 
         val updatePreview = {
             val previewFontSize = seekBarFontSize.progress + 10
@@ -10544,13 +10662,10 @@ class MoodleFragment : Fragment() {
             }
             tvPreviewText.setBackgroundColor(selectedBgColor)
 
-            tvPreviewText.typeface = when (spinnerFontFamily.selectedItemPosition) {
-                1 -> Typeface.SERIF
-                2 -> Typeface.SANS_SERIF
-                else -> Typeface.MONOSPACE
-            }
-
-            tvPreviewText.text = createPreview(checkBoxDisableFormatting.isChecked)
+            tvPreviewText.setText(
+                createPreview(checkBoxDisableFormatting.isChecked, spinnerFontFamily.selectedItemPosition),
+                TextView.BufferType.SPANNABLE
+            )
         }
 
         seekBarFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -10641,6 +10756,20 @@ class MoodleFragment : Fragment() {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
     }
 
+    inner class CustomTypefaceSpan(private val typeface: Typeface) : MetricAffectingSpan() {
+        override fun updateDrawState(ds: TextPaint) {
+            applyCustomTypeface(ds, typeface)
+        }
+
+        override fun updateMeasureState(paint: TextPaint) {
+            applyCustomTypeface(paint, typeface)
+        }
+
+        private fun applyCustomTypeface(paint: Paint, tf: Typeface) {
+            paint.typeface = tf
+        }
+    }
+
     private fun copyCurrentTextViewerPage() {
         val pageText = textViewerContent.text.toString()
 
@@ -10651,6 +10780,25 @@ class MoodleFragment : Fragment() {
             Toast.makeText(requireContext(), getString(R.string.text_viewer_text_copied), Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(requireContext(), getString(R.string.text_viewer_no_text), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun navigateToTextViewerPage(pageNumber: Int) {
+        val charPosition = textViewerManager?.getCharPositionForPage(pageNumber) ?: 0
+
+        currentTextViewerPage = pageNumber
+        updatePdfControls()
+
+        textContentScrollView.post {
+            val layout = textViewerContent.layout
+            if (layout != null && charPosition < textViewerContent.text.length) {
+                val line = layout.getLineForOffset(charPosition)
+                val y = layout.getLineTop(line)
+
+                val scrollY = (y - 50).coerceAtLeast(0)
+
+                textContentScrollView.smoothScrollTo(0, scrollY)
+            }
         }
     }
 
@@ -10771,15 +10919,26 @@ class MoodleFragment : Fragment() {
     private fun continueAfterLogin() {
         if (fetchCancelled) return
 
-        updateFetchProgress(25, getString(R.string.moodle_navigating_to_my_page))
+        val cachedUrl = sharedPrefs.getString(MAIN_COURSE_CACHE_KEY, null)
+        val cachedProgramName = sharedPrefs.getString("moodle_main_course_program_name", null)
 
-        loadUrlInBackground("$moodleBaseUrl/my/")
+        if (cachedUrl != null && cachedProgramName != null) {
+            L.d("MoodleFragment", "Found cached main course URL, using shortcut")
+            updateFetchProgress(30, getString(R.string.moodle_navigating_to_course))
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!fetchCancelled) {
-                extractProgramCourseNameFromPage()
-            }
-        }, 2000)
+            navigateUsingCachedMainCourseUrl(cachedUrl, cachedProgramName)
+        } else {
+            L.d("MoodleFragment", "No cached URL found, performing full search")
+            updateFetchProgress(25, getString(R.string.moodle_navigating_to_my_page))
+
+            loadUrlInBackground("$moodleBaseUrl/my/")
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!fetchCancelled) {
+                    extractProgramCourseNameFromPage()
+                }
+            }, 2000)
+        }
     }
 
     private fun extractProgramCourseNameFromPage() {
@@ -10814,6 +10973,18 @@ class MoodleFragment : Fragment() {
             val programName = result.replace("\"", "").trim()
             if (programName != "false" && programName.isNotEmpty()) {
                 L.d("MoodleFragment", "Extracted program name: $programName")
+
+                val cachedProgramName = sharedPrefs.getString("moodle_main_course_program_name", null)
+
+                if (cachedProgramName == programName) {
+                    val cachedUrl = sharedPrefs.getString(MAIN_COURSE_CACHE_KEY, null)
+                    if (cachedUrl != null) {
+                        L.d("MoodleFragment", "Program matches cached URL, using it directly")
+                        navigateUsingCachedMainCourseUrl(cachedUrl, programName)
+                        return@evaluateJavascript
+                    }
+                }
+
                 searchForExamProgramWithName(programName)
             } else {
                 val savedName = sharedPrefs.getString("saved_program_course_name", null)
@@ -10952,31 +11123,142 @@ class MoodleFragment : Fragment() {
                     val courseUrl = result.replace("\"", "")
                     if (courseUrl != "false" && courseUrl.contains("course/view.php")) {
                         L.d("MoodleFragment", "Opened program course: $courseUrl")
-                        updateFetchProgress(80, getString(R.string.moodle_searching_schedule))
+
+                        updateFetchProgress(75, getString(R.string.moodle_verifying_course))
 
                         Handler(Looper.getMainLooper()).postDelayed({
                             if (!fetchCancelled) {
                                 waitForCoursePageLoad {
                                     if (!fetchCancelled) {
-                                        when (currentFetchType) {
-                                            FetchType.EXAM_SCHEDULE -> searchForScheduleEntry()
-                                            FetchType.TIMETABLE -> searchForTimetableEntry()
-                                            else -> handleFetchError(getString(R.string.moodle_unknown_fetch_type))
-                                        }
+                                        verifyCourseAndContinue(courseUrl)
                                     }
                                 }
                             }
                         }, 1500)
                     } else {
                         if (userProvidedProgramName != null) {
-                            sharedPrefs.edit { remove("saved_program_course_name") }
-                            savedProgramCourseName = null
+                            sharedPrefs.edit { remove(MAIN_COURSE_CACHE_KEY) }
+                            cachedMainCourseUrl = null
                         }
                         requestProgramNameFromUser(isAutoDetectFailed = false)
                     }
                 }
             } else {
-                handleFetchError(getString(R.string.moodle_search_results_not_loaded))
+                handleFetchError(getString(R.string.set_act_search_results_not_loaded))
+            }
+        }
+    }
+
+    private fun verifyCourseAndContinue(courseUrl: String) {
+        if (fetchCancelled) return
+
+        L.d("MoodleFragment", "Verifying course has required files")
+        updateFetchProgress(80, getString(R.string.moodle_searching_schedule))
+
+        val jsCode = when (currentFetchType) {
+            FetchType.EXAM_SCHEDULE -> {
+                """
+            (function() {
+                try {
+                    var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var link = links[i];
+                        var linkText = link.textContent.toLowerCase();
+                        if (linkText.includes('klausurplan')) {
+                            var parent = link.closest('h4');
+                            if (!parent) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                } catch(e) {
+                    return false;
+                }
+            })();
+            """.trimIndent()
+            }
+            FetchType.TIMETABLE -> {
+                val tempPrefs = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                val klasse = tempPrefs.getString("temp_fetch_class", "") ?: ""
+                val klasseBase = klasse.replace(Regex("\\d+$"), "")
+
+                """
+            (function() {
+                try {
+                    var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                    var stundenplanLinks = [];
+
+                    for (var i = 0; i < links.length; i++) {
+                        var link = links[i];
+                        var linkText = link.textContent.toLowerCase();
+                        
+                        if (linkText.includes('stundenplan')) {
+                            var parentH4 = link.closest('h4');
+                            if (!parentH4) {
+                                stundenplanLinks.push(link);
+                            }
+                        }
+                    }
+                    
+                    if (stundenplanLinks.length === 0) return false;
+
+                    for (var j = 0; j < stundenplanLinks.length; j++) {
+                        var text = stundenplanLinks[j].textContent.toLowerCase();
+                        if (text.includes('$klasse'.toLowerCase()) || text.includes('$klasseBase'.toLowerCase())) {
+                            return true;
+                        }
+                    }
+                    
+                    return stundenplanLinks.length > 0;
+                } catch(e) {
+                    return false;
+                }
+            })();
+            """.trimIndent()
+            }
+            else -> "false"
+        }
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            val fileFound = result == "true"
+
+            if (fileFound) {
+                L.d("MoodleFragment", "✓ Course verified - has required files. Caching URL.")
+
+                val programName = userProvidedProgramName
+                    ?: sharedPrefs.getString("saved_program_course_name", null)
+                    ?: "Unknown"
+                saveCachedMainCourseUrl(courseUrl, programName)
+
+                when (currentFetchType) {
+                    FetchType.EXAM_SCHEDULE -> {
+                        updateFetchProgress(85, getString(R.string.moodle_fetching_exam_schedule))
+                        searchForScheduleEntry()
+                    }
+                    FetchType.TIMETABLE -> {
+                        updateFetchProgress(85, getString(R.string.moodle_fetching_timetable))
+                        searchForTimetableEntry()
+                    }
+                    else -> handleFetchError(getString(R.string.moodle_unknown_fetch_type))
+                }
+            } else {
+                L.w("MoodleFragment", "✗ Course verification failed - required files not found")
+
+                sharedPrefs.edit {
+                    remove(MAIN_COURSE_CACHE_KEY)
+                    remove("moodle_main_course_program_name")
+                }
+                cachedMainCourseUrl = null
+
+                handleFetchError(getString(
+                    if (currentFetchType == FetchType.EXAM_SCHEDULE)
+                        R.string.moodle_schedule_not_found
+                    else
+                        R.string.moodle_timetable_not_found_for_class
+                ))
             }
         }
     }
@@ -11007,7 +11289,6 @@ class MoodleFragment : Fragment() {
                     var link = links[i];
                     var linkText = link.textContent.toLowerCase();
                     
-                    // Must contain "stundenplan" and NOT be inside an h4 header
                     if (linkText.includes('stundenplan')) {
                         var parentH4 = link.closest('h4');
                         if (!parentH4) {
@@ -11146,7 +11427,6 @@ class MoodleFragment : Fragment() {
             if (scheduleUrl != "false" && scheduleUrl.contains("/mod/resource/view.php")) {
                 L.d("MoodleFragment", "Found exam schedule URL: $scheduleUrl")
                 updateFetchProgress(90, getString(R.string.moodle_downloading_schedule))
-
                 downloadSchedulePdf(scheduleUrl)
             } else {
                 handleFetchError(getString(R.string.moodle_schedule_not_found))
@@ -11513,6 +11793,313 @@ class MoodleFragment : Fragment() {
         userProvidedProgramName = null
         moodleFetchProgressDialog?.dismiss()
         moodleFetchProgressDialog = null
+    }
+
+    private fun navigateUsingCachedMainCourseUrl(url: String, programName: String) {
+        if (fetchCancelled) return
+
+        L.d("MoodleFragment", "Navigating to cached main course URL: $url")
+        updateFetchProgress(35, getString(R.string.moodle_opening_course))
+
+        loadUrlInBackground(url)
+
+        waitForCachedCourseReady {
+            if (!fetchCancelled) {
+                updateFetchProgress(50, getString(R.string.moodle_verifying_course))
+                verifyCachedCourseAndContinue(url, programName)
+            }
+        }
+    }
+
+    private fun waitForCachedCourseReady(maxAttempts: Int = 20, attempt: Int = 0, callback: () -> Unit) {
+        if (attempt >= maxAttempts) {
+            L.w("MoodleFragment", "Cached course ready timeout after $maxAttempts attempts")
+            callback()
+            return
+        }
+
+        val jsCode = """
+    (function() {
+        try {
+            if (document.readyState !== 'complete') {
+                console.log('Page not ready, attempt $attempt');
+                return false;
+            }
+
+            var courseContent = document.querySelector('.course-content, .topics, [role="main"]');
+            if (!courseContent) {
+                console.log('Course content container not found, attempt $attempt');
+                return false;
+            }
+
+            var resourceLinks = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+            if (resourceLinks.length === 0) {
+                console.log('No resource links found, attempt $attempt');
+                return false;
+            }
+
+            console.log('Found ' + resourceLinks.length + ' resource links');
+
+            var visibleLinks = 0;
+            for (var i = 0; i < resourceLinks.length; i++) {
+                if (resourceLinks[i].offsetParent !== null && resourceLinks[i].textContent.trim().length > 0) {
+                    visibleLinks++;
+                }
+            }
+
+            if (visibleLinks === 0) {
+                console.log('No visible resource links, attempt $attempt');
+                return false;
+            }
+
+            console.log('✓ Cached course ready with ' + visibleLinks + ' visible resource links');
+            return true;
+        } catch(e) {
+            console.error('Error checking cached course ready: ' + e.message);
+            return false;
+        }
+    })();
+    """.trimIndent()
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == "true") {
+                L.d("MoodleFragment", "Cached course ready after ${attempt + 1} attempts")
+                callback()
+            } else {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    waitForCachedCourseReady(maxAttempts, attempt + 1, callback)
+                }, 200)
+            }
+        }
+    }
+
+    private fun verifyCachedCourseAndContinue(url: String, programName: String) {
+        if (fetchCancelled) return
+
+        L.d("MoodleFragment", "Verifying cached course still has required files")
+
+        val currentUrl = webView.url ?: ""
+        L.d("MoodleFragment", "Current URL: $currentUrl, Expected: $url")
+
+        if (!currentUrl.contains("course/view.php")) {
+            L.e("MoodleFragment", "Not on a course page! Current URL: $currentUrl")
+            sharedPrefs.edit {
+                remove(MAIN_COURSE_CACHE_KEY)
+                remove("moodle_main_course_program_name")
+            }
+            cachedMainCourseUrl = null
+
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.moodle_cache_invalid_retrying),
+                Toast.LENGTH_SHORT
+            ).show()
+
+            updateFetchProgress(25, getString(R.string.moodle_navigating_to_my_page))
+            loadUrlInBackground("$moodleBaseUrl/my/")
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!fetchCancelled) {
+                    extractProgramCourseNameFromPage()
+                }
+            }, 2000)
+            return
+        }
+
+        val jsCode = when (currentFetchType) {
+            FetchType.EXAM_SCHEDULE -> {
+                """
+            (function() {
+                try {
+                    console.log('=== Verifying cached course for exam schedule ===');
+                    var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                    console.log('Found ' + links.length + ' resource links');
+                    
+                    for (var i = 0; i < links.length; i++) {
+                        var link = links[i];
+                        var linkText = link.textContent.toLowerCase().trim();
+                        console.log('Link ' + i + ': "' + linkText + '"');
+                        
+                        if (linkText.includes('klausurplan')) {
+                            var parent = link.closest('h4');
+                            if (!parent) {
+                                console.log('✓ Found klausurplan link not in h4');
+                                return true;
+                            } else {
+                                console.log('Found klausurplan but in h4 (section header)');
+                            }
+                        }
+                    }
+                    console.log('✗ No valid klausurplan found');
+                    return false;
+                } catch(e) {
+                    console.error('Error: ' + e.message);
+                    console.error('Stack: ' + e.stack);
+                    return false;
+                }
+            })();
+            """.trimIndent()
+            }
+            FetchType.TIMETABLE -> {
+                val tempPrefs = requireActivity().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                val klasse = tempPrefs.getString("temp_fetch_class", "") ?: ""
+                val klasseBase = klasse.replace(Regex("\\d+$"), "")
+
+                """
+            (function() {
+                try {
+                    console.log('=== Verifying cached course for timetable ===');
+                    console.log('Looking for: $klasse or $klasseBase');
+                    
+                    var links = document.querySelectorAll('a[href*="/mod/resource/view.php"]');
+                    console.log('Found ' + links.length + ' resource links');
+                    
+                    var stundenplanLinks = [];
+
+                    for (var i = 0; i < links.length; i++) {
+                        var link = links[i];
+                        var linkText = link.textContent.toLowerCase().trim();
+                        console.log('Checking link: "' + linkText + '"');
+                        
+                        if (linkText.includes('stundenplan')) {
+                            var parentH4 = link.closest('h4');
+                            if (!parentH4) {
+                                stundenplanLinks.push({
+                                    text: link.textContent.trim(),
+                                    href: link.href
+                                });
+                                console.log('Added stundenplan: ' + link.textContent.trim());
+                            }
+                        }
+                    }
+                    
+                    console.log('Found ' + stundenplanLinks.length + ' timetable links');
+                    
+                    if (stundenplanLinks.length === 0) {
+                        console.log('✗ No timetables found');
+                        return false;
+                    }
+
+                    var foundMatch = false;
+                    for (var j = 0; j < stundenplanLinks.length; j++) {
+                        var text = stundenplanLinks[j].text.toLowerCase();
+                        console.log('Comparing: "' + text + '" against "$klasse" or "$klasseBase"');
+                        
+                        if (text.includes('$klasse'.toLowerCase()) || text.includes('$klasseBase'.toLowerCase())) {
+                            console.log('✓ Found matching timetable: ' + stundenplanLinks[j].text);
+                            foundMatch = true;
+                            break;
+                        }
+                    }
+                    
+                    if (foundMatch) {
+                        return true;
+                    }
+                    
+                    console.log('Found ' + stundenplanLinks.length + ' timetables but no exact match');
+                    console.log('Available timetables: ' + stundenplanLinks.map(function(l) { return l.text; }).join(', '));
+                    return stundenplanLinks.length > 0;
+                } catch(e) {
+                    console.error('Error: ' + e.message);
+                    console.error('Stack: ' + e.stack);
+                    return false;
+                }
+            })();
+            """.trimIndent()
+            }
+            else -> "false"
+        }
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (fetchCancelled) return@evaluateJavascript
+
+            val fileFound = result == "true"
+
+            L.d("MoodleFragment", "Cached course verification result: $fileFound")
+            L.d("MoodleFragment", "JavaScript returned: $result")
+
+            if (fileFound) {
+                L.d("MoodleFragment", "✓ Cached course verified - proceeding with download")
+
+                when (currentFetchType) {
+                    FetchType.EXAM_SCHEDULE -> {
+                        updateFetchProgress(60, getString(R.string.moodle_fetching_exam_schedule))
+                        searchForScheduleEntry()
+                    }
+                    FetchType.TIMETABLE -> {
+                        updateFetchProgress(60, getString(R.string.moodle_fetching_timetable))
+                        searchForTimetableEntry()
+                    }
+                    else -> handleFetchError(getString(R.string.moodle_unknown_fetch_type))
+                }
+            } else {
+                L.w("MoodleFragment", "✗ Cached course verification failed")
+
+                if (currentFetchType == FetchType.TIMETABLE) {
+                    L.d("MoodleFragment", "Proceeding with timetable search despite no exact class match")
+                    updateFetchProgress(60, getString(R.string.moodle_fetching_timetable))
+                    searchForTimetableEntry()
+                    return@evaluateJavascript
+                }
+
+                L.w("MoodleFragment", "✗ Cached course no longer valid - clearing cache and retrying full search")
+
+                sharedPrefs.edit {
+                    remove(MAIN_COURSE_CACHE_KEY)
+                    remove("moodle_main_course_program_name")
+                }
+                cachedMainCourseUrl = null
+
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_cache_invalid_retrying),
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                updateFetchProgress(25, getString(R.string.moodle_navigating_to_my_page))
+                loadUrlInBackground("$moodleBaseUrl/my/")
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (!fetchCancelled) {
+                        extractProgramCourseNameFromPage()
+                    }
+                }, 2000)
+            }
+        }
+    }
+
+    private fun loadCachedMainCourseUrl() {
+        cachedMainCourseUrl = sharedPrefs.getString(MAIN_COURSE_CACHE_KEY, null)
+        if (cachedMainCourseUrl != null) {
+            val programName = sharedPrefs.getString("moodle_main_course_program_name", null)
+            L.d("MoodleFragment", "Loaded cached main course URL: $cachedMainCourseUrl (Program: $programName)")
+        } else {
+            L.d("MoodleFragment", "No cached main course URL found")
+        }
+    }
+
+    private fun saveCachedMainCourseUrl(url: String, programName: String) {
+        if (url.isEmpty()) {
+            L.w("MoodleFragment", "Cannot save empty main course URL")
+            return
+        }
+
+        cachedMainCourseUrl = url
+        sharedPrefs.edit {
+            putString(MAIN_COURSE_CACHE_KEY, url)
+            putString("moodle_main_course_program_name", programName)
+        }
+
+        L.d("MoodleFragment", "Cached main course URL: $url for program: $programName")
+    }
+
+    fun clearCachedMainCourseUrl() {
+        cachedMainCourseUrl = null
+        sharedPrefs.edit {
+            remove(MAIN_COURSE_CACHE_KEY)
+            remove("moodle_main_course_program_name")
+        }
+        L.d("MoodleFragment", "Cleared cached main course URL")
     }
 
     //endregion
@@ -15159,11 +15746,23 @@ class MoodleFragment : Fragment() {
                     val downloadedFiles = courseFolder.listFiles()?.filter { it.isFile && !it.name.startsWith(".") } ?: emptyList()
                     val downloadedFileNames = downloadedFiles.map { it.name }.toSet()
 
+                    val downloadedFolders = courseFolder.listFiles()?.filter { it.isDirectory } ?: emptyList()
+                    val downloadedFolderNames = downloadedFolders.map { it.name }.toSet()
+
                     entries.forEach { entry ->
                         try {
-                            if (metadata.has(entry.name)) {
-                                val expectedFileName = metadata.getString(entry.name)
+                            val iconUrlLower = entry.iconUrl.lowercase()
 
+                            if (iconUrlLower.contains("/folder/")) {
+                                if (metadata.has(entry.name)) {
+                                    val expectedFolderName = metadata.getString(entry.name)
+                                    if (downloadedFolderNames.contains(expectedFolderName)) {
+                                        L.d("MoodleFragment", "✓ Matched folder (metadata): ${entry.name} -> $expectedFolderName")
+                                        downloadedKeys.add(entry.name)
+                                    }
+                                }
+                            } else if (metadata.has(entry.name)) {
+                                val expectedFileName = metadata.getString(entry.name)
                                 if (downloadedFileNames.contains(expectedFileName)) {
                                     L.d("MoodleFragment", "✓ Matched (metadata): ${entry.name} -> $expectedFileName")
                                     downloadedKeys.add(entry.name)
@@ -15193,20 +15792,26 @@ class MoodleFragment : Fragment() {
                 } else {
                     L.d("MoodleFragment", "No metadata file, using fallback method")
 
-                    val downloadedFiles = courseFolder.listFiles() ?: return@forEach
+                    val downloadedItems = courseFolder.listFiles() ?: return@forEach
 
                     entries.forEach { entry ->
                         val iconUrlLower = entry.iconUrl.lowercase()
 
-                        if (iconUrlLower.contains("/f/pdf") ||
+                        if (iconUrlLower.contains("/folder/")) {
+                            downloadedItems.forEach { item ->
+                                if (item.isDirectory && item.name == sanitizeFileName(entry.name)) {
+                                    L.d("MoodleFragment", "✓ Matched folder (fallback): ${entry.name}")
+                                    downloadedKeys.add(entry.name)
+                                }
+                            }
+                        } else if (iconUrlLower.contains("/f/pdf") ||
                             iconUrlLower.contains("/f/document") ||
                             iconUrlLower.contains("/f/image") ||
                             iconUrlLower.contains("/f/audio")) {
 
-                            downloadedFiles.forEach { downloadedFile ->
+                            downloadedItems.forEach { downloadedFile ->
                                 if (downloadedFile.isFile) {
                                     val downloadedNameWithoutExt = downloadedFile.nameWithoutExtension
-
                                     if (downloadedNameWithoutExt == entry.name) {
                                         L.d("MoodleFragment", "✓ Matched (fallback - name): ${entry.name}")
                                         downloadedKeys.add(entry.name)
@@ -15214,7 +15819,7 @@ class MoodleFragment : Fragment() {
                                 }
                             }
                         } else {
-                            downloadedFiles.forEach { item ->
+                            downloadedItems.forEach { item ->
                                 val itemName = if (item.isFile) {
                                     item.nameWithoutExtension
                                 } else {
@@ -15327,11 +15932,16 @@ class MoodleFragment : Fragment() {
             return
         }
 
-        L.d("MoodleFragment", "Starting downloads - ${pendingEntries.size} pending")
-
-        val maxConcurrent = 3
+        val maxConcurrent = 2
         val downloadingCount = downloadQueue.getDownloadingEntries().size
         val slotsAvailable = maxConcurrent - downloadingCount
+
+        if (slotsAvailable <= 0) {
+            L.d("MoodleFragment", "All download slots full ($downloadingCount/$maxConcurrent)")
+            return
+        }
+
+        L.d("MoodleFragment", "Starting downloads - ${pendingEntries.size} pending, $slotsAvailable slots available")
 
         pendingEntries.take(slotsAvailable).forEach { entry ->
             downloadCourseEntry(entry)
@@ -15344,14 +15954,16 @@ class MoodleFragment : Fragment() {
         activity?.runOnUiThread {
             updateCourseDownloadsCounter()
 
-            val downloadQueue = CourseDownloadQueue.getInstance()
-            val pendingEntries = downloadQueue.getPendingEntries()
-            val downloadingCount = downloadQueue.getDownloadingEntries().size
+            Handler(Looper.getMainLooper()).postDelayed({
+                val downloadQueue = CourseDownloadQueue.getInstance()
+                val pendingEntries = downloadQueue.getPendingEntries()
+                val downloadingCount = downloadQueue.getDownloadingEntries().size
 
-            if (pendingEntries.isNotEmpty() && downloadingCount < 3) {
-                L.d("MoodleFragment", "Starting next download from queue")
-                startCourseDownloads()
-            }
+                if (pendingEntries.isNotEmpty() && downloadingCount < 2) {
+                    L.d("MoodleFragment", "Starting next download from queue")
+                    startCourseDownloads()
+                }
+            }, 200)
         }
     }
 
@@ -15400,14 +16012,19 @@ class MoodleFragment : Fragment() {
     private fun downloadCourseEntry(entry: CourseDownloadQueue.DownloadQueueEntry) {
         backgroundExecutor.execute {
             try {
+                if (entry.isCancelled) {
+                    L.d("MoodleFragment", "Entry already cancelled before starting: ${entry.entryName}")
+                    entry.status = "cancelled"
+                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    onDownloadComplete(entry)
+                    return@execute
+                }
+
                 L.d("MoodleFragment", "=== Starting Course Entry Download ===")
                 L.d("MoodleFragment", "Entry: ${entry.entryName}")
                 L.d("MoodleFragment", "URL: ${entry.url}")
-                L.d("MoodleFragment", "LinkType: ${entry.linkType}")
 
-                entry.status = "downloading"
-                entry.progress = 0
-                CourseDownloadQueue.getInstance().updateEntry(entry)
+                CourseDownloadQueue.getInstance().markDownloadStarted(entry)
 
                 val freshCookies = CookieManager.getInstance().getCookie(moodleBaseUrl)
 
@@ -15415,60 +16032,30 @@ class MoodleFragment : Fragment() {
                     L.e("MoodleFragment", "No cookies available for download")
                     entry.status = "failed"
                     entry.errorMessage = getString(R.string.moodle_no_session_cookies)
-                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
+                    onDownloadComplete(entry)
                     return@execute
                 }
 
                 val iconUrlLower = entry.iconUrl.lowercase()
 
                 when {
-                    // pdf files
-                    iconUrlLower.contains("/f/pdf") -> {
-                        L.d("MoodleFragment", "Detected PDF file")
-                        downloadCourseEntryPdf(entry, freshCookies)
-                    }
-                    // docx files
-                    iconUrlLower.contains("/f/document") -> {
-                        L.d("MoodleFragment", "Detected DOCX file")
-                        downloadCourseEntryDocx(entry, freshCookies)
-                    }
-                    // image files
-                    iconUrlLower.contains("/f/image") -> {
-                        L.d("MoodleFragment", "Detected Image file")
-                        downloadCourseEntryImage(entry, freshCookies)
-                    }
-                    // audio files
-                    iconUrlLower.contains("/f/audio") -> {
-                        L.d("MoodleFragment", "Detected Audio file")
-                        downloadCourseEntryAudio(entry, freshCookies)
-                    }
-                    // text/page files - NEW
-                    iconUrlLower.contains("/page/") -> {
-                        L.d("MoodleFragment", "Detected Text/Page file")
-                        downloadCourseEntryText(entry, freshCookies)
-                    }
-                    // url links - NEW
-                    iconUrlLower.contains("/url/") -> {
-                        L.d("MoodleFragment", "Detected URL link")
-                        downloadCourseEntryUrl(entry, freshCookies)
-                    }
-                    // folders
-                    iconUrlLower.contains("/folder/") -> {
-                        L.d("MoodleFragment", "Detected Folder")
-                        downloadCourseEntryFolder(entry, freshCookies)
-                    }
-                    // any other file
-                    else -> {
-                        L.d("MoodleFragment", "Detected other file type")
-                        downloadCourseEntryGeneric(entry, freshCookies)
-                    }
+                    iconUrlLower.contains("/f/pdf") -> downloadCourseEntryPdf(entry, freshCookies)
+                    iconUrlLower.contains("/f/document") -> downloadCourseEntryDocx(entry, freshCookies)
+                    iconUrlLower.contains("/f/image") -> downloadCourseEntryImage(entry, freshCookies)
+                    iconUrlLower.contains("/f/audio") -> downloadCourseEntryAudio(entry, freshCookies)
+                    iconUrlLower.contains("/page/") -> downloadCourseEntryText(entry, freshCookies)
+                    iconUrlLower.contains("/url/") -> downloadCourseEntryUrl(entry, freshCookies)
+                    iconUrlLower.contains("/folder/") -> downloadCourseEntryFolder(entry, freshCookies)
+                    else -> downloadCourseEntryGeneric(entry, freshCookies)
                 }
 
             } catch (e: Exception) {
                 L.e("MoodleFragment", "Exception during download", e)
                 entry.status = "failed"
                 entry.errorMessage = e.message ?: "Unknown error"
-                CourseDownloadQueue.getInstance().updateEntry(entry)
+                CourseDownloadQueue.getInstance().markDownloadFinished(entry)
+                onDownloadComplete(entry)
             }
         }
     }
@@ -15711,6 +16298,14 @@ class MoodleFragment : Fragment() {
 
     private fun downloadResolvedCourseEntry(entry: CourseDownloadQueue.DownloadQueueEntry, downloadUrl: String, cookies: String) {
         try {
+            if (entry.isCancelled) {
+                L.d("MoodleFragment", "Download cancelled before resolution: ${entry.entryName}")
+                entry.status = "cancelled"
+                CourseDownloadQueue.getInstance().markDownloadFinished(entry)
+                onDownloadComplete(entry)
+                return
+            }
+
             L.d("MoodleFragment", "Downloading from resolved URL: $downloadUrl")
 
             val sanitizedCourseName = sanitizeFileName(entry.courseName)
@@ -15728,7 +16323,7 @@ class MoodleFragment : Fragment() {
                     L.e("MoodleFragment", "Failed to create course folder")
                     entry.status = "failed"
                     entry.errorMessage = "Could not create folder"
-                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
                     onDownloadComplete(entry)
                     return
                 }
@@ -15755,64 +16350,96 @@ class MoodleFragment : Fragment() {
                 val contentType = conn.getHeaderField("Content-Type") ?: ""
                 val contentDisposition = conn.getHeaderField("Content-Disposition") ?: ""
 
-                L.d("MoodleFragment", "Content-Type: $contentType")
-                L.d("MoodleFragment", "Content-Disposition: $contentDisposition")
-
                 if (contentType.contains("text/html", ignoreCase = true)) {
-                    L.e("MoodleFragment", "Received HTML instead of file - likely permission/auth issue")
+                    L.e("MoodleFragment", "Received HTML instead of file")
                     conn.disconnect()
                     entry.status = "failed"
                     entry.errorMessage = "Server returned HTML instead of file"
-                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
                     onDownloadComplete(entry)
                     return
                 }
 
                 val inputStream = conn.inputStream
-
                 var actualFileName = sanitizedFileName
+
                 if (contentDisposition.contains("filename=")) {
                     val match = "filename=\"?([^\"]+)\"?".toRegex().find(contentDisposition)
                     match?.groupValues?.get(1)?.let {
                         actualFileName = sanitizeFileName(it)
-                        L.d("MoodleFragment", "Using filename from header: $actualFileName")
                     }
                 }
 
                 entry.actualFileName = actualFileName
-                CourseDownloadQueue.getInstance().updateEntry(entry)
-
                 val file = File(courseFolder, actualFileName)
 
                 val totalBytes = conn.contentLength.toLong()
                 var downloadedBytes = 0L
 
+                entry.totalBytes = totalBytes
+                entry.startTime = System.currentTimeMillis()
+                CourseDownloadQueue.getInstance().updateEntry(entry)
+
                 L.d("MoodleFragment", "Total size: $totalBytes bytes")
                 L.d("MoodleFragment", "Saving to: ${file.absolutePath}")
 
-                file.outputStream().use { output ->
-                    inputStream.use { input ->
-                        val buffer = ByteArray(8192)
-                        var bytes = input.read(buffer)
+                try {
+                    file.outputStream().use { output ->
+                        inputStream.use { input ->
+                            val buffer = ByteArray(8192)
+                            var bytes = input.read(buffer)
+                            var lastUpdateTime = System.currentTimeMillis()
+                            val updateInterval = 500L
 
-                        while (bytes != -1) {
-                            output.write(buffer, 0, bytes)
-                            downloadedBytes += bytes
-
-                            if (totalBytes > 0) {
-                                val newProgress = (downloadedBytes * 100 / totalBytes).toInt()
-                                if (newProgress != entry.progress) {
-                                    entry.progress = newProgress
-                                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                            while (bytes != -1) {
+                                if (entry.isCancelled) {
+                                    L.d("MoodleFragment", "Download cancelled during transfer: ${entry.entryName}")
+                                    break
                                 }
-                            }
 
-                            bytes = input.read(buffer)
+                                output.write(buffer, 0, bytes)
+                                downloadedBytes += bytes
+
+                                val currentTime = System.currentTimeMillis()
+                                val timeSinceStart = (currentTime - entry.startTime) / 1000.0
+
+                                if (currentTime - lastUpdateTime >= updateInterval) {
+                                    entry.downloadedBytes = downloadedBytes
+
+                                    if (timeSinceStart > 0) {
+                                        entry.downloadSpeed = (downloadedBytes / timeSinceStart).toLong()
+                                    }
+
+                                    if (totalBytes > 0) {
+                                        val newProgress = (downloadedBytes * 100 / totalBytes).toInt()
+                                        entry.progress = newProgress
+                                    }
+
+                                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                                    lastUpdateTime = currentTime
+                                }
+
+                                bytes = input.read(buffer)
+                            }
                         }
                     }
+                } finally {
+                    conn.disconnect()
                 }
 
-                conn.disconnect()
+                if (entry.isCancelled) {
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                    entry.status = "cancelled"
+                    entry.errorMessage = "Cancelled by user"
+                    entry.progress = 0
+                    entry.downloadedBytes = 0
+                    entry.downloadSpeed = 0
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
+                    onDownloadComplete(entry)
+                    return
+                }
 
                 if (file.exists() && file.length() > 0) {
                     L.d("MoodleFragment", "File created successfully: ${file.absolutePath}")
@@ -15821,13 +16448,14 @@ class MoodleFragment : Fragment() {
 
                     entry.status = "completed"
                     entry.progress = 100
-                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    entry.downloadSpeed = 0
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
                     onDownloadComplete(entry)
                 } else {
                     L.e("MoodleFragment", "File was not created or is empty!")
                     entry.status = "failed"
                     entry.errorMessage = "File not created or is empty"
-                    CourseDownloadQueue.getInstance().updateEntry(entry)
+                    CourseDownloadQueue.getInstance().markDownloadFinished(entry)
                     onDownloadComplete(entry)
                 }
 
@@ -15836,15 +16464,15 @@ class MoodleFragment : Fragment() {
                 conn.disconnect()
                 entry.status = "failed"
                 entry.errorMessage = "HTTP Error: $responseCode"
-                CourseDownloadQueue.getInstance().updateEntry(entry)
+                CourseDownloadQueue.getInstance().markDownloadFinished(entry)
                 onDownloadComplete(entry)
             }
 
         } catch (e: Exception) {
             L.e("MoodleFragment", "Exception during actual download", e)
-            entry.status = "failed"
-            entry.errorMessage = e.message ?: "Unknown error"
-            CourseDownloadQueue.getInstance().updateEntry(entry)
+            entry.status = if (entry.isCancelled) "cancelled" else "failed"
+            entry.errorMessage = if (entry.isCancelled) "Cancelled by user" else (e.message ?: "Unknown error")
+            CourseDownloadQueue.getInstance().markDownloadFinished(entry)
             onDownloadComplete(entry)
         }
     }
@@ -16386,7 +17014,6 @@ class MoodleFragment : Fragment() {
                     val progress = ((index + 1) * 100 / totalFiles)
                     entry.progress = progress
                     CourseDownloadQueue.getInstance().updateEntry(entry)
-                    onDownloadComplete(entry)
 
                 } catch (e: Exception) {
                     L.e("MoodleFragment", "Exception downloading file: ${file.name}", e)
@@ -16397,6 +17024,8 @@ class MoodleFragment : Fragment() {
             L.d("MoodleFragment", "Folder download complete: $downloadedCount/$totalFiles successful, $failedCount failed")
 
             if (downloadedCount > 0) {
+                saveDownloadMetadata(courseFolder, entry.entryName, sanitizedFolderName)
+
                 entry.status = "completed"
                 entry.progress = 100
             } else {
@@ -16443,6 +17072,216 @@ class MoodleFragment : Fragment() {
                     visibility = View.GONE
                 }
             }
+        }
+    }
+
+    //endregion
+
+    //region **CALENDAR_DIALOG**
+
+    private inner class MoodleCalendarAdapter(
+        private var entries: List<CalendarDataManager.CalendarDayInfo>,
+        private val onSearchClick: (CalendarDataManager.CalendarDayInfo) -> Unit
+    ) : RecyclerView.Adapter<MoodleCalendarAdapter.ViewHolder>() {
+
+        inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val container: LinearLayout = view.findViewById(R.id.calendarEntryContainer)
+            val btnSearch: ImageButton = view.findViewById(R.id.btnSearchEntry)
+            val tvInfo: TextView = view.findViewById(R.id.textCalendarInfo)
+            val tvContent: TextView = view.findViewById(R.id.textCalendarContent)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_calendar_entry, parent, false)
+            return ViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            val entry = entries[position]
+
+            val summaryPattern = """Moodle: ([^(]+)""".toRegex()
+            val summary = summaryPattern.find(entry.specialNote)?.groupValues?.get(1)?.trim() ?: entry.specialNote
+
+            val daysUntil = getDaysUntil(entry.date)
+            val timeText = when {
+                daysUntil < -1 -> getString(R.string.moodle_calendar_overdue, abs(daysUntil))
+                daysUntil == -1 -> getString(R.string.moodle_calendar_yesterday)
+                daysUntil == 0 -> getString(R.string.moodle_calendar_today)
+                daysUntil == 1 -> getString(R.string.moodle_calendar_tomorrow)
+                else -> getString(R.string.moodle_calendar_in_days, daysUntil)
+            }
+
+            "${entry.getDisplayDate()} ($timeText)".also { holder.tvInfo.text = it }
+            holder.tvContent.text = summary
+
+            val backgroundAttr = getCalendarBackgroundColor(daysUntil)
+            if (backgroundAttr != 0) {
+                val backgroundColor = requireContext().getThemeColor(backgroundAttr)
+                val drawable = holder.container.background as? GradientDrawable
+                drawable?.setColor(backgroundColor)
+            }
+
+            holder.btnSearch.setOnClickListener {
+                onSearchClick(entry)
+            }
+        }
+
+        override fun getItemCount() = entries.size
+
+        fun updateEntries(newEntries: List<CalendarDataManager.CalendarDayInfo>) {
+            entries = newEntries
+            notifyDataSetChanged()
+        }
+
+        private fun getDaysUntil(date: Date): Int {
+            val calendar = Calendar.getInstance()
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            val today = calendar.time
+
+            val targetCalendar = Calendar.getInstance()
+            targetCalendar.time = date
+            targetCalendar.set(Calendar.HOUR_OF_DAY, 0)
+            targetCalendar.set(Calendar.MINUTE, 0)
+            targetCalendar.set(Calendar.SECOND, 0)
+            targetCalendar.set(Calendar.MILLISECOND, 0)
+            val target = targetCalendar.time
+
+            val diff = target.time - today.time
+            return (diff / (1000 * 60 * 60 * 24)).toInt()
+        }
+
+        private fun getCalendarBackgroundColor(daysUntil: Int): Int {
+            return when {
+                daysUntil < 0 -> R.attr.examOverdueBackground
+                daysUntil <= 1 -> R.attr.examUrgentBackground
+                daysUntil <= 3 -> R.attr.examWarningBackground
+                daysUntil <= 7 -> R.attr.examSoonBackground
+                daysUntil <= 14 -> R.attr.examUpcomingBackground
+                else -> 0
+            }
+        }
+    }
+
+    private fun showCalendarEntriesMenu() {
+        val popup = PopupMenu(requireContext(), btnForward)
+
+        popup.menu.add(0, 1, 0, getString(R.string.moodle_show_calendar_entries)).apply {
+            setIcon(R.drawable.ic_today)
+        }
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup.javaClass
+                .getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+                .invoke(mPopup, true)
+        } catch (_: Exception) {
+            // icons wont show but button will work anyways
+        }
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    showCalendarEntriesDialog()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun showCalendarEntriesDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_moodle_calendar_entries, null)
+        val searchBar = dialogView.findViewById<EditText>(R.id.searchBarCalendar)
+        val btnClearSearch = dialogView.findViewById<ImageButton>(R.id.btnClearSearchCalendar)
+        val recyclerView = dialogView.findViewById<RecyclerView>(R.id.recyclerViewCalendar)
+        val tvNoEntries = dialogView.findViewById<TextView>(R.id.tvNoCalendarEntries)
+
+        loadCalendarEntries()
+
+        calendarEntriesAdapter = MoodleCalendarAdapter(
+            entries = calendarEntries,
+            onSearchClick = { entry -> searchForCalendarEntry(entry) }
+        )
+
+        recyclerView.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = calendarEntriesAdapter
+        }
+
+        updateCalendarVisibility(tvNoEntries, recyclerView)
+
+        searchBar.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                btnClearSearch.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+                filterCalendarEntries(s.toString())
+                updateCalendarVisibility(tvNoEntries, recyclerView)
+            }
+        })
+
+        btnClearSearch.setOnClickListener {
+            searchBar.setText("")
+        }
+
+        calendarEntriesDialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.moodle_calendar_entries))
+            .setView(dialogView)
+            .setNegativeButton(getString(R.string.moodle_close), null)
+            .show()
+
+        val buttonColor = requireContext().getThemeColor(R.attr.dialogSectionButtonColor)
+        calendarEntriesDialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(buttonColor)
+    }
+
+    private fun loadCalendarEntries() {
+        calendarEntries.clear()
+        calendarDataManager?.getMoodleCalendarEntries()?.let { entries ->
+            calendarEntries.addAll(entries.sortedBy { it.date })
+        }
+    }
+
+    private fun filterCalendarEntries(query: String) {
+        if (query.isEmpty()) {
+            calendarEntriesAdapter?.updateEntries(calendarEntries)
+        } else {
+            val filtered = calendarEntries.filter { entry ->
+                entry.content.contains(query, ignoreCase = true) ||
+                        entry.specialNote.contains(query, ignoreCase = true) ||
+                        entry.getDisplayDate().contains(query, ignoreCase = true)
+            }
+            calendarEntriesAdapter?.updateEntries(filtered)
+        }
+    }
+
+    private fun updateCalendarVisibility(tvNoEntries: TextView, recyclerView: RecyclerView) {
+        val isEmpty = calendarEntriesAdapter?.itemCount == 0
+        tvNoEntries.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+    }
+
+    private fun searchForCalendarEntry(entry: CalendarDataManager.CalendarDayInfo) {
+        calendarEntriesDialog?.dismiss()
+
+        val summaryPattern = """Moodle: ([^(]+)""".toRegex()
+        val summary = summaryPattern.find(entry.specialNote)?.groupValues?.get(1)?.trim() ?: ""
+
+        val uidPattern = """\(ID: ([^)]+)\)""".toRegex()
+        val entryId = uidPattern.find(entry.specialNote)?.groupValues?.get(1) ?: ""
+
+        val category = entry.content.lines().firstOrNull()?.trim() ?: ""
+
+        if (summary.isNotEmpty()) {
+            searchForMoodleEntry(category, summary, entryId)
+        } else {
+            Toast.makeText(requireContext(), getString(R.string.moodle_calendar_entry_search_failed), Toast.LENGTH_SHORT).show()
         }
     }
 

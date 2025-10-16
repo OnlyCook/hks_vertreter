@@ -1,17 +1,13 @@
 package com.thecooker.vertretungsplaner.ui.moodle
 
-import android.app.DownloadManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
-import android.os.Environment
 import android.os.ParcelFileDescriptor
-import androidx.core.content.FileProvider
 import androidx.core.graphics.createBitmap
 import com.thecooker.vertretungsplaner.L
 import java.io.File
 import java.io.FileInputStream
-import android.content.Intent
 import com.itextpdf.text.pdf.PdfReader
 import com.itextpdf.text.pdf.parser.LocationTextExtractionStrategy
 import com.itextpdf.text.pdf.parser.PdfTextExtractor
@@ -28,7 +24,7 @@ class PdfViewerManager(private val context: Context) {
 
     private val pageCache = mutableMapOf<Int, Bitmap>()
     private val MAX_CACHE_SIZE = 9
-    private val currentlyDisplayedPages = mutableSetOf<Int>()
+    internal val currentlyDisplayedPages = mutableSetOf<Int>()
 
     data class PdfState(
         val file: File,
@@ -70,6 +66,13 @@ class PdfViewerManager(private val context: Context) {
     @Synchronized
     fun getCachedPage(page: Int): Bitmap? {
         return pageCache[page]
+    }
+
+    fun removeCachedPage(pageNumber: Int) {
+        val bitmap = pageCache.remove(pageNumber)
+        if (bitmap != null && !bitmap.isRecycled) {
+            bitmap.recycle()
+        }
     }
 
     @Synchronized

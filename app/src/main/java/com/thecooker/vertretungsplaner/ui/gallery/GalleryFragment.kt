@@ -6396,6 +6396,14 @@ class GalleryFragment : Fragment() {
             return
         }
 
+        val sharedPreferences = requireContext().getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val hasScannedDocument = sharedPreferences.getBoolean("has_scanned_document", false)
+
+        if (!hasScannedDocument) {
+            hideRealTimeIndicator()
+            return
+        }
+
         val currentTime = Calendar.getInstance()
         val dayOfWeek = currentTime.get(Calendar.DAY_OF_WEEK)
 
