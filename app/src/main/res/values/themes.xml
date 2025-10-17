@@ -141,6 +141,8 @@
         <!-- moodlefragment.kt -->
         <item name="iconTintColor">@android:color/black</item>
         <item name="iconTintReserveColor">@android:color/white</item>
+        <item name="entryItemBackgroundColor">@color/lightest_gray</item>
+        <item name="courseItemBackgroundColor">@color/lighter_gray</item>
     </style>
 
     <style name="Theme.VertretungsPlaner.NoActionBar">

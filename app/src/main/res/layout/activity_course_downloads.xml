@@ -25,27 +25,30 @@
         android:padding="12dp"
         android:background="?attr/homeworkFragmentBackgroundColor">
 
+        <!-- Search bar -->
         <RelativeLayout
+            android:id="@+id/searchBarContainer"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp">
 
             <EditText
                 android:id="@+id/searchBarCourseDownloads"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="@string/moodle_search_downloads"
-                android:drawableStart="@android:drawable/ic_menu_search"
-                android:drawablePadding="8dp"
+                android:inputType="text"
                 android:padding="12dp"
                 android:paddingStart="20dp"
                 android:paddingEnd="40dp"
                 android:background="@drawable/subtle_search_background"
-                android:inputType="text"
-                android:maxLines="1"
+                android:drawableStart="@android:drawable/ic_menu_search"
                 android:textSize="16sp"
-                android:textColorHint="#757575"
-                android:imeOptions="actionSearch" />
+                android:textColor="?attr/textPrimaryColor"
+                android:textColorHint="?attr/textSecondaryColor"
+                android:drawablePadding="8dp"
+                android:maxLines="1" />
 
             <ImageButton
                 android:id="@+id/btnClearSearch"
@@ -62,17 +65,17 @@
 
         </RelativeLayout>
 
-        <ImageButton
+        <Button
             android:id="@+id/btnEditMode"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_pencil"
-            android:contentDescription="@string/moodle_edit_mode"
-            android:scaleType="centerInside" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✎"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="@android:color/holo_green_light"
+            android:minWidth="48dp"
+            android:layout_marginEnd="8dp"
+            style="@style/Widget.AppCompat.Button" />
 
         <Button
             android:id="@+id/btnMenuCourseDownloads"
@@ -127,6 +130,7 @@
                 android:textSize="14sp" />
 
             <TextView
+                android:id="@+id/tvCourses"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/moodle_courses"
@@ -156,6 +160,7 @@
                 android:textSize="14sp" />
 
             <TextView
+                android:id="@+id/tvEntries"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/moodle_entries"

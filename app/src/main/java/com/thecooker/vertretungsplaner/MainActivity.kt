@@ -424,6 +424,15 @@ open class MainActivity : BaseActivity() {
             }, 4000)
         }
 
+        if (intent.hasExtra("moodle_fetch_in_progress")) {
+            L.d("MainActivity", "Clearing fetch intent data")
+            intent.removeExtra("moodle_fetch_in_progress")
+            intent.removeExtra("moodle_fetch_type")
+            intent.removeExtra("moodle_fetch_class")
+            intent.removeExtra("moodle_fetch_preserve_notes")
+            intent.removeExtra("moodle_fetch_program_name")
+        }
+
         val navView: NavigationView = binding.navView
         val checkedItem = navView.checkedItem
         L.d("MainActivity", "Navigation drawer checked item: ${checkedItem?.title}")

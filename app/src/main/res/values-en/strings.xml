@@ -1681,6 +1681,7 @@
     <string name="moodle_failed_to_send_message">Failed to send message</string>
     <string name="moodle_activated_dark_mode">Moodle dark mode enabled</string>
     <string name="moodle_deactivated_dark_mode">Moodle dark mode disabled</string>
+    <string name="moodle_loading_webpage">Loading page…</string>
     <!-- text viewer -->
     <string name="text_viewer_switch_to_text">Text Viewer</string>
     <string name="text_viewer_switch_to_pdf">PDF Viewer</string>
@@ -1740,9 +1741,9 @@
     <string name="moodle_items"> x</string>
     <string name="moodle_nested">Nested</string>
     <string name="moodle_course_downloads">Course Downloads</string>
-    <string name="moodle_courses">Courses:</string>
+    <string name="moodle_courses">Courses</string>
     <string name="moodle_selected">Selected:</string>
-    <string name="moodle_entries">entries</string>
+    <string name="moodle_entries">Entries</string>
     <string name="moodle_entry">Entry</string>
     <string name="moodle_file_size">File Size</string>
     <string name="moodle_open_entry">Open Entry</string>
@@ -1872,5 +1873,18 @@
     <string name="moodle_verifying_course">Verifying course…</string>
     <string name="moodle_cache_invalid_retrying">Cached URL invalid, retrying…</string>
     <string name="moodle_navigating_to_course">Navigating to course…</string>
+    <string name="moodle_no_search_results">No search results found</string>
+    <string name="moodle_logging_in_automatically">Logging in automatically</string>
+    <string name="moodle_loading_cached_entry">Loading cached entry</string>
+    <string name="moodle_navigating_to_courses">Navigating to courses</string>
+    <string name="moodle_initializing">Initializing search</string>
+    <string name="moodle_using_cached_url">Using cached URL</string>
+    <string name="moodle_checking_login_status">Checking login status</string>
+    <string name="moodle_already_logged_in">Already logged in</string>
+    <string name="moodle_waiting_for_auto_login">Waiting for auto login</string>
+    <string name="moodle_navigating">Navigating to page</string>
+    <string name="moodle_login_successful_loading">Login successful, loading page</string>
+    <string name="moodle_loading_course_page">Loading course page</string>
+    <string name="moodle_fetch_timeout">Fetch timeout</string>
 
 </resources>

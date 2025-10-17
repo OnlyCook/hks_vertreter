@@ -426,9 +426,17 @@ class MoodleFragment : Fragment() {
         arguments?.getString("moodle_search_category")?.let { category ->
             val summary = arguments?.getString("moodle_search_summary") ?: ""
             val entryId = arguments?.getString("moodle_entry_id") ?: ""
-            Handler(Looper.getMainLooper()).postDelayed({
-                searchForMoodleEntry(category, summary, entryId)
-            }, 2500)
+
+            Handler(Looper.getMainLooper()).post {
+                searchCancelled = false
+                val searchQuery = extractSearchableCourseName(category)
+                searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
+                updateSearchProgress(5, getString(R.string.moodle_initializing))
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    continueCalendarSearch(category, summary, entryId)
+                }, 500)
+            }
 
             arguments?.remove("moodle_search_category")
             arguments?.remove("moodle_search_summary")
@@ -2169,6 +2177,8 @@ class MoodleFragment : Fragment() {
         }
 
         L.d("MoodleFragment", "onPause - saved all tabs" + if (isAppClosing) " and reset default tab" else "")
+
+        cancelAllPendingOperations()
     }
 
     override fun onDestroy() {
@@ -2176,22 +2186,23 @@ class MoodleFragment : Fragment() {
         isAppClosing = true
 
         stopDialogButtonMonitoring()
-        stopMessageInputMonitoring()
-        stopDownloadButtonMonitoring()
-        messageInputDialog?.dismiss()
-        wasOnLogoutConfirmPage = false
-        logoutConfirmPageUrl = ""
-        isHandlingLogout = false
 
-        darkModeRetryHandler?.removeCallbacks(darkModeRetryRunnable ?: Runnable {})
-        darkModeRetryHandler = null
-        darkModeRetryRunnable = null
+        if (::webView.isInitialized) {
+            stopMessageInputMonitoring()
+            stopDownloadButtonMonitoring()
+            messageInputDialog?.dismiss()
 
-        pdfViewerManager?.closePdf()
-        resetDefaultTabToLogin()
-        savePinnedTabs()
-        tabs.forEach { it.thumbnail?.recycle() }
-        pdfRenderer?.close()
+            wasOnLogoutConfirmPage = false
+            logoutConfirmPageUrl = ""
+            isHandlingLogout = false
+
+            pdfViewerManager?.closePdf()
+            resetDefaultTabToLogin()
+            savePinnedTabs()
+            tabs.forEach { it.thumbnail?.recycle() }
+            pdfRenderer?.close()
+        }
+
         backgroundExecutor.shutdown()
         cleanupRefreshIndicator()
         scrollEndCheckRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
@@ -2215,14 +2226,20 @@ class MoodleFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
 
-        pdfScrollContainer.setOnScrollChangeListener(null)
-        pdfScrollContainer.viewTreeObserver.removeOnScrollChangedListener(fun() {
-            // throwing some warnings i dont understand
-        })
+        Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+
+        if (::webView.isInitialized) {
+            pdfScrollContainer.setOnScrollChangeListener(null)
+            pdfScrollContainer.viewTreeObserver.removeOnScrollChangedListener(fun() {})
+            webView.setOnTouchListener(null)
+            webView.setOnScrollChangeListener(null)
+        }
 
         scrollStopRunnable?.let { scrollStopHandler?.removeCallbacks(it) }
         scrollStopHandler = null
         scrollStopRunnable = null
+
+        cancelAllPendingOperations()
     }
 
     private fun Context.getThemeColor(@AttrRes attrRes: Int): Int {
@@ -2263,6 +2280,39 @@ class MoodleFragment : Fragment() {
         } catch (e: Exception) {
             L.e("MoodleFragment", "Error checking network availability", e)
             false
+        }
+    }
+
+    private fun cancelAllPendingOperations() {
+        searchCancelled = true
+        fetchCancelled = true
+
+        Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+
+        searchProgressDialog?.dismiss()
+        moodleFetchProgressDialog?.dismiss()
+        messageInputDialog?.dismiss()
+        textSearchDialog?.dismiss()
+
+        cleanupFetchProcess()
+        isProcessingInstantLogout = false
+        isHandlingLogout = false
+        wasOnLogoutConfirmPage = false
+    }
+
+    // for web operations with good crash potential
+    private fun safeEvaluateJavascript(code: String, callback: (String) -> Unit) {
+        if (!isAdded || context == null || !::webView.isInitialized) {
+            L.d("MoodleFragment", "Cannot evaluate JavaScript - not ready")
+            callback("false")
+            return
+        }
+
+        try {
+            webView.evaluateJavascript(code, callback)
+        } catch (e: Exception) {
+            L.e("MoodleFragment", "Error evaluating JavaScript", e)
+            callback("false")
         }
     }
 
@@ -3048,12 +3098,6 @@ class MoodleFragment : Fragment() {
         } else {
             loadUrlInBackground(url)
         }
-
-        if (url.contains("/message/index.php")) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                clickMessageDrawerToggle()
-            }, 800)
-        }
     }
 
     private fun updateTabButtonIcon() {
@@ -3770,6 +3814,28 @@ class MoodleFragment : Fragment() {
     }
 
     private fun clearAllTabs() {
+        if (isPdfTab(currentTabIndex)) {
+            pdfViewerManager?.closePdf()
+            pdfViewerManager = null
+            pdfFileUrl = null
+        }
+
+        if (isTextViewerMode) {
+            isTextViewerMode = false
+            textViewerManager = null
+
+            if (textViewerSearchBarVisible) {
+                textViewerSearchBarVisible = false
+                textSearchHeader.visibility = View.GONE
+                val etTextSearch = textSearchHeader.findViewById<EditText>(R.id.etTextSearch)
+                etTextSearch?.setText("")
+            }
+            clearTextSearchHighlights()
+            textSearchQuery = ""
+            textSearchResults = emptyList()
+            currentTextSearchIndex = -1
+        }
+
         tabs.forEach { it.thumbnail?.recycle() }
         tabs.clear()
 
@@ -3780,6 +3846,15 @@ class MoodleFragment : Fragment() {
             isDefault = true
         ))
         currentTabIndex = 0
+
+        webView.visibility = View.VISIBLE
+        pdfContainer.visibility = View.GONE
+        textViewerContainer.visibility = View.GONE
+        webControlsLayout.visibility = View.VISIBLE
+        pdfControlsLayout.visibility = View.GONE
+        btnBack.visibility = View.VISIBLE
+        btnOpenInBrowser.visibility = View.VISIBLE
+
         webView.loadUrl("$moodleBaseUrl/my/")
 
         savePinnedTabs()
@@ -7156,6 +7231,20 @@ class MoodleFragment : Fragment() {
 
     //region **CAL_SEARCH**
 
+    private fun continueCalendarSearch(category: String, summary: String, entryId: String) {
+        val cachedUrl = calendarDataManager?.getCachedUrl(entryId)
+        if (cachedUrl != null) {
+            L.d("MoodleFragment", "Found cached URL for entry $entryId: $cachedUrl")
+            updateSearchProgress(10, getString(R.string.moodle_using_cached_url))
+            navigateUsingCachedUrl(cachedUrl, summary, entryId)
+            return
+        }
+
+        L.d("MoodleFragment", "No cached URL, performing full search")
+        updateSearchProgress(15, getString(R.string.moodle_checking_login_status))
+        checkLoginStatusForCalendarSearch(category, summary, entryId)
+    }
+
     private fun resetSearchState() {
         val jsCode = """
         (function() {
@@ -7234,67 +7323,145 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        searchCancelled = false
+        val searchQuery = extractSearchableCourseName(category)
+        searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
+        updateSearchProgress(5, getString(R.string.moodle_initializing))
+
         val cachedUrl = calendarDataManager?.getCachedUrl(entryId)
         if (cachedUrl != null) {
             L.d("MoodleFragment", "Found cached URL for entry $entryId: $cachedUrl")
+            updateSearchProgress(10, getString(R.string.moodle_using_cached_url))
             navigateUsingCachedUrl(cachedUrl, summary, entryId)
             return
         }
 
-        val searchQuery = extractSearchableCourseName(category)
         L.d("MoodleFragment", "No cached URL, performing full search with query: '$searchQuery'")
+        updateSearchProgress(15, getString(R.string.moodle_checking_login_status))
 
-        searchCancelled = false
-        searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
+        checkLoginStatusForCalendarSearch(searchQuery, summary, entryId)
+    }
+
+    private fun checkLoginStatusForCalendarSearch(category: String, summary: String, entryId: String) {
+        if (searchCancelled) return
 
         val currentUrl = webView.url ?: ""
         val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
 
         if (isOnLoginPage) {
-            updateSearchProgress(15, getString(R.string.moodle_please_login))
-            searchProgressDialog?.hide()
+            val hasCredentials = encryptedPrefs.contains("moodle_username") &&
+                    encryptedPrefs.contains("moodle_password")
 
-            Toast.makeText(
-                requireContext(),
-                getString(R.string.moodle_please_login_to_continue),
-                Toast.LENGTH_LONG
-            ).show()
+            if (hasCredentials) {
+                updateSearchProgress(20, getString(R.string.moodle_logging_in_automatically))
+                L.d("MoodleFragment", "Auto-login credentials found, waiting for login completion")
+                monitorLoginCompletionForSearch(category, summary, entryId)
+            } else {
+                updateSearchProgress(20, getString(R.string.moodle_please_login))
+                searchProgressDialog?.hide()
 
-            monitorLoginCompletionForSearch(searchQuery, summary, entryId)
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_please_login_to_continue),
+                    Toast.LENGTH_LONG
+                ).show()
+
+                L.d("MoodleFragment", "No credentials found, waiting for manual login")
+                monitorLoginCompletionForSearch(category, summary, entryId)
+            }
         } else {
-            continueSearchAfterLogin(searchQuery, summary, entryId)
+            updateSearchProgress(25, getString(R.string.moodle_already_logged_in))
+            continueSearchAfterLogin(category, summary, entryId)
         }
     }
 
     private fun navigateUsingCachedUrl(url: String, summary: String, entryId: String) {
-        searchCancelled = false
-        searchProgressDialog = AlertDialog.Builder(requireContext())
-            .setView(layoutInflater.inflate(R.layout.dialog_moodle_search_progress, null).apply {
-                findViewById<TextView>(R.id.tvSearchTitle)?.text = getString(R.string.moodle_opening_cached_entry)
-                findViewById<TextView>(R.id.tvSearchStatus)?.text = getString(R.string.moodle_loading_page)
-                findViewById<ProgressBar>(R.id.progressBar)?.progress = 50
-                findViewById<Button>(R.id.btnCancel)?.setOnClickListener {
-                    searchCancelled = true
-                    searchProgressDialog?.dismiss()
-                }
-            })
-            .setCancelable(false)
-            .create()
+        updateSearchProgress(15, getString(R.string.moodle_loading_cached_entry))
 
-        searchProgressDialog?.show()
+        val dialogView = searchProgressDialog?.findViewById<View>(android.R.id.content)
+        val tvSearchTitle = dialogView?.findViewById<TextView>(R.id.tvSearchTitle)
+        tvSearchTitle?.text = getString(R.string.moodle_opening_cached_entry)
 
         L.d("MoodleFragment", "Navigating to cached URL: $url")
 
-        loadUrlInBackground(url)
+        val currentUrl = webView.url ?: ""
+        val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
 
-        waitForCachedPageLoad(url, entryId, summary)
+        if (isOnLoginPage) {
+            val hasCredentials = encryptedPrefs.contains("moodle_username") &&
+                    encryptedPrefs.contains("moodle_password")
+
+            if (hasCredentials) {
+                updateSearchProgress(20, getString(R.string.moodle_waiting_for_auto_login))
+                L.d("MoodleFragment", "On login page with credentials, waiting for auto-login before navigating")
+
+                monitorLoginCompletionForCachedUrl(url, summary, entryId)
+            } else {
+                updateSearchProgress(20, getString(R.string.moodle_please_login))
+                searchProgressDialog?.hide()
+
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_please_login_to_continue),
+                    Toast.LENGTH_LONG
+                ).show()
+
+                L.d("MoodleFragment", "On login page without credentials, waiting for manual login")
+                monitorLoginCompletionForCachedUrl(url, summary, entryId)
+            }
+        } else {
+            updateSearchProgress(30, getString(R.string.moodle_navigating))
+            loadUrlInBackground(url)
+            waitForCachedPageLoad(url, entryId, summary)
+        }
+    }
+
+    private fun monitorLoginCompletionForCachedUrl(url: String, summary: String, entryId: String) {
+        val searchStartTime = System.currentTimeMillis()
+        val checkInterval = 1000L
+        val timeout = 180000L // 3 minutes
+        val handler = Handler(Looper.getMainLooper())
+
+        val loginCheckRunnable = object : Runnable {
+            override fun run() {
+                if (searchCancelled || System.currentTimeMillis() - searchStartTime > timeout) {
+                    hideSearchProgressDialog()
+                    if (!searchCancelled) {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_search_timeout), Toast.LENGTH_SHORT).show()
+                    }
+                    return
+                }
+
+                val currentUrl = webView.url ?: ""
+                val isStillOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
+
+                if (!isStillOnLoginPage) {
+                    searchProgressDialog?.show()
+                    updateSearchProgress(30, getString(R.string.moodle_login_successful_loading))
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        L.d("MoodleFragment", "Login complete, now navigating to cached URL: $url")
+                        loadUrlInBackground(url)
+                        waitForCachedPageLoad(url, entryId, summary)
+                    }, 500)
+                } else {
+                    val elapsedSeconds = (System.currentTimeMillis() - searchStartTime) / 1000
+                    if (searchProgressDialog?.isShowing == true) {
+                        updateSearchProgress(18, getString(R.string.moodle_waiting_for_login) + " (${elapsedSeconds}s)")
+                    }
+                    handler.postDelayed(this, checkInterval)
+                }
+            }
+        }
+
+        handler.post(loginCheckRunnable)
     }
 
     private fun waitForCachedPageLoad(
         expectedUrl: String,
         entryId: String,
         summary: String,
-        maxAttempts: Int = 20,
+        maxAttempts: Int = 30,
         attempt: Int = 0
     ) {
         if (searchCancelled) {
@@ -7316,10 +7483,15 @@ class MoodleFragment : Fragment() {
 
             Handler(Looper.getMainLooper()).postDelayed({
                 val category = extractCategoryFromSummary(summary)
-                searchForMoodleEntry(category, summary, entryId)
+                if (isAdded && context != null && !searchCancelled && !fetchCancelled) {
+                    searchForMoodleEntry(category, summary, entryId)
+                }
             }, 500)
             return
         }
+
+        val progressPercent = 35 + ((attempt.toFloat() / maxAttempts) * 55).toInt()
+        updateSearchProgress(progressPercent, getString(R.string.moodle_loading_webpage))
 
         val jsCode = """
         (function() {
@@ -7357,11 +7529,11 @@ class MoodleFragment : Fragment() {
                         getString(R.string.moodle_opened_entry, summary),
                         Toast.LENGTH_SHORT
                     ).show()
-                }, 300)
+                }, 400)
             } else {
                 Handler(Looper.getMainLooper()).postDelayed({
                     waitForCachedPageLoad(expectedUrl, entryId, summary, maxAttempts, attempt + 1)
-                }, 300)
+                }, 400)
             }
         }
     }
@@ -7450,12 +7622,16 @@ class MoodleFragment : Fragment() {
 
                 if (!isStillOnLoginPage) {
                     searchProgressDialog?.show()
-                    updateSearchProgress(20, getString(R.string.moodle_login_successful))
+                    updateSearchProgress(30, getString(R.string.moodle_login_successful))
 
                     Handler(Looper.getMainLooper()).postDelayed({
                         continueSearchAfterLogin(category, summary, entryId)
                     }, 500)
                 } else {
+                    val elapsedSeconds = (System.currentTimeMillis() - searchStartTime) / 1000
+                    if (searchProgressDialog?.isShowing == true) {
+                        updateSearchProgress(18, getString(R.string.moodle_waiting_for_login) + " (${elapsedSeconds}s)")
+                    }
                     handler.postDelayed(this, checkInterval)
                 }
             }
@@ -7467,18 +7643,20 @@ class MoodleFragment : Fragment() {
     private fun continueSearchAfterLogin(category: String, summary: String, entryId: String) {
         if (searchCancelled) return
 
+        updateSearchProgress(25, getString(R.string.moodle_navigating_to_courses))
+
         val currentUrl = webView.url ?: ""
         val isOnMyCoursesPage = currentUrl.contains("/my/") || currentUrl == "$moodleBaseUrl/my/"
 
         if (isOnMyCoursesPage) {
-            updateSearchProgress(20, getString(R.string.moodle_page_loaded_resetting))
+            updateSearchProgress(30, getString(R.string.moodle_page_loaded_resetting))
             performMoodleEntrySearch(category, summary, entryId)
         } else {
             loadUrlInBackground("$moodleBaseUrl/my/")
 
             waitForPageLoadComplete {
                 if (searchCancelled) return@waitForPageLoadComplete
-                updateSearchProgress(20, getString(R.string.moodle_page_loaded_resetting))
+                updateSearchProgress(30, getString(R.string.moodle_page_loaded_resetting))
                 performMoodleEntrySearch(category, summary, entryId)
             }
         }
@@ -7803,8 +7981,10 @@ class MoodleFragment : Fragment() {
 
     private fun waitForSearchResults(maxAttempts: Int = 15, attempt: Int = 0, callback: (Boolean) -> Unit) {
         if (attempt >= maxAttempts) {
-            L.w("MoodleFragment", "Search results timeout after $maxAttempts attempts")
-            callback(false)
+            L.w("MoodleFragment", "Search results timeout")
+            if (isAdded && context != null) {
+                callback(false)
+            }
             return
         }
 
@@ -7839,13 +8019,19 @@ class MoodleFragment : Fragment() {
     """.trimIndent()
 
         webView.evaluateJavascript(jsCode) { result ->
+            if (!isAdded || context == null) {
+                L.d("MoodleFragment", "Fragment detached during search results check")
+                return@evaluateJavascript
+            }
+
             if (result == "true") {
-                L.d("MoodleFragment", "Search results are ready after ${attempt + 1} attempts")
+                L.d("MoodleFragment", "Search results ready")
                 callback(true)
             } else {
-                L.d("MoodleFragment", "Search results not ready, attempt ${attempt + 1}/$maxAttempts")
                 Handler(Looper.getMainLooper()).postDelayed({
-                    waitForSearchResults(maxAttempts, attempt + 1, callback)
+                    if (isAdded && context != null) {
+                        waitForSearchResults(maxAttempts, attempt + 1, callback)
+                    }
                 }, 1000)
             }
         }
@@ -10825,7 +11011,7 @@ class MoodleFragment : Fragment() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             checkLoginStatusForFetch()
-        }, 2500)
+        }, 500)
     }
 
     private fun showMoodleFetchProgressDialog() {
@@ -10866,34 +11052,51 @@ class MoodleFragment : Fragment() {
             return
         }
 
+        updateFetchProgress(15, getString(R.string.moodle_checking_login_status))
+
         val currentUrl = webView.url ?: ""
         val isOnLoginPage = currentUrl == loginUrl || currentUrl.contains("login/index.php")
 
         if (isOnLoginPage) {
-            updateFetchProgress(15, getString(R.string.moodle_please_login))
+            val hasCredentials = encryptedPrefs.contains("moodle_username") &&
+                    encryptedPrefs.contains("moodle_password")
 
-            moodleFetchProgressDialog?.hide()
+            if (hasCredentials) {
+                updateFetchProgress(18, getString(R.string.moodle_logging_in_automatically))
+                L.d("MoodleFragment", "Auto-login credentials found, waiting for login completion")
+                monitorLoginCompletionForFetch()
+            } else {
+                updateFetchProgress(18, getString(R.string.moodle_please_login))
+                moodleFetchProgressDialog?.hide()
 
-            Toast.makeText(
-                requireContext(),
-                getString(R.string.moodle_please_login_to_continue),
-                Toast.LENGTH_LONG
-            ).show()
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.moodle_please_login_to_continue),
+                    Toast.LENGTH_LONG
+                ).show()
 
-            monitorLoginCompletion()
+                L.d("MoodleFragment", "No credentials found, waiting for manual login")
+                monitorLoginCompletionForFetch()
+            }
         } else {
+            updateFetchProgress(22, getString(R.string.moodle_already_logged_in))
             continueAfterLogin()
         }
     }
 
-    private fun monitorLoginCompletion() {
+    private fun monitorLoginCompletionForFetch() {
+        val fetchStartTime = System.currentTimeMillis()
         val checkInterval = 1000L
+        val timeout = 180000L // 3 minutes
         val handler = Handler(Looper.getMainLooper())
 
         val loginCheckRunnable = object : Runnable {
             override fun run() {
-                if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > FETCH_TIMEOUT) {
+                if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > timeout) {
                     cleanupFetchProcess()
+                    if (!fetchCancelled) {
+                        Toast.makeText(requireContext(), getString(R.string.moodle_fetch_timeout), Toast.LENGTH_SHORT).show()
+                    }
                     return
                 }
 
@@ -10902,12 +11105,16 @@ class MoodleFragment : Fragment() {
 
                 if (!isStillOnLoginPage) {
                     moodleFetchProgressDialog?.show()
-                    updateFetchProgress(20, getString(R.string.moodle_login_successful))
+                    updateFetchProgress(22, getString(R.string.moodle_login_successful))
 
                     Handler(Looper.getMainLooper()).postDelayed({
                         continueAfterLogin()
                     }, 500)
                 } else {
+                    val elapsedSeconds = (System.currentTimeMillis() - fetchStartTime) / 1000
+                    if (moodleFetchProgressDialog?.isShowing == true) {
+                        updateFetchProgress(18, getString(R.string.moodle_waiting_for_login) + " (${elapsedSeconds}s)")
+                    }
                     handler.postDelayed(this, checkInterval)
                 }
             }
@@ -10924,7 +11131,7 @@ class MoodleFragment : Fragment() {
 
         if (cachedUrl != null && cachedProgramName != null) {
             L.d("MoodleFragment", "Found cached main course URL, using shortcut")
-            updateFetchProgress(30, getString(R.string.moodle_navigating_to_course))
+            updateFetchProgress(25, getString(R.string.moodle_navigating_to_course))
 
             navigateUsingCachedMainCourseUrl(cachedUrl, cachedProgramName)
         } else {
@@ -10942,7 +11149,16 @@ class MoodleFragment : Fragment() {
     }
 
     private fun extractProgramCourseNameFromPage() {
-        if (fetchCancelled) return
+        if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > FETCH_TIMEOUT) {
+            cleanupFetchProcess()
+            return
+        }
+
+        if (!isAdded || context == null) {
+            L.d("MoodleFragment", "Fragment detached during program extraction")
+            cleanupFetchProcess()
+            return
+        }
 
         updateFetchProgress(30, getString(R.string.moodle_detecting_program))
 
@@ -11745,6 +11961,11 @@ class MoodleFragment : Fragment() {
     }
 
     private fun updateFetchProgress(progress: Int, status: String, details: String = "") {
+        if (!isAdded || context == null) {
+            L.d("MoodleFragment", "Fragment not attached, skipping progress update")
+            return
+        }
+
         moodleFetchProgressDialog?.let { dialog ->
             if (dialog.isShowing && !fetchCancelled) {
                 val dialogView = dialog.findViewById<View>(android.R.id.content)
@@ -12852,9 +13073,14 @@ class MoodleFragment : Fragment() {
         when {
             url.contains("/message/index.php") -> {
                 optimizeMessagesPage()
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    clickMessageDrawerToggle()
+                }, 500)
+
                 Handler(Looper.getMainLooper()).postDelayed({
                     setupMessageInputOverride()
-                }, 500)
+                }, 1000)
             }
             //url.contains("/my/") && !url.contains("/my/index.php?edit=") -> optimizeDashboardPage()
             // tried (switching dashboard header with recent side bar) but failed to preserve js functionality
@@ -13039,19 +13265,56 @@ class MoodleFragment : Fragment() {
         val jsCode = """
     (function() {
         try {
-            var drawerToggle = document.querySelector('[data-toggle="drawer-toggle"]');
-            if (drawerToggle) {
-                drawerToggle.click();
-                return true;
+            var attempts = 0;
+            var maxAttempts = 15;
+            
+            function tryClick() {
+                // try to find by id pattern
+                var drawerToggle = document.querySelector('[id^="message-drawer-toggle"]');
+                
+                if (!drawerToggle) {
+                    // fallback: find by aria label
+                    drawerToggle = document.querySelector('[aria-label="Mitteilungen"]');
+                }
+                
+                if (!drawerToggle) {
+                    // fallback 2: look in nav for the messages icon
+                    var navLinks = document.querySelectorAll('a.nav-link.popover-region-toggle');
+                    for (var i = 0; i < navLinks.length; i++) {
+                        if (navLinks[i].querySelector('.fa-message') || 
+                            navLinks[i].getAttribute('aria-label') === 'Mitteilungen') {
+                            drawerToggle = navLinks[i];
+                            break;
+                        }
+                    }
+                }
+                
+                if (drawerToggle) {
+                    drawerToggle.click();
+                    console.log('Message drawer toggle clicked successfully');
+                    return true;
+                }
+                
+                if (attempts < maxAttempts) {
+                    attempts++;
+                    console.log('Message drawer toggle not found, attempt ' + attempts);
+                    setTimeout(tryClick, 300);
+                    return null;
+                }
+                
+                console.error('Failed to find message drawer toggle after ' + maxAttempts + ' attempts');
+                return false;
             }
-            return false;
+            
+            return tryClick();
         } catch(e) {
+            console.error('Error clicking message drawer toggle: ' + e.message);
             return false;
         }
     })();
 """.trimIndent()
 
-        webView.evaluateJavascript(jsCode) { _ ->
+        webView.evaluateJavascript(jsCode) { result ->
             Handler(Looper.getMainLooper()).postDelayed({
                 if (isFragmentActive && isAdded) {
                     val currentUrl = webView.url ?: ""
@@ -13060,7 +13323,7 @@ class MoodleFragment : Fragment() {
                         hideExtendedHeaderWithAnimation()
                     }
                 }
-            }, 500)
+            }, 300)
         }
     }
 
@@ -17279,7 +17542,9 @@ class MoodleFragment : Fragment() {
         val category = entry.content.lines().firstOrNull()?.trim() ?: ""
 
         if (summary.isNotEmpty()) {
-            searchForMoodleEntry(category, summary, entryId)
+            if (isAdded && context != null && !searchCancelled && !fetchCancelled) {
+                searchForMoodleEntry(category, summary, entryId)
+            }
         } else {
             Toast.makeText(requireContext(), getString(R.string.moodle_calendar_entry_search_failed), Toast.LENGTH_SHORT).show()
         }

@@ -42,15 +42,17 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
     private lateinit var recyclerView: RecyclerView
     private lateinit var searchEditText: EditText
     private lateinit var btnClearSearch: ImageButton
-    private lateinit var btnEditMode: ImageButton
+    private lateinit var btnEditMode: Button
     private lateinit var btnMenuCourseDownloads: Button
     private lateinit var editModeControls: LinearLayout
     private lateinit var btnCancel: Button
     private lateinit var btnDelete: Button
     private lateinit var tvCourseCount: TextView
+    private lateinit var tvCourses: TextView
     private lateinit var infoBarLayout: LinearLayout
 
     private lateinit var tvEntryCount: TextView
+    private lateinit var tvEntries: TextView
     private lateinit var tvSelectedCourseCount: TextView
     private lateinit var tvTotalCourseCount: TextView
     private lateinit var tvSelectedEntryCount: TextView
@@ -70,6 +72,8 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
             }
             return File(baseDir, "HKS_Moodle_Downloads")
         }
+
+    private var currentSearchQuery = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val tempPrefs = getSharedPreferences("AppPrefs", MODE_PRIVATE)
@@ -130,7 +134,9 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
         btnCancel = findViewById(R.id.btnCancel)
         btnDelete = findViewById(R.id.btnDelete)
         tvCourseCount = findViewById(R.id.tvCourseCount)
+        tvCourses = findViewById(R.id.tvCourses)
         tvEntryCount = findViewById(R.id.tvEntryCount)
+        tvEntries = findViewById(R.id.tvEntries)
         tvSelectedCourseCount = findViewById(R.id.tvSelectedCourseCount)
         tvTotalCourseCount = findViewById(R.id.tvTotalCourseCount)
         tvSelectedEntryCount = findViewById(R.id.tvSelectedEntryCount)
@@ -163,6 +169,7 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val query = s.toString()
+                currentSearchQuery = query
                 btnClearSearch.visibility = if (query.isEmpty()) View.GONE else View.VISIBLE
                 filterCourses(query)
             }
@@ -816,10 +823,22 @@ open class CourseDownloadsActivity : AppCompatActivity(), CourseDownloadQueue.Qu
 
     private fun updateCourseCount() {
         val totalEntries = filteredCourses.flatMap { it.entries }.size
+
         tvCourseCount.text = filteredCourses.size.toString()
+        tvCourses.text = if (filteredCourses.size == 1) getString(R.string.moodle_course) else getString(R.string.moodle_courses)
+
         tvEntryCount.text = totalEntries.toString()
+        tvEntries.text = if (totalEntries == 1) getString(R.string.moodle_entry) else getString(R.string.moodle_entries)
 
         val isEmpty = filteredCourses.isEmpty()
+        val isSearchActive = currentSearchQuery.isNotEmpty()
+
+        if (isEmpty && isSearchActive) {
+            tvEmptyState.text = getString(R.string.moodle_no_search_results)
+        } else {
+            tvEmptyState.text = getString(R.string.moodle_no_downloads)
+        }
+
         tvEmptyState.visibility = if (isEmpty) View.VISIBLE else View.GONE
         recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
 

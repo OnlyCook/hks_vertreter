@@ -7,7 +7,7 @@
 Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankfurt am Main, die den Schulalltag organisiert und vereinfacht.
 
 <p align="center" id="download">
-  <a href="https://github.com/OnlyCook/hks_vertreter/releases/latest/download/hks_vertreter_1-7-3.apk">
+  <a href="https://github.com/OnlyCook/hks_vertreter/releases/latest/download/hks_vertreter_1-8-0.apk">
     <img src="https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android" alt="Download APK">
   </a>
 </p>
@@ -17,9 +17,9 @@ Eine inoffizielle Android-App für Schüler der Heinrich-Kleyer-Schule in Frankf
 Diese App wird niemals...
 - **Kosten tragen** (kein App-Preis, keine In-App-Käufe)
 - **finanziell profitieren** (keine Werbung, keine Sponsoren, keine Spenden)
-- **Daten sammeln, verschicken oder speichern** (ausgenommen lokale App-Daten auf dem eigenen Gerät für die Benutzererfahrung)
-- **persönliche Daten abfragen**, außer den Bildungsgang und die Klasse
-- **an Dritte verkauft**
+- **Daten sammeln, verschicken oder an Dritte weitergeben** (ausgenommen lokale App-Daten auf dem eigenen Gerät für die Benutzererfahrung)
+- **persönliche Daten abfragen**, außerhalb den Schuldaten (nur Bildungsgang und Klasse sind pflicht zum Nutzen der App)
+- **an Dritte verkauft werden**
 
 ## 📱 App-Zusammenfassung
 
@@ -32,13 +32,16 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 - **📊 Klausuren-Planer**
 - **📅 Integrierter Kalender**
 - **📈 Noten-Rechner**
+- **🌐 Moodle-Integration**
 - **🔔 Benachrichtigungen**
 
 ### ⚡ Performance
 
-- **Klein**: Geringer Speicherbedarf auf dem Gerät
+- **Klein**: Geringer Speicherbedarf auf dem Gerät (kann sich bei Nutzung der Moodle-Seite durch Cache erhöhen)
 - **Schnell**: Optimiert für flüssige Nutzung
-- **Sparsam**: Minimaler Datenverbrauch (Internetzugriff nur für Klassen, Vertretungsplan und ggf. Feriendaten)
+- **Datenverbrauch**: 
+  - Minimal für Grundfunktionen (Vertretungsplan, Klassen, optional Feriendaten)
+  - Höher bei Nutzung der Moodle-Integration (vergleichbar mit normalem Browser-Verbrauch)
 
 ## 🔧 Technische Details
 
@@ -50,7 +53,7 @@ Die Heinrich-Kleyer-Schule App ist eine umfassende Utility-Anwendung, die spezie
 ## 📥 Installation
 
 Es gibt zwei Möglichkeiten, die App herunterzuladen:
-   - *Hinweis: Du musst möglicherweise „Installation aus unbekannten Quellen“ aktivieren*  
+   - *Hinweis: Du musst möglicherweise „Installation aus unbekannten Quellen" aktivieren*  
 
 ### ✅ 1. Empfohlene Methode
 Nutze den [Download-Button oben](#download) auf dieser Seite.
@@ -86,6 +89,14 @@ Die Noten-Funktion bietet nur eine **ungefähre Berechnung** und entspricht **ni
 ### Benachrichtigungen
 Die Benachrichtigungen müssen manuell aktiviert werden und können unzuverlässig sein, wenn **Hintergrundaktivitäten** beschränkt sind.
 
+### Moodle-Seite
+Die Moodle-Integration ist experimentell und nicht perfekt. Mögliche Probleme:
+- **Bugs und Fehler**: Die Seite kann fehlerhaft sein oder sich unerwartet verhalten
+- **Datenverbrauch**: Fehlerhafte Code-Ausführung kann unnötig Daten verbrauchen
+- **Abstürze**: Die Moodle-Funktion kann abstürzen oder nicht reagieren
+
+_Hinweis: Bitte Kontakt aufnehmen falls Fehler gefunden wurden._
+
 ## 📬 Kontakt & Support
 
 **Entwickler**: Nikodem Karol Jastrzab  
@@ -97,6 +108,7 @@ Die Benachrichtigungen müssen manuell aktiviert werden und können unzuverläss
 - ❓ Fehlende Klassen oder Bildungsgänge
 - 🔧 Probleme mit deinem Bildungsgang
 - 📄 Anpassung der Scanner-Algorithmen (sende gerne deinen Stundenplan/Klausurplan mit)
+- 🌐 Probleme mit der Moodle-Seite
 
 ## 🏫 Schul-Information
 
@@ -110,13 +122,16 @@ Kühhornshofweg 27
 - Die App kann Fehler oder falsche Informationen enthalten
 - Algorithmen sind nicht 100% fehlerfrei
 - Die Schule kann das Format des Vertretungsplans, Stundenplans oder Klausurplans ändern
+- Die Moodle-Integration ist experimentell und kann Fehler aufweisen
 - **Nutzung auf eigene Verantwortung**
 
 ### Logo-Nutzung
-Das Schul-Logo gehört der Heinrich-Kleyer-Schule und wird mit deren stillschweigender Duldung verwendet. Bei Beanstandungen bitte Kontakt aufnehmen.
+Das **Schul-Logo** gehört der Heinrich-Kleyer-Schule und wird mit deren stillschweigender Duldung verwendet. Bei Beanstandungen bitte Kontakt aufnehmen.
+
+Das in der App verwendete (bearbeitete) **Moodle-Logo** ist Eigentum von Moodle Pty Ltd. Die Nutzung erfolgt ohne ausdrückliche Genehmigung. Bei Beanstandungen bitte Kontakt aufnehmen.
 
 ### DSGVO-Konformität
-Diese App verarbeitet **keine personenbezogenen Daten**. Alle von dir eingegebenen Informationen (Hausaufgaben, Klausuren, Noten, Stundenpläne etc.) werden ausschließlich lokal auf dem Gerät gespeichert.
+Diese App verarbeitet **keine personenbezogenen Daten** und sendet keine Daten an Dritte. Alle von dir eingegebenen Informationen werden ausschließlich lokal auf dem Gerät gespeichert.
 
 **Was wird lokal gespeichert?**
 - **Pflicht**: Bildungsgang und Klasse (erforderlich für die Grundfunktion)
@@ -126,14 +141,21 @@ Diese App verarbeitet **keine personenbezogenen Daten**. Alle von dir eingegeben
   - Stundenplan und Fächer
   - Noten und Bewertungen
   - App-Einstellungen und Personalisierung
+  - **Moodle-Anmeldedaten** (verschlüsselt mit Android-Sicherheitsbibliotheken)
+  - Heruntergeladene Moodle-Kursinhalte
+  - Moodle-Kalendereinträge (wird beim Login gespeichert)
 
 *So transparent wie möglich – du entscheidest selbst, welche Daten du eingeben möchtest.*
 
 ### Datenschutz
 - ✅ Keine Datensammlung durch den Entwickler
 - ✅ Alle Daten bleiben auf deinem Gerät
-- ✅ Gespeichert werden nur: Vertretungsplan (offline) und Einstellungen, sowie optionalles (siehe DSGVO-Konformität)
-- ✅ Internetverbindung nur zu: heinrich-kleyer-schule.de (und optional zu: kultus.hessen.de)
+- ✅ Moodle-Anmeldedaten werden verschlüsselt gespeichert (optional)
+- ✅ Internetverbindung nur zu: 
+  - heinrich-kleyer-schule.de (Vertretungsplan, Klassen)
+  - moodle.kleyer.eu (optional, Moodle)
+  - kultus.hessen.de (optional, Feriendaten)
+- ✅ Kein Tracking, keine Analytik, keine Drittanbieter-Dienste
 
 ## 🤝 Beitragen
 
@@ -145,7 +167,7 @@ Da ich nicht mehr lange auf der Schule bin und die App sehr spezifisch für die 
 ### Fork & Modify
 Du darfst die App gerne forken und modifizieren. Beachte dabei:
 - Die MIT-Lizenz
-- Das Schul-Logo (siehe Rechtliches)
+- Das Schul-Logo und Moodle-Logo (siehe Rechtliches)
 - Erwähnung des ursprünglichen Entwicklers
 
 ## 🌟 Warum Open Source?

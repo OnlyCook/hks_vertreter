@@ -1682,6 +1682,7 @@
     <string name="moodle_failed_to_send_message">Nachricht konnte nicht gesendet werden</string>
     <string name="moodle_activated_dark_mode">Moodle Dark Mode aktiviert</string>
     <string name="moodle_deactivated_dark_mode">Moodle Dark Mode deaktiviert</string>
+    <string name="moodle_loading_webpage">Lade Seite…</string>
 
     <!-- text viewer -->
     <string name="text_viewer_switch_to_text">Text-Viewer</string>
@@ -1742,7 +1743,7 @@
     <string name="moodle_items"> x</string> <!-- should not be longer than 2 characters -->
     <string name="moodle_nested">Verschachtelt</string>
     <string name="moodle_course_downloads">Kurs-Downloads</string>
-    <string name="moodle_courses">Kurse:</string>
+    <string name="moodle_courses">Kurse</string>
     <string name="moodle_selected">Ausgewählt:</string>
     <string name="moodle_entries">Einträge</string>
     <string name="moodle_entry">Eintrag</string>
@@ -1874,5 +1875,18 @@
     <string name="moodle_verifying_course">Überprüfe Kurs…</string>
     <string name="moodle_cache_invalid_retrying">Zwischengespeicherte URL ungültig, versuche erneut…</string>
     <string name="moodle_navigating_to_course">Navigiere zu Kurs…</string>
+    <string name="moodle_no_search_results">Keine Suchergebnisse gefunden</string>
+    <string name="moodle_logging_in_automatically">Automatische Anmeldung läuft</string>
+    <string name="moodle_loading_cached_entry">Lade gespeicherten Eintrag</string>
+    <string name="moodle_navigating_to_courses">Navigation zu Kursen</string>
+    <string name="moodle_initializing">Initialisiere Suche</string>
+    <string name="moodle_using_cached_url">Verwende gespeicherte URL</string>
+    <string name="moodle_checking_login_status">Prüfe Login-Status</string>
+    <string name="moodle_already_logged_in">Bereits angemeldet</string>
+    <string name="moodle_waiting_for_auto_login">Warte auf automatische Anmeldung</string>
+    <string name="moodle_navigating">Navigiere zur Seite</string>
+    <string name="moodle_login_successful_loading">Anmeldung erfolgreich, lade Seite</string>
+    <string name="moodle_loading_course_page">Lade Kursseite</string>
+    <string name="moodle_fetch_timeout">Zeitüberschreitung beim Abrufen</string>
 
 </resources>

@@ -129,4 +129,6 @@
     <!-- moodlefragment.kt -->
     <attr name="iconTintColor" format="color" />
     <attr name="iconTintReserveColor" format="color" />
+    <attr name="entryItemBackgroundColor" format="color" />
+    <attr name="courseItemBackgroundColor" format="color" />
 </resources>

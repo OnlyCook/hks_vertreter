@@ -144,6 +144,8 @@
         <!-- moodlefragment.kt -->
         <item name="iconTintColor">@android:color/white</item>
         <item name="iconTintReserveColor">@android:color/black</item>
+        <item name="entryItemBackgroundColor">@color/darker_gray</item>
+        <item name="courseItemBackgroundColor">@color/table_bg_dark</item>
     </style>
 
     <style name="Theme.VertretungsPlaner.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar">
