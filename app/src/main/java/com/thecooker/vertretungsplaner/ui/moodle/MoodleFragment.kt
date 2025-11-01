@@ -791,6 +791,16 @@ class MoodleFragment : Fragment() {
 
                 if (wasOnLoginPageBefore && !isNowOnLoginPage && url != null) {
                     L.d("MoodleFragment", "User logged in successfully - triggering calendar refresh")
+
+                    consecutiveLoginFailures = 0
+                    hasLoginFailed = false
+                    loginRetryCount = 0
+                    loginSuccessConfirmed = true
+                    lastSuccessfulLoginCheck = System.currentTimeMillis()
+                    isLoginDialogShown = false
+                    isLoginInProgress = false
+                    sessionExpiredDetected = false
+
                     Handler(Looper.getMainLooper()).postDelayed({
                         refreshCalendarDataInBackground()
                     }, 500)
@@ -1602,6 +1612,7 @@ class MoodleFragment : Fragment() {
 
                         consecutiveLoginFailures = 0
                         hasLoginFailed = false
+                        loginRetryCount = 0
 
                         if (cbSaveCredentials.isChecked && username.isNotEmpty() && password.isNotEmpty()) {
                             saveCredentials(username, password)
@@ -7232,6 +7243,13 @@ class MoodleFragment : Fragment() {
     //region **CAL_SEARCH**
 
     private fun continueCalendarSearch(category: String, summary: String, entryId: String) {
+        if (!isNetworkAvailable()) {
+            L.d("MoodleFragment", "No network connection available for calendar search")
+            Toast.makeText(requireContext(), getString(R.string.moodle_offline_error), Toast.LENGTH_LONG).show()
+            hideSearchProgressDialog()
+            return
+        }
+
         val cachedUrl = calendarDataManager?.getCachedUrl(entryId)
         if (cachedUrl != null) {
             L.d("MoodleFragment", "Found cached URL for entry $entryId: $cachedUrl")
@@ -7286,7 +7304,19 @@ class MoodleFragment : Fragment() {
 
         btnCancel.setOnClickListener {
             searchCancelled = true
+
+            Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null)
+
             dialog.dismiss()
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isAdded && context != null) {
+                    searchCancelled = false
+                    resetSearchState()
+                    L.d("MoodleFragment", "Search state reset after cancellation")
+                }
+            }, 500)
+
             Toast.makeText(requireContext(), getString(R.string.moodle_search_cancelled), Toast.LENGTH_SHORT).show()
         }
 
@@ -7313,6 +7343,12 @@ class MoodleFragment : Fragment() {
         searchProgressDialog?.dismiss()
         searchProgressDialog = null
         searchCancelled = false
+
+        if (isAdded && context != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                resetSearchState()
+            }, 300)
+        }
     }
 
     private fun searchForMoodleEntry(category: String, summary: String, entryId: String) {
@@ -11049,6 +11085,12 @@ class MoodleFragment : Fragment() {
     private fun checkLoginStatusForFetch() {
         if (fetchCancelled || System.currentTimeMillis() - fetchStartTime > FETCH_TIMEOUT) {
             cleanupFetchProcess()
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            L.d("MoodleFragment", "No network connection available for fetch")
+            handleFetchError(getString(R.string.moodle_offline_error))
             return
         }
 
@@ -17539,13 +17581,28 @@ class MoodleFragment : Fragment() {
         val uidPattern = """\(ID: ([^)]+)\)""".toRegex()
         val entryId = uidPattern.find(entry.specialNote)?.groupValues?.get(1) ?: ""
 
-        val category = entry.content.lines().firstOrNull()?.trim() ?: ""
+        val contentLines = entry.content.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val category = contentLines.firstOrNull() ?: ""
 
-        if (summary.isNotEmpty()) {
+        L.d("MoodleFragment", "=== Calendar Dialog Search Debug ===")
+        L.d("MoodleFragment", "Full entry.content: '${entry.content}'")
+        L.d("MoodleFragment", "Extracted category: '$category'")
+        L.d("MoodleFragment", "Summary: '$summary'")
+        L.d("MoodleFragment", "Entry ID: '$entryId'")
+
+        if (summary.isNotEmpty() && category.isNotEmpty()) {
             if (isAdded && context != null && !searchCancelled && !fetchCancelled) {
-                searchForMoodleEntry(category, summary, entryId)
+                searchCancelled = false
+                val searchQuery = extractSearchableCourseName(category)
+                searchProgressDialog = showSearchProgressDialog(searchQuery, summary)
+                updateSearchProgress(5, getString(R.string.moodle_initializing))
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    continueCalendarSearch(category, summary, entryId)
+                }, 500)
             }
         } else {
+            L.e("MoodleFragment", "Missing data - Summary empty: ${summary.isEmpty()}, Category empty: ${category.isEmpty()}")
             Toast.makeText(requireContext(), getString(R.string.moodle_calendar_entry_search_failed), Toast.LENGTH_SHORT).show()
         }
     }

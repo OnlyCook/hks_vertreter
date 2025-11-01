@@ -3294,7 +3294,7 @@ class GalleryFragment : Fragment() {
                     entries.add(
                         CalendarEntry(
                             EntryType.SUBSTITUTE,
-                            "Room change",
+                            getString(R.string.gall_room_change),
                             substitute.fach,
                             Color.TRANSPARENT,
                             colorPriorities["room_change"] ?: 0
